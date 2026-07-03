@@ -1,0 +1,53 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default
+  group_by: [alertname, panic]
+  group_wait:      30s
+  group_interval:  5m
+  repeat_interval: 1h
+
+  routes:
+    - match:
+        panic: P0
+      receiver: pagerduty-critical
+      continue: true
+    - match:
+        panic: P1
+      receiver: slack-warnings
+    - match:
+        panic: P2
+      receiver: slack-info
+
+receivers:
+  - name: default
+    # catch-all — no-op (configure a real receiver below)
+
+  - name: pagerduty-critical
+    # Uncomment and set PAGERDUTY_ROUTING_KEY in your environment
+    # pagerduty_configs:
+    #   - routing_key: "${PAGERDUTY_ROUTING_KEY}"
+    #     description: "{{ .GroupLabels.alertname }}: {{ .Annotations.summary }}"
+
+  - name: slack-warnings
+    # slack_configs:
+    #   - api_url: "${SLACK_WEBHOOK_URL}"
+    #     channel: "#aegis-alerts"
+    #     title: "⚠️ [P1] {{ .GroupLabels.alertname }}"
+    #     text: "{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}"
+
+  - name: slack-info
+    # slack_configs:
+    #   - api_url: "${SLACK_WEBHOOK_URL}"
+    #     channel: "#aegis-alerts"
+    #     title: "ℹ️ [P2] {{ .GroupLabels.alertname }}"
+    #     text: "{{ range .Alerts }}{{ .Annotations.description }}\n{{ end }}"
+
+inhibit_rules:
+  # If AegisDown fires, suppress all other alerts (nothing useful until it's up)
+  - source_match:
+      alertname: AegisDown
+    target_match_re:
+      alertname: ".+"
+    equal: [job]

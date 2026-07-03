@@ -1,0 +1,101 @@
+groups:
+  - name: aegis.slo
+    interval: 30s
+    rules:
+
+      # ── P0: System down ──────────────────────────────────────────────────────
+      - alert: AegisDown
+        expr: up{job="aegis-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          panic: P0
+        annotations:
+          summary: "Aegis API is unreachable"
+          description: "Prometheus cannot scrape /metrics — backend may be crashed or unreachable."
+          runbook: "Check docker logs aegis-backend; check /health/ready"
+
+      # ── P0: High error rate ──────────────────────────────────────────────────
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(aegis_http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(aegis_http_requests_total[5m]))
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          panic: P0
+        annotations:
+          summary: "Error rate > 5% for 2 minutes"
+          description: "{{ $value | humanizePercentage }} of requests are returning 5xx."
+          runbook: "Check /health/status; check logs for exceptions"
+
+      # ── P1: Latency SLO breach ───────────────────────────────────────────────
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(aegis_http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          panic: P1
+        annotations:
+          summary: "P95 latency > 2s"
+          description: "95th percentile response time is {{ $value | humanizeDuration }}."
+          runbook: "Check DB query times; check yfinance/indianapi circuit breakers"
+
+      # ── P1: Circuit breaker open ─────────────────────────────────────────────
+      - alert: CircuitBreakerOpen
+        expr: aegis_circuit_breaker_state == 2
+        for: 1m
+        labels:
+          severity: warning
+          panic: P1
+        annotations:
+          summary: "Circuit breaker OPEN for {{ $labels.service }}"
+          description: "External service '{{ $labels.service }}' is circuit-broken. Fast-fails in effect."
+          runbook: "Check external API health; wait for recovery_timeout; check /health/ready"
+
+      # ── P1: Rate limit storm ─────────────────────────────────────────────────
+      - alert: RateLimitStorm
+        expr: |
+          sum(rate(aegis_http_requests_total{status="429"}[5m])) > 10
+        for: 3m
+        labels:
+          severity: warning
+          panic: P1
+        annotations:
+          summary: "More than 10 rate-limited requests/sec for 3 minutes"
+          description: "Possible scraper or abuse pattern. Consider IP blocking."
+
+      # ── P2: AI provider exhausted ────────────────────────────────────────────
+      - alert: AIProviderExhausted
+        expr: |
+          increase(aegis_ai_requests_total{outcome="error"}[15m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+          panic: P2
+        annotations:
+          summary: "AI provider errors spiking"
+          description: "More than 20 AI errors in last 15 minutes. Check Groq/NVIDIA quotas."
+          runbook: "Check ai_service logs; check rate limits at groq.com and build.nvidia.com"
+
+      # ── P2: Cache miss rate high ─────────────────────────────────────────────
+      - alert: HighCacheMissRate
+        expr: |
+          (
+            rate(aegis_cache_operations_total{result="miss"}[5m])
+            /
+            rate(aegis_cache_operations_total[5m])
+          ) > 0.8
+        for: 10m
+        labels:
+          severity: info
+          panic: P2
+        annotations:
+          summary: "Cache miss rate > 80%"
+          description: "High cache miss rate may indicate Redis issues or cold start."

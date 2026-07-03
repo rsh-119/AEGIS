@@ -1,0 +1,42 @@
+# Horizontal Pod Autoscaler
+# Scales aegis-backend between 2 and 8 replicas based on CPU and memory.
+# Requires metrics-server installed in the cluster.
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: aegis-backend-hpa
+  namespace: aegis
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind:       Deployment
+    name:       aegis-backend
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type:               Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type:               Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type:          Pods
+          value:         2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300   # don't scale down too fast
+      policies:
+        - type:          Pods
+          value:         1
+          periodSeconds: 120

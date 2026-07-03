@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: aegis-backend
+  namespace: aegis
+  labels:
+    app: aegis-backend
+spec:
+  selector:
+    app: aegis-backend
+  ports:
+    - name: http
+      port:       8000
+      targetPort: 8000
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aegis-frontend
+  namespace: aegis
+  labels:
+    app: aegis-frontend
+spec:
+  selector:
+    app: aegis-frontend
+  ports:
+    - name: http
+      port:       3000
+      targetPort: 3000
+  type: ClusterIP
+
+---
+# Ingress — replace host with your domain and TLS cert
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: aegis-ingress
+  namespace: aegis
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120"
+    cert-manager.io/cluster-issuer: letsencrypt-prod   # if using cert-manager
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - yourdomain.com
+        - api.yourdomain.com
+      secretName: aegis-tls
+  rules:
+    - host: api.yourdomain.com
+      http:
+        paths:
+          - path:     /
+            pathType: Prefix
+            backend:
+              service:
+                name: aegis-backend
+                port:
+                  number: 8000
+    - host: yourdomain.com
+      http:
+        paths:
+          - path:     /
+            pathType: Prefix
+            backend:
+              service:
+                name: aegis-frontend
+                port:
+                  number: 3000

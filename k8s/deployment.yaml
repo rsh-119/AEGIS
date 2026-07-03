@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aegis-backend
+  namespace: aegis
+  labels:
+    app: aegis-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aegis-backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge:       1
+      maxUnavailable: 0      # zero-downtime rolling update
+  template:
+    metadata:
+      labels:
+        app: aegis-backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port:   "8000"
+        prometheus.io/path:   "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: aegis-backend
+          image: your-registry/aegis-backend:latest   # replace with your image
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+              name: http
+
+          # ── Environment ──────────────────────────────────────────────────────
+          envFrom:
+            - configMapRef:
+                name: aegis-config
+            - secretRef:
+                name: aegis-secrets
+
+          # ── Probes ───────────────────────────────────────────────────────────
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds:       10
+            failureThreshold:    3
+            timeoutSeconds:      5
+
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds:       10
+            failureThreshold:    3
+            timeoutSeconds:      5
+            successThreshold:    1
+
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds:       5
+            failureThreshold:    12   # allow 60s for cold start
+
+          # ── Resources ────────────────────────────────────────────────────────
+          resources:
+            requests:
+              cpu:    "250m"
+              memory: "256Mi"
+            limits:
+              cpu:    "1000m"
+              memory: "1Gi"
+
+          # ── Graceful shutdown ─────────────────────────────────────────────────
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aegis-frontend
+  namespace: aegis
+  labels:
+    app: aegis-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: aegis-frontend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge:       1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: aegis-frontend
+    spec:
+      containers:
+        - name: aegis-frontend
+          image: your-registry/aegis-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: "https://api.yourdomain.com"
+          resources:
+            requests:
+              cpu:    "100m"
+              memory: "128Mi"
+            limits:
+              cpu:    "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds:       15
