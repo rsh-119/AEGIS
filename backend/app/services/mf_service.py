@@ -455,57 +455,70 @@ def _pick_popular_codes(all_funds: list[dict]) -> list[int]:
     return result
 
 
+_EMPTY_HIGHLIGHTS = {"popular": [], "top_gainers": [], "top_losers": [], "most_active": []}
+
+
 async def get_mf_highlights(period: str = "1y") -> dict:
     ck = f"mf:highlights:{period}"
     hit = cache.get(ck)
     if hit is not None:
         return hit
 
-    all_funds: list[dict] = cache.get("mf:full_list") or []
-    if not all_funds:
-        return {"popular": [], "top_gainers": [], "top_losers": [], "most_active": []}
+    try:
+        all_funds: list[dict] = cache.get("mf:full_list") or []
+        if not all_funds:
+            # Trigger a list fetch so next call can compute highlights
+            asyncio.create_task(_prefetch_mf_list())
+            return _EMPTY_HIGHLIGHTS
 
-    # 120 evenly-spaced funds for top/bottom ranking
-    step    = max(1, len(all_funds) // 120)
-    sampled = all_funds[::step][:120]
+        # 40 evenly-spaced funds for top/bottom ranking (keeps MFapi calls low on cloud)
+        step    = max(1, len(all_funds) // 40)
+        sampled = all_funds[::step][:40]
 
-    pop_codes = _pick_popular_codes(all_funds)
-    all_codes = list({f["schemeCode"] for f in sampled} | set(pop_codes))
+        pop_codes = _pick_popular_codes(all_funds)
+        all_codes = list({f["schemeCode"] for f in sampled} | set(pop_codes))
 
-    # Fetch all chunks in parallel (each chunk shares its own connection pool)
-    chunks = [all_codes[i : i + 40] for i in range(0, min(len(all_codes), 200), 40)]
-    chunk_results = await asyncio.gather(*[get_mf_returns_batch(ch) for ch in chunks])
-    returns: dict[int, dict] = {}
-    for r in chunk_results:
-        returns.update(r)
+        # Single batch — max 50 codes, one connection pool, shared HTTP/2 session
+        returns = await get_mf_returns_batch(all_codes[:50])
 
-    code_to_name = {f["schemeCode"]: f["schemeName"] for f in all_funds}
+        code_to_name = {f["schemeCode"]: f["schemeName"] for f in all_funds}
 
-    def _item(code: int) -> dict | None:
-        r = returns.get(code)
-        return {"scheme_code": code, "name": code_to_name.get(code, ""), **r} if r else None
+        def _item(code: int) -> dict | None:
+            r = returns.get(code)
+            return {"scheme_code": code, "name": code_to_name.get(code, ""), **r} if r else None
 
-    all_items = [x for c in all_codes if (x := _item(c))]
-    popular   = [x for c in pop_codes  if (x := _item(c))]
+        all_items = [x for c in all_codes if (x := _item(c))]
+        popular   = [x for c in pop_codes  if (x := _item(c))]
 
-    ret_key  = f"return_{period}"
-    with_ret = sorted(
-        [x for x in all_items if x.get(ret_key) is not None],
-        key=lambda x: x[ret_key], reverse=True,
-    )
-    most_active = sorted(
-        [x for x in all_items if x.get("return_1d") is not None],
-        key=lambda x: abs(x["return_1d"]), reverse=True,
-    )
+        ret_key  = f"return_{period}"
+        with_ret = sorted(
+            [x for x in all_items if x.get(ret_key) is not None],
+            key=lambda x: x[ret_key], reverse=True,
+        )
+        most_active = sorted(
+            [x for x in all_items if x.get("return_1d") is not None],
+            key=lambda x: abs(x["return_1d"]), reverse=True,
+        )
 
-    result = {
-        "popular":     popular[:8],
-        "top_gainers": with_ret[:5],
-        "top_losers":  list(reversed(with_ret[-5:])) if len(with_ret) >= 5 else with_ret[::-1],
-        "most_active": most_active[:5],
-    }
-    cache.set(ck, result, "mf_list")   # 24h TTL — highlights are computed from daily NAV data
-    return result
+        result = {
+            "popular":     popular[:8],
+            "top_gainers": with_ret[:5],
+            "top_losers":  list(reversed(with_ret[-5:])) if len(with_ret) >= 5 else with_ret[::-1],
+            "most_active": most_active[:5],
+        }
+        cache.set(ck, result, "mf_list")
+        return result
+    except Exception as e:
+        logger.warning("get_mf_highlights failed: %s", e)
+        return _EMPTY_HIGHLIGHTS
+
+
+async def _prefetch_mf_list() -> None:
+    """Background task: prime mf:full_list cache so next highlights call succeeds."""
+    try:
+        await get_mf_list()
+    except Exception:
+        pass
 
 
 async def get_etf_highlights() -> dict:

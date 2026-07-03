@@ -1,11 +1,16 @@
 """Mutual Fund and ETF routes."""
 
+import logging
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.services import mf_service
 
 router = APIRouter(prefix="/api", tags=["mf"])
+logger = logging.getLogger(__name__)
+
+_EMPTY_HIGHLIGHTS = {"popular": [], "top_gainers": [], "top_losers": [], "most_active": []}
 
 
 # ── Mutual Funds ──────────────────────────────────────────────────────────────
@@ -17,7 +22,11 @@ async def list_mfs(
     page:     int = Query(1, ge=1),
     limit:    int = Query(40, ge=1, le=100),
 ):
-    return await mf_service.get_mf_list(search=search, category=category, page=page, limit=limit)
+    try:
+        return await mf_service.get_mf_list(search=search, category=category, page=page, limit=limit)
+    except Exception as e:
+        logger.warning("list_mfs failed: %s", e)
+        return {"total": 0, "page": page, "limit": limit, "pages": 0, "funds": []}
 
 
 class ReturnsBatchBody(BaseModel):
@@ -28,22 +37,37 @@ class ReturnsBatchBody(BaseModel):
 async def mf_returns_batch(body: ReturnsBatchBody):
     if not body.codes:
         raise HTTPException(400, "codes list required")
-    return await mf_service.get_mf_returns_batch(body.codes)
+    try:
+        return await mf_service.get_mf_returns_batch(body.codes)
+    except Exception as e:
+        logger.warning("mf_returns_batch failed: %s", e)
+        return {}
 
 
 @router.get("/mf/highlights")
 async def mf_highlights(period: str = Query("1y")):
-    return await mf_service.get_mf_highlights(period)
+    try:
+        return await mf_service.get_mf_highlights(period)
+    except Exception as e:
+        logger.warning("mf_highlights failed: %s", e)
+        return _EMPTY_HIGHLIGHTS
 
 
 @router.get("/mf/{scheme_code}/nifty50")
 async def mf_nifty50(scheme_code: int, from_date: str = Query(...)):
-    return await mf_service.get_nifty50_chart(from_date)
+    try:
+        return await mf_service.get_nifty50_chart(from_date)
+    except Exception:
+        return []
 
 
 @router.get("/mf/{scheme_code}")
 async def mf_detail(scheme_code: int):
-    data = await mf_service.get_mf_detail(scheme_code)
+    try:
+        data = await mf_service.get_mf_detail(scheme_code)
+    except Exception as e:
+        logger.warning("mf_detail %s failed: %s", scheme_code, e)
+        raise HTTPException(503, "MF data temporarily unavailable")
     if not data:
         raise HTTPException(404, "Mutual fund not found")
     return data
@@ -53,17 +77,29 @@ async def mf_detail(scheme_code: int):
 
 @router.get("/etf")
 async def list_etfs():
-    return await mf_service.get_etf_list()
+    try:
+        return await mf_service.get_etf_list()
+    except Exception as e:
+        logger.warning("list_etfs failed: %s", e)
+        return []
 
 
 @router.get("/etf/highlights")
 async def etf_highlights():
-    return await mf_service.get_etf_highlights()
+    try:
+        return await mf_service.get_etf_highlights()
+    except Exception as e:
+        logger.warning("etf_highlights failed: %s", e)
+        return {}
 
 
 @router.get("/etf/{ticker:path}")
 async def etf_detail(ticker: str):
-    data = await mf_service.get_etf_detail(ticker)
+    try:
+        data = await mf_service.get_etf_detail(ticker)
+    except Exception as e:
+        logger.warning("etf_detail %s failed: %s", ticker, e)
+        raise HTTPException(503, "ETF data temporarily unavailable")
     if not data:
         raise HTTPException(404, "ETF not found")
     return data
@@ -71,4 +107,7 @@ async def etf_detail(ticker: str):
 
 @router.get("/etf/{ticker:path}/nifty50")
 async def etf_nifty50(ticker: str, from_date: str = Query(...)):
-    return await mf_service.get_nifty50_chart(from_date)
+    try:
+        return await mf_service.get_nifty50_chart(from_date)
+    except Exception:
+        return []
