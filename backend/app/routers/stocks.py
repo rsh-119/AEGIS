@@ -1,6 +1,7 @@
 """/api/stocks/* — quotes, history, search, full analysis, forecast, health."""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, HTTPException, Query
 
 from app.services import stock_service, news_service, ai_service, forecast_service, concall_service, peer_service, shareholding_service
@@ -8,6 +9,21 @@ from app.services import stock_service, news_service, ai_service, forecast_servi
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
 
 _PERIODS = {"1mo", "3mo", "6mo", "1y", "2y", "5y", "max"}
+
+# xgboost/lgbm forecasts fit a model per horizon day (CPU-bound, ~10-25s each
+# on Render's free tier). Running them inline on the event loop would block
+# EVERY request to this service — WEB_CONCURRENCY=1 means one stalled
+# forecast call stalls all other users too. Off-loaded to a thread pool so
+# the event loop stays free (xgboost/lightgbm release the GIL during their
+# native fit() calls, so multiple forecasts can genuinely overlap here too).
+_forecast_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="forecast")
+
+
+async def _forecast_async(candles: list[dict], horizon_days: int, model: str) -> dict:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        _forecast_pool, forecast_service.forecast, candles, horizon_days, model
+    )
 
 
 @router.get("/search")
@@ -67,11 +83,7 @@ async def price_forecast(ticker: str, horizon: int = 30, model: str = "holt"):
         raise HTTPException(status_code=503, detail="Insufficient history for forecast")
     if model not in ("holt", "xgboost", "lgbm"):
         model = "holt"
-    return forecast_service.forecast(
-        candles,
-        horizon_days=min(horizon, 30),
-        model=model,
-    )
+    return await _forecast_async(candles, min(horizon, 30), model)
 
 
 @router.get("/{ticker}/core")
@@ -119,20 +131,22 @@ async def insights(ticker: str):
     hist_2y = await stock_service.get_history(ticker, "2y")
     candles_2y = hist_2y.get("candles", []) if "error" not in hist_2y else []
 
-    def _run_forecast(model: str) -> dict:
+    async def _run_forecast(model: str) -> dict:
         if not candles_2y:
             return {"available": False, "reason": hist_2y.get("error", "No history available")}
-        return forecast_service.forecast(candles_2y, horizon_days=30, model=model)
+        return await _forecast_async(candles_2y, 30, model)
 
-    # News + AI in parallel (forecasts are local CPU-bound computation, no I/O to parallelize)
-    news_data, ai_analysis, health = await asyncio.gather(
+    # News + AI + all 3 forecasts genuinely in parallel — forecasts run on a
+    # thread pool (see _forecast_async) so they don't block each other or the
+    # event loop.
+    news_data, ai_analysis, health, fc_holt, fc_xgb, fc_lgbm = await asyncio.gather(
         news_service.get_news_and_sentiment(ticker, company),
         ai_service.analyse_stock(quote, signals, hist, {}),  # sentiment injected below after news
         ai_service.diagnose_health(quote, hist, {}, []),
+        _run_forecast("holt"),
+        _run_forecast("xgboost"),
+        _run_forecast("lgbm"),
     )
-    fc_holt = _run_forecast("holt")
-    fc_xgb  = _run_forecast("xgboost")
-    fc_lgbm = _run_forecast("lgbm")
 
     return {
         "news":       news_data["articles"],
