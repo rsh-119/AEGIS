@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import useSWR, { mutate } from "swr";
+import { useRouter } from "next/navigation";
 import { fetcher, inr, pct, signCls, post, del } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
 import { LoginPrompt } from "@/components/LoginPrompt";
@@ -10,6 +11,7 @@ import { Trash2, Plus } from "lucide-react";
 
 export default function PortfolioPage() {
   const { user, isLoading: authLoading } = useAuth();
+  const router = useRouter();
   const { data } = useSWR(user ? "/api/portfolio" : null, fetcher, { revalidateOnFocus: false });
   const [form, setForm] = useState({ ticker: "", shares: "", avg_price: "", buy_date: "" });
   const [busy, setBusy] = useState(false);
@@ -18,6 +20,10 @@ export default function PortfolioPage() {
   const holdings = data?.holdings || [];
 
   async function add() {
+    if (!user) {
+      router.push("/login");
+      return;
+    }
     if (!form.ticker || !form.shares || !form.avg_price || !form.buy_date) return;
     setBusy(true);
     try {
