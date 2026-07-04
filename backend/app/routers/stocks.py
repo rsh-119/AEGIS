@@ -188,7 +188,7 @@ async def concall_summary(ticker: str):
 
 @router.get('/{ticker}/shareholding-history')
 async def shareholding_history(ticker: str):
-    """Quarterly shareholding pattern history from BSE India (SEBI public disclosure)."""
+    """Quarterly shareholding pattern history (SEBI-mandated public disclosure) via IndianAPI."""
     return await shareholding_service.get_shareholding_history(ticker)
 
 
