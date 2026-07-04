@@ -112,15 +112,27 @@ async def insights(ticker: str):
     company  = quote.get("company_name")
     signals  = stock_service.ratio_signals(quote)
 
-    # News + AI + forecasts all in parallel
-    news_data, ai_analysis, health, fc_holt, fc_xgb, fc_lgbm = await asyncio.gather(
+    # Fetch the 2y history ONCE — the 3 forecast models used to each call
+    # get_history(ticker, "2y") independently via asyncio.gather, and since
+    # none of them had landed in cache yet, all 3 raced and fired 3 separate
+    # IndianAPI requests for identical data instead of 1.
+    hist_2y = await stock_service.get_history(ticker, "2y")
+    candles_2y = hist_2y.get("candles", []) if "error" not in hist_2y else []
+
+    def _run_forecast(model: str) -> dict:
+        if not candles_2y:
+            return {"available": False, "reason": hist_2y.get("error", "No history available")}
+        return forecast_service.forecast(candles_2y, horizon_days=30, model=model)
+
+    # News + AI in parallel (forecasts are local CPU-bound computation, no I/O to parallelize)
+    news_data, ai_analysis, health = await asyncio.gather(
         news_service.get_news_and_sentiment(ticker, company),
         ai_service.analyse_stock(quote, signals, hist, {}),  # sentiment injected below after news
         ai_service.diagnose_health(quote, hist, {}, []),
-        _forecast_from_hist(ticker, "holt"),
-        _forecast_from_hist(ticker, "xgboost"),
-        _forecast_from_hist(ticker, "lgbm"),
     )
+    fc_holt = _run_forecast("holt")
+    fc_xgb  = _run_forecast("xgboost")
+    fc_lgbm = _run_forecast("lgbm")
 
     return {
         "news":       news_data["articles"],
@@ -172,13 +184,6 @@ async def concall_summary(ticker: str):
             return {"summaries": [], "partial": True, "error": detail}
         raise HTTPException(status_code=503, detail=detail)
     return data
-
-
-async def _forecast_from_hist(ticker: str, model: str = "holt") -> dict:
-    hist = await stock_service.get_history(ticker, "2y")
-    if "error" in hist:
-        return {"available": False, "reason": hist["error"]}
-    return forecast_service.forecast(hist.get("candles", []), horizon_days=30, model=model)
 
 
 @router.get('/{ticker}/shareholding-history')

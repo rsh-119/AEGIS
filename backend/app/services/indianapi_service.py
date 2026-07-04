@@ -704,10 +704,17 @@ async def get_news(page_no: int = 1, size: int = 20) -> list[dict]:
 
 
 async def get_company_news(stock: str) -> list[dict]:
+    ck = f"indianapi:company_news:{stock.lower()}"
+    hit = cache.get(ck)
+    if hit is not None:
+        return hit
     data = await _get("/company_news", {"stock_name": stock})
     if not data:
         return []
-    return data if isinstance(data, list) else (data.get("data") or [])
+    result = data if isinstance(data, list) else (data.get("data") or [])
+    if result:
+        cache.set(ck, result, "news")
+    return result
 
 
 async def get_ipo() -> list[dict]:

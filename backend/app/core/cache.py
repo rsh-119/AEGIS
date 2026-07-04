@@ -62,6 +62,7 @@ TTL: dict[str, int] = {
     "analyst":   86400,   # 24 h    — analyst targets/forecasts update weekly at most
     "corporate": 86400,   # 24 h    — dividends/splits announced once per event
     "filing":    14400,   # 4 h     — BSE/NSE announcements during trading hours
+    "news":      1800,    # 30 min  — company news, quota-metered on IndianAPI
     "overview":  720,     # 12 min  — market overview, matches HomeRefreshTask interval
 }
 
