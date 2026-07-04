@@ -7,6 +7,8 @@ import { SearchBox } from "./SearchBox";
 import { Shield, Sun, Moon, Menu, X, Bell, LogIn, LogOut, UserCircle } from "lucide-react";
 import clsx from "clsx";
 import { useAuth } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
+import { RippleLink } from "@/components/ui/ripple-link";
 
 const links = [
   { href: "/",          label: "Home"      },
@@ -100,16 +102,16 @@ export function Nav() {
             {links.map((l) => {
               const active = l.href === "/" ? path === "/" : path.startsWith(l.href);
               return (
-                <Link key={l.href} href={l.href}
+                <RippleLink key={l.href} href={l.href}
                   className={clsx(
-                    "relative rounded-lg px-3 py-1.5 font-medium transition-all duration-150",
+                    "rounded-lg px-3 py-1.5 font-medium transition-all duration-150",
                     active ? "text-fg" : "text-muted hover:text-fg"
                   )}
                 >
                   {active && <span className="absolute inset-0 rounded-lg bg-raised/80 ring-1 ring-border/60" />}
                   {active && <span className="absolute bottom-0.5 left-1/2 h-0.5 w-3 -translate-x-1/2 rounded-full bg-saffron" />}
                   <span className="relative">{l.label}</span>
-                </Link>
+                </RippleLink>
               );
             })}
           </nav>
@@ -161,9 +163,9 @@ export function Nav() {
                   )}
                 </>
               ) : (
-                <Link href="/login" className="btn-primary flex items-center gap-1.5 text-sm">
-                  <LogIn className="h-4 w-4" /> Sign in
-                </Link>
+                <Button asChild className="flex items-center gap-1.5 text-sm">
+                  <Link href="/login"><LogIn className="h-4 w-4" /> Sign in</Link>
+                </Button>
               )}
             </div>
           )}
@@ -193,7 +195,7 @@ export function Nav() {
             {links.map((l) => {
               const active = l.href === "/" ? path === "/" : path.startsWith(l.href);
               return (
-                <Link key={l.href} href={l.href}
+                <RippleLink key={l.href} href={l.href}
                   className={clsx(
                     "flex items-center gap-3 px-5 py-3.5 text-sm font-medium transition-colors",
                     active
@@ -203,7 +205,7 @@ export function Nav() {
                 >
                   {l.label}
                   {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-saffron" />}
-                </Link>
+                </RippleLink>
               );
             })}
           </nav>
