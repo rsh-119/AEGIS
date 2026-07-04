@@ -1,29 +1,24 @@
 """
 mf_service.py — Indian Mutual Fund and ETF data.
   MF data  : mfapi.in (AMFI source, free, no key needed)
-  ETF data : yfinance (NSE-listed ETFs)
-  Benchmark: ^NSEI (Nifty 50) via yfinance
+  ETF data : IndianAPI (NSE-listed ETFs trade as regular stocks)
+  Benchmark: Nifty 50 via IndianAPI /historical_data (stock_name="NIFTY")
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 import httpx
-import yfinance as yf
-from yfinance.exceptions import YFRateLimitError
 
 from app.core.cache import cache
-from app.core.yf_session import YF_SESSION, yf_blocked, yf_on_rate_limit
+from app.services import indianapi_service
 
 logger = logging.getLogger(__name__)
-_pool = ThreadPoolExecutor(max_workers=12)
 
 MFAPI = "https://api.mfapi.in"
-NIFTY50 = "^NSEI"
 
 # ── NSE-listed ETFs ────────────────────────────────────────────────────────────
 _ETFS: list[tuple[str, str, str, str]] = [
@@ -246,25 +241,18 @@ async def get_nifty50_chart(from_date: str) -> list[dict]:
     if hit is not None:
         return hit
 
-    def _fetch():
-        if yf_blocked():
-            return []
-        try:
-            hist = yf.Ticker(NIFTY50, session=YF_SESSION).history(start=from_date, auto_adjust=True)
-            if hist.empty:
-                return []
-            return [
-                {"date": dt.strftime("%Y-%m-%d"), "close": round(float(row["Close"]), 2)}
-                for dt, row in hist.iterrows()
-            ]
-        except YFRateLimitError:
-            yf_on_rate_limit()
-            return []
-        except Exception:
-            return []
+    raw = await indianapi_service.get_historical_data("NIFTY", "max")
+    if not raw:
+        return []
+    price_ds = next((d for d in (raw.get("datasets") or []) if d.get("metric") == "Price"), None)
+    if not price_ds:
+        return []
 
-    loop = asyncio.get_event_loop()
-    pts = await loop.run_in_executor(_pool, _fetch)
+    pts = [
+        {"date": date, "close": round(float(close), 2)}
+        for date, close in price_ds.get("values", [])
+        if date >= from_date
+    ]
     if pts:
         cache.set(ck, pts, "nifty50")
     return pts
@@ -274,76 +262,54 @@ async def get_nifty50_chart(from_date: str) -> list[dict]:
 # ETF functions
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _fetch_etf_list_sync() -> list[dict]:
-    """
-    Batch-download all ETF price histories in ONE yfinance call instead
-    of 23 separate ticker calls. ~5-10x faster.
-    """
-    import pandas as pd
+async def _fetch_etf(ticker: str, name: str, asset_class: str, sub: str) -> dict | None:
+    """ETFs trade as regular NSE stocks — /historical_data gives price series,
+    day change, and 1Y/3Y/5Y returns in a single IndianAPI call."""
+    bare = ticker.replace(".NS", "")
+    raw = await indianapi_service.get_historical_data(bare, "5y")
+    if not raw:
+        return None
+    price_ds = next((d for d in (raw.get("datasets") or []) if d.get("metric") == "Price"), None)
+    if not price_ds or not price_ds.get("values"):
+        return None
 
-    tickers = [t for t, _, _, _ in _ETFS]
-    meta    = {t: (n, a, s) for t, n, a, s in _ETFS}
+    values = price_ds["values"]
+    dates = [v[0] for v in values]
+    closes = [float(v[1]) for v in values]
+    price = closes[-1]
+    prev = closes[-2] if len(closes) > 1 else None
+    day_chg = (price - prev) / prev * 100 if prev else None
+    last_date = datetime.strptime(dates[-1], "%Y-%m-%d")
 
-    try:
-        raw = yf.download(
-            tickers,
-            period="5y",
-            auto_adjust=True,
-            group_by="ticker",
-            progress=False,
-            threads=True,
-        )
-    except Exception as e:
-        logger.warning("ETF batch download failed: %s", e)
-        return []
+    def _ret(days: int) -> float | None:
+        """Latest close at or before `days` ago, walking backward from the end."""
+        cutoff = last_date - timedelta(days=days)
+        old = None
+        for i in range(len(dates) - 1, -1, -1):
+            if datetime.strptime(dates[i], "%Y-%m-%d") <= cutoff:
+                old = closes[i]
+                break
+        return round((price - old) / old * 100, 2) if old else None
 
-    result = []
-    for ticker in tickers:
-        try:
-            name, asset_class, sub = meta[ticker]
+    chart = [{"date": d, "close": round(c, 2)} for d, c in zip(dates, closes)]
 
-            # MultiIndex when >1 ticker: raw[ticker] → DataFrame(OHLCV)
-            if isinstance(raw.columns, pd.MultiIndex):
-                if ticker not in raw.columns.get_level_values(0):
-                    continue
-                h = raw[ticker].dropna(how="all")
-            else:
-                h = raw.dropna(how="all")
-
-            if h.empty or "Close" not in h.columns:
-                continue
-
-            price = float(h["Close"].iloc[-1])
-            prev  = float(h["Close"].iloc[-2]) if len(h) > 1 else None
-            day_chg = (price - prev) / prev * 100 if prev else None
-
-            def _ret(days: int, _h=h, _p=price) -> float | None:
-                cutoff = _h.index[-1] - timedelta(days=days)
-                past = _h[_h.index <= cutoff]
-                if past.empty:
-                    return None
-                old = float(past["Close"].iloc[-1])
-                return round((_p - old) / old * 100, 2) if old else None
-
-            vol = float(h["Volume"].iloc[-1]) if "Volume" in h.columns and not pd.isna(h["Volume"].iloc[-1]) else None
-            result.append({
-                "ticker":         ticker,
-                "name":           name,
-                "asset_class":    asset_class,
-                "sub_category":   sub,
-                "price":          round(price, 2),
-                "day_change_pct": round(day_chg, 2) if day_chg is not None else None,
-                "volume":         vol,
-                "aum":            None,
-                "expense_ratio":  None,
-                "return_1y":      _ret(365),
-                "return_3y":      _ret(1095),
-                "return_5y":      _ret(1825),
-            })
-        except Exception as e:
-            logger.debug("ETF %s compute failed: %s", ticker, e)
-
-    return result
+    return {
+        "ticker": ticker,
+        "name": name,
+        "asset_class": asset_class,
+        "sub_category": sub,
+        "price": round(price, 2),
+        "day_change_pct": round(day_chg, 2) if day_chg is not None else None,
+        "volume": None,
+        "aum": None,
+        "expense_ratio": None,
+        "fund_family": "",
+        "return_1y": _ret(365),
+        "return_3y": _ret(1095),
+        "return_5y": _ret(1825),
+        "chart": chart,
+        "chart_start": chart[0]["date"] if chart else None,
+    }
 
 
 async def get_etf_list() -> list[dict]:
@@ -352,64 +318,17 @@ async def get_etf_list() -> list[dict]:
     if hit is not None:
         return hit
 
-    loop = asyncio.get_event_loop()
-    etfs = await loop.run_in_executor(_pool, _fetch_etf_list_sync)
+    results = await asyncio.gather(
+        *[_fetch_etf(t, n, a, s) for t, n, a, s in _ETFS],
+        return_exceptions=True,
+    )
+    etfs = [
+        {k: v for k, v in r.items() if k not in ("chart", "chart_start")}
+        for r in results if isinstance(r, dict)
+    ]
     if etfs:
         cache.set(ck, etfs, "etf")
     return etfs
-
-
-def _fetch_etf_detail_sync(ticker: str) -> dict | None:
-    if yf_blocked():
-        return None
-    try:
-        t    = yf.Ticker(ticker, session=YF_SESSION)
-        info = t.info or {}
-        hist = t.history(period="5y", auto_adjust=True)
-
-        price = info.get("regularMarketPrice") or (
-            float(hist["Close"].iloc[-1]) if not hist.empty else None
-        )
-        prev  = info.get("previousClose") or (
-            float(hist["Close"].iloc[-2]) if len(hist) > 1 else None
-        )
-        day_chg = (price - prev) / prev * 100 if price and prev else None
-
-        chart = [
-            {"date": dt.strftime("%Y-%m-%d"), "close": round(float(row["Close"]), 2)}
-            for dt, row in hist.iterrows()
-        ] if not hist.empty else []
-
-        def _ret(days: int) -> float | None:
-            if hist.empty:
-                return None
-            now_p = float(hist["Close"].iloc[-1])
-            cutoff = hist.index[-1] - timedelta(days=days)
-            past = hist[hist.index <= cutoff]
-            if past.empty:
-                return None
-            return round((now_p - float(past["Close"].iloc[-1])) / float(past["Close"].iloc[-1]) * 100, 2)
-
-        return {
-            "ticker":       ticker,
-            "name":         info.get("shortName") or info.get("longName") or ticker,
-            "price":        round(price, 2) if price else None,
-            "day_change_pct": round(day_chg, 2) if day_chg is not None else None,
-            "aum":          info.get("totalAssets"),
-            "expense_ratio": info.get("annualReportExpenseRatio"),
-            "fund_family":  info.get("fundFamily", ""),
-            "return_1y":    _ret(365),
-            "return_3y":    _ret(1095),
-            "return_5y":    _ret(1825),
-            "chart":        chart,
-            "chart_start":  chart[0]["date"] if chart else None,
-        }
-    except YFRateLimitError:
-        yf_on_rate_limit()
-        return None
-    except Exception as e:
-        logger.debug("ETF detail fetch failed %s: %s", ticker, e)
-        return None
 
 
 async def get_etf_detail(ticker: str) -> dict | None:
@@ -418,8 +337,10 @@ async def get_etf_detail(ticker: str) -> dict | None:
     if hit is not None:
         return hit
 
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(_pool, _fetch_etf_detail_sync, ticker)
+    meta = next(((n, a, s) for t, n, a, s in _ETFS if t == ticker), None)
+    if meta is None:
+        return None
+    result = await _fetch_etf(ticker, *meta)
     if result:
         cache.set(ck, result, "etf")
     return result

@@ -8,15 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor
 
-import yfinance as yf
-
+from app.services import indianapi_service
 from app.services.stock_service import normalise_ticker, _clean
 from app.core.cache import cache
 
 logger = logging.getLogger(__name__)
-_pool = ThreadPoolExecutor(max_workers=12)
 
 # ── Sector → peer ticker list (NSE) ───────────────────────────────────────────
 _SECTOR_PEERS: dict[str, list[str]] = {
@@ -132,40 +129,33 @@ def _peer_tickers(sector: str, industry: str | None, self_ticker: str) -> list[s
     return [p for p in peers if p.upper() != self_norm.upper()][:9]
 
 
-def _fetch_peer_sync(ticker: str) -> dict | None:
-    from app.core.yf_session import yf_blocked, yf_on_rate_limit
-    from yfinance.exceptions import YFRateLimitError
-    if yf_blocked():
-        return None
+async def _fetch_peer(ticker: str) -> dict | None:
+    """Single-call peer fundamentals via IndianAPI /get_stock_data — already
+    includes sector-relative comparisons (sectorPe, sectorRoe, etc.)."""
+    t = normalise_ticker(ticker)
+    bare = t.replace(".NS", "").replace(".BO", "")
     try:
-        t = normalise_ticker(ticker)
-        info = yf.Ticker(t).info or {}
-        price = info.get("currentPrice") or info.get("regularMarketPrice")
-        prev = info.get("previousClose")
-        if not price:
+        raw = await indianapi_service.get_stock_data(bare)
+        if not raw:
             return None
-        day_chg = (price - prev) / prev * 100 if prev else None
+        parsed = indianapi_service.parse_stock_data(raw)
         return _clean({
             "ticker": t,
-            "name": info.get("shortName") or info.get("longName") or t.replace(".NS", ""),
-            "price": price,
-            "day_change_pct": round(day_chg, 2) if day_chg is not None else None,
-            "market_cap": info.get("marketCap"),
-            "pe_ratio": info.get("trailingPE"),
-            "pb_ratio": info.get("priceToBook"),
-            "roe": info.get("returnOnEquity"),
-            "revenue_growth": info.get("revenueGrowth"),
-            "earnings_growth": info.get("earningsGrowth"),
-            "debt_to_equity": info.get("debtToEquity"),
-            "profit_margin": info.get("profitMargins"),
-            "dividend_yield": info.get("dividendYield"),
-            "eps": info.get("trailingEps"),
-            "week52_high": info.get("fiftyTwoWeekHigh"),
-            "week52_low": info.get("fiftyTwoWeekLow"),
+            "name": raw.get("name") or t.replace(".NS", ""),
+            "market_cap": parsed.get("market_cap"),
+            "pe_ratio": parsed.get("pe_ratio"),
+            "pb_ratio": parsed.get("pb_ratio"),
+            "roe": parsed.get("roe"),
+            "revenue_growth": parsed.get("revenue_growth"),
+            "earnings_growth": parsed.get("earnings_growth"),
+            "debt_to_equity": parsed.get("debt_to_equity"),
+            "profit_margin": parsed.get("profit_margin"),
+            "dividend_yield": parsed.get("dividend_yield"),
+            "eps": parsed.get("eps"),
+            "sector_pe": parsed.get("sector_pe"),
+            "sector_roe": parsed.get("sector_roe"),
+            "sector_roce": parsed.get("sector_roce"),
         })
-    except YFRateLimitError:
-        yf_on_rate_limit()
-        return None
     except Exception as e:
         logger.debug("peer fetch failed for %s: %s", ticker, e)
         return None
@@ -197,21 +187,25 @@ def _sector_averages(peers: list[dict]) -> dict:
 
 
 async def get_peer_comparison(ticker: str, sector: str, industry: str | None) -> dict:
-    key = f"peers:{normalise_ticker(ticker)}"
+    t = normalise_ticker(ticker)
+    key = f"peers:{t}"
     if (c := cache.get(key)) is not None:
         return c
 
-    peer_tickers = _peer_tickers(sector, industry, ticker)
-    if not peer_tickers:
-        return {"peers": [], "sector_avg": {}, "sector": sector}
+    # Primary: IndianAPI's own curated peerCompanyList (real editorial peers,
+    # zero extra API calls — reuses the /stock response get_quote already fetched).
+    bare = t.replace(".NS", "").replace(".BO", "")
+    stock_raw = await indianapi_service.get_stock(bare)
+    peers = await indianapi_service.get_peer_companies(stock_raw) if stock_raw else []
 
-    loop = asyncio.get_event_loop()
-    results = await asyncio.gather(
-        *[loop.run_in_executor(_pool, _fetch_peer_sync, t) for t in peer_tickers]
-    )
-    peers = [r for r in results if r is not None]
+    # Fallback: hardcoded sector bucket (used only if IndianAPI has no peer data)
+    if not peers:
+        peer_tickers = _peer_tickers(sector, industry, ticker)
+        if peer_tickers:
+            results = await asyncio.gather(*[_fetch_peer(t) for t in peer_tickers])
+            peers = [r for r in results if r is not None]
+
     sector_avg = _sector_averages(peers)
-
     out = {"peers": peers, "sector_avg": sector_avg, "sector": sector}
     cache.set(key, out, "peers")
     return out

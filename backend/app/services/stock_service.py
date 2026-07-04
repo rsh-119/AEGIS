@@ -1,28 +1,22 @@
 """
-stock_service.py — Indian-market (NSE/BSE) stock data via yfinance.
+stock_service.py — Indian-market (NSE/BSE) stock data via IndianAPI.
 
 Every ticker is normalised to an NSE (.NS) or BSE (.BO) symbol.
 Search returns ONLY Indian-listed results.
-A small in-process TTL cache reduces duplicate Yahoo calls.
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
 
 from app.core.cache import cache
-from app.core.yf_session import YF_SESSION, yf_blocked, yf_on_rate_limit
-from yfinance.exceptions import YFRateLimitError
+from app.services import indianapi_service
 
 logger = logging.getLogger(__name__)
-_pool = ThreadPoolExecutor(max_workers=8)
 
 
 # ── Legacy _TTL kept for any external imports ─────────────────────────────────
@@ -62,10 +56,6 @@ def _clean(obj):
     if isinstance(obj, float):
         return None if (np.isnan(obj) or np.isinf(obj)) else obj
     return obj
-
-
-async def _run(fn, *args):
-    return await asyncio.get_event_loop().run_in_executor(_pool, fn, *args)
 
 
 # ── local NSE index for instant prefix matching ───────────────────────────────
@@ -295,204 +285,30 @@ def _local_search(query: str) -> list[dict]:
 
 # ── search (Indian only) ──────────────────────────────────────────────────────
 
-def _search_sync(query: str) -> list[dict]:
-    """Local index first (instant), then Yahoo Finance for unknowns."""
-    local = _local_search(query)
-    local_syms = {r["symbol"] for r in local}
-
-    # If local index already gives 5+ results, skip Yahoo call (fast path)
-    if len(local) >= 5:
-        return local[:8]
-
-    # Supplement with Yahoo for less common tickers
-    yahoo: list[dict] = []
-    seen = set(local_syms)
-    try:
-        searches: list[dict] = []
-        try:
-            searches += yf.Search(query, max_results=12).quotes
-        except Exception:
-            pass
-        try:
-            searches += yf.Search(f"{query}.NS", max_results=6).quotes
-        except Exception:
-            pass
-
-        for s in searches:
-            sym = (s.get("symbol") or "").upper()
-            if sym and sym.endswith(".NS") and sym not in seen:
-                yahoo.append({
-                    "symbol": sym,
-                    "name": s.get("shortname") or s.get("longname") or sym,
-                    "exchange": "NSE",
-                })
-                seen.add(sym)
-        for s in searches:
-            sym = (s.get("symbol") or "").upper()
-            if sym and sym.endswith(".BO") and sym not in seen:
-                yahoo.append({
-                    "symbol": sym,
-                    "name": s.get("shortname") or s.get("longname") or sym,
-                    "exchange": "BSE",
-                })
-                seen.add(sym)
-    except Exception as e:
-        logger.warning("yahoo search failed for %s: %s", query, e)
-
-    return (local + yahoo)[:8]
-
-
 async def search_indian(query: str) -> list[dict]:
+    """Local hardcoded index first (zero-latency), then IndianAPI's free static
+    stock list for less common tickers (no quota cost — see indianapi_service)."""
     if len(query.strip()) < 2:
         return []
     key = f"search:{query.lower()}"
     if (c := cache.get(key)) is not None:
         return c
-    res = await _run(_search_sync, query)
+
+    local = _local_search(query)
+    if len(local) >= 5:
+        cache.set(key, local[:8], "search")
+        return local[:8]
+
+    seen = {r["symbol"] for r in local}
+    extra = await indianapi_service.search_stocks(query, limit=12)
+    supplemented = local + [r for r in extra if r["symbol"] not in seen]
+
+    res = supplemented[:8]
     cache.set(key, res, "search")
     return res
 
 
 # ── quote / fundamentals ──────────────────────────────────────────────────────
-
-def _quote_sync(ticker: str) -> dict:
-    t = normalise_ticker(ticker)
-    if yf_blocked():
-        return {"ticker": t, "error": "yfinance rate-limited — try again later"}
-    try:
-        stock = yf.Ticker(t)
-        try:
-            info = stock.info or {}
-        except (KeyError, Exception):
-            # yfinance raises KeyError('exchangeTimezoneName') on some 404 tickers
-            info = {}
-        if not info.get("currentPrice") and not info.get("regularMarketPrice"):
-            # fast_info fallback
-            fi = stock.fast_info
-            price = getattr(fi, "last_price", None)
-            if not price:
-                return {"ticker": t, "error": "No data for this symbol"}
-            return _clean({
-                "ticker": t,
-                "company_name": t.replace(".NS", "").replace(".BO", ""),
-                "current_price": price,
-                "previous_close": getattr(fi, "previous_close", price),
-                "currency": "INR",
-                "exchange": "NSE" if t.endswith(".NS") else "BSE",
-            })
-
-        base = _clean({
-            "ticker": t,
-            "company_name": info.get("longName") or info.get("shortName") or t,
-            "sector": info.get("sector"),
-            "industry": info.get("industry"),
-            "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
-            "previous_close": info.get("previousClose"),
-            "open": info.get("open"),
-            "day_high": info.get("dayHigh"),
-            "day_low": info.get("dayLow"),
-            "week52_high": info.get("fiftyTwoWeekHigh"),
-            "week52_low": info.get("fiftyTwoWeekLow"),
-            "market_cap": info.get("marketCap"),
-            "pe_ratio": info.get("trailingPE"),
-            "forward_pe": info.get("forwardPE"),
-            "pb_ratio": info.get("priceToBook"),
-            "eps": info.get("trailingEps"),
-            "book_value": info.get("bookValue"),
-            "roe": info.get("returnOnEquity"),
-            "debt_to_equity": info.get("debtToEquity"),
-            "dividend_yield": info.get("dividendYield"),
-            "beta": info.get("beta"),
-            "profit_margin": info.get("profitMargins"),
-            "revenue_growth": info.get("revenueGrowth"),
-            "earnings_growth": info.get("earningsGrowth"),
-            "volume": info.get("volume"),
-            "avg_volume": info.get("averageVolume"),
-            "float_shares": info.get("floatShares"),
-            "shares_outstanding": info.get("sharesOutstanding"),
-            "held_by_insiders_pct": info.get("heldPercentInsiders"),
-            "held_by_institutions_pct": info.get("heldPercentInstitutions"),
-            "shares_short": info.get("sharesShort"),
-            "short_ratio": info.get("shortRatio"),
-            "currency": info.get("currency", "INR"),
-            "exchange": "NSE" if t.endswith(".NS") else "BSE",
-            "website": info.get("website"),
-            "summary": (info.get("longBusinessSummary") or "")[:600],
-            "officers": [
-                {"name": o.get("name"), "title": o.get("title")}
-                for o in (info.get("companyOfficers") or [])[:6]
-                if o.get("name")
-            ],
-        })
-
-        # Institutional & insider ownership (best-effort — not always available for Indian stocks)
-        try:
-            inst_df = stock.institutional_holders
-            if inst_df is not None and not inst_df.empty:
-                base["institutional_holders"] = [
-                    {
-                        "holder": str(row.get("Holder", "")),
-                        "shares": int(row["Shares"]) if pd.notna(row.get("Shares")) else None,
-                        "pct_out": round(float(row["% Out"]) * 100, 2) if pd.notna(row.get("% Out")) else None,
-                        "date_reported": str(row.get("Date Reported", ""))[:10],
-                    }
-                    for _, row in inst_df.head(10).iterrows()
-                ]
-        except Exception:
-            pass
-
-        try:
-            mut_df = stock.mutualfund_holders
-            if mut_df is not None and not mut_df.empty:
-                base["mutualfund_holders"] = [
-                    {
-                        "holder": str(row.get("Holder", "")),
-                        "shares": int(row["Shares"]) if pd.notna(row.get("Shares")) else None,
-                        "pct_out": round(float(row["% Out"]) * 100, 2) if pd.notna(row.get("% Out")) else None,
-                        "date_reported": str(row.get("Date Reported", ""))[:10],
-                    }
-                    for _, row in mut_df.head(10).iterrows()
-                ]
-        except Exception:
-            pass
-
-        try:
-            ins_df = stock.insider_transactions
-            if ins_df is not None and not ins_df.empty:
-                base["insider_transactions"] = [
-                    {
-                        "insider": str(row.get("Insider Trading", "")),
-                        "transaction": str(row.get("Transaction", "")),
-                        "shares": int(row["#Shares"]) if pd.notna(row.get("#Shares")) else None,
-                        "value": float(row["Value"]) if pd.notna(row.get("Value")) else None,
-                        "date": str(row.get("Start Date", ""))[:10],
-                    }
-                    for _, row in ins_df.head(10).iterrows()
-                ]
-        except Exception:
-            pass
-
-        return base
-    except YFRateLimitError:
-        yf_on_rate_limit()
-        return {"ticker": t, "error": "yfinance rate-limited — try again later"}
-    except Exception as e:
-        logger.warning("quote fallback yfinance %s: %s", t, e)
-        return {"ticker": t, "error": str(e)}
-
-
-async def _indianapi_price_fields(ticker: str) -> dict:
-    """Fetch live price + fundamentals from IndianAPI. Returns {} on failure."""
-    try:
-        from app.services.indianapi_service import get_stock
-        bare = ticker.replace(".NS", "").replace(".BO", "")
-        data = await get_stock(bare)
-        if not data or not data.get("current_price"):
-            return {}
-        return {k: v for k, v in data.items() if v is not None}
-    except Exception:
-        return {}
-
 
 async def get_quote(ticker: str) -> dict:
     t = normalise_ticker(ticker)
@@ -500,82 +316,23 @@ async def get_quote(ticker: str) -> dict:
     if (c := cache.get(ck)) is not None:
         return c
 
-    # Tier 1 (primary): yfinance — comprehensive fundamentals, most reliable
-    try:
-        yf_res = await _run(_quote_sync, ticker)
-    except Exception as exc:
-        yf_res = {"ticker": t, "error": str(exc)}
+    bare = t.replace(".NS", "").replace(".BO", "")
+    data = await indianapi_service.get_quote_bundle(t)
+    if not data or not data.get("current_price"):
+        return {"ticker": t, "error": "No data for this symbol"}
 
-    if "error" not in yf_res:
-        res = yf_res
-    else:
-        # Tier 2 (fallback): IndianAPI — when yfinance fails (rate-limit, delisted, etc.)
-        logger.info("get_quote: yfinance failed for %s, trying IndianAPI: %s", t, yf_res.get("error"))
-        india_fields = await _indianapi_price_fields(t)
-        if india_fields and india_fields.get("current_price"):
-            res = {"ticker": t, **india_fields}
-        else:
-            res = yf_res
-
-    if "error" not in res:
-        res["fetched_at"] = int(time.time())
-        cache.set(ck, res, "prices")
+    res = _clean({
+        "ticker": t,
+        "currency": "INR",
+        "exchange": "NSE" if t.endswith(".NS") else "BSE",
+        **data,
+    })
+    res["fetched_at"] = int(time.time())
+    cache.set(ck, res, "prices")
     return res
 
 
 # ── price history + technicals ────────────────────────────────────────────────
-
-def _history_sync(ticker: str, period: str) -> dict:
-    t = normalise_ticker(ticker)
-    if yf_blocked():
-        return {"ticker": t, "error": "yfinance rate-limited — try again later"}
-    try:
-        hist = yf.Ticker(t, session=YF_SESSION).history(period=period)
-        if hist.empty:
-            return {"ticker": t, "error": "No price history"}
-
-        hist["MA20"]  = hist["Close"].rolling(20).mean()
-        hist["MA50"]  = hist["Close"].rolling(50).mean()
-        hist["MA200"] = hist["Close"].rolling(200).mean()
-        hist["RSI"]   = _rsi(hist["Close"])
-
-        first, last = hist["Close"].iloc[0], hist["Close"].iloc[-1]
-        pct = (last - first) / first * 100 if first else 0
-        daily = hist["Close"].pct_change()
-        vol = float(daily.std() * (252 ** 0.5) * 100) if len(daily) > 1 else 0
-
-        candles = []
-        for idx, row in hist.iterrows():
-            candles.append({
-                "date": idx.strftime("%Y-%m-%d"),
-                "close": round(float(row["Close"]), 2),
-                "open": round(float(row["Open"]), 2),
-                "high": round(float(row["High"]), 2),
-                "low": round(float(row["Low"]), 2),
-                "volume": int(row["Volume"]) if not pd.isna(row["Volume"]) else 0,
-                "ma20":  round(float(row["MA20"]),  2) if not pd.isna(row["MA20"])  else None,
-                "ma50":  round(float(row["MA50"]),  2) if not pd.isna(row["MA50"])  else None,
-                "ma200": round(float(row["MA200"]), 2) if not pd.isna(row["MA200"]) else None,
-                "rsi": round(float(row["RSI"]), 1) if not pd.isna(row["RSI"]) else None,
-            })
-
-        return _clean({
-            "ticker": t,
-            "period": period,
-            "first_price": round(float(first), 2),
-            "last_price": round(float(last), 2),
-            "pct_change": round(float(pct), 2),
-            "volatility_pct": round(vol, 2),
-            "latest_rsi": candles[-1]["rsi"] if candles else None,
-            "candles": candles,
-        })
-    except YFRateLimitError:
-        yf_on_rate_limit()
-        return {"ticker": t, "error": "yfinance rate-limited — try again later"}
-    except Exception as e:
-        logger.warning("history yfinance fallback %s: %s", t, e)
-        return {"ticker": t, "error": str(e)}
-
 
 def _rsi(series: pd.Series, window: int = 14) -> pd.Series:
     delta = series.diff()
@@ -585,67 +342,64 @@ def _rsi(series: pd.Series, window: int = 14) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 
-
-
 async def _history_from_indianapi(ticker: str, period: str) -> dict | None:
-    """Fetch OHLCV from IndianAPI /historical_data and reshape to Aegis candles format."""
-    try:
-        from app.services.indianapi_service import get_historical_data
-        bare = ticker.replace(".NS", "").replace(".BO", "")
-        raw = await get_historical_data(bare, period)
-        if not raw:
-            return None
-        # IndianAPI returns {"datasets": [{"label": ..., "data": [...]}], "labels": [...dates]}
-        labels = raw.get("labels") or []
-        datasets = raw.get("datasets") or []
-        close_data = next((d["data"] for d in datasets if "close" in d.get("label", "").lower()), None)
-        if not close_data or len(close_data) != len(labels):
-            return None
-
-        closes = pd.Series(close_data, dtype=float)
-        ma20  = closes.rolling(20).mean()
-        ma50  = closes.rolling(50).mean()
-        ma200 = closes.rolling(200).mean()
-        rsi   = _rsi(closes)
-
-        candles = []
-        for i, (date, close) in enumerate(zip(labels, close_data)):
-            if close is None:
-                continue
-            candles.append({
-                "date":  date,
-                "close": round(float(close), 2),
-                "open":  round(float(close), 2),
-                "high":  round(float(close), 2),
-                "low":   round(float(close), 2),
-                "volume": 0,
-                "ma20":  round(float(ma20.iloc[i]),  2) if not pd.isna(ma20.iloc[i])  else None,
-                "ma50":  round(float(ma50.iloc[i]),  2) if not pd.isna(ma50.iloc[i])  else None,
-                "ma200": round(float(ma200.iloc[i]), 2) if not pd.isna(ma200.iloc[i]) else None,
-                "rsi":   round(float(rsi.iloc[i]),   1) if not pd.isna(rsi.iloc[i])   else None,
-            })
-
-        if len(candles) < 5:
-            return None
-
-        first, last = candles[0]["close"], candles[-1]["close"]
-        pct = (last - first) / first * 100 if first else 0
-
-        return _clean({
-            "ticker":        ticker,
-            "period":        period,
-            "first_price":   round(first, 2),
-            "last_price":    round(last, 2),
-            "pct_change":    round(pct, 2),
-            "volatility_pct": 0,
-            "latest_rsi":    candles[-1]["rsi"],
-            "candles":       candles,
-        })
-    except Exception as e:
-        logger.debug("IndianAPI history failed for %s: %s", ticker, e)
+    """Fetch price+DMA+volume from IndianAPI /historical_data and reshape to
+    Aegis' candle format. NOTE: IndianAPI's historical_data only exposes a
+    daily CLOSE price (no intraday open/high/low), so open/high/low are set
+    equal to close — charts render as a line, not true OHLC candlesticks."""
+    bare = ticker.replace(".NS", "").replace(".BO", "")
+    raw = await indianapi_service.get_historical_data(bare, period)
+    if not raw:
         return None
 
+    datasets = {d.get("metric"): d.get("values") or [] for d in (raw.get("datasets") or [])}
+    price_pts = datasets.get("Price") or []
+    if len(price_pts) < 5:
+        return None
 
+    dma50_map = {d[0]: d[1] for d in (datasets.get("DMA50") or [])}
+    dma200_map = {d[0]: d[1] for d in (datasets.get("DMA200") or [])}
+    vol_map = {d[0]: d[1] for d in (datasets.get("Volume") or [])}
+
+    dates = [p[0] for p in price_pts]
+    closes = pd.Series([float(p[1]) for p in price_pts], dtype=float)
+    ma20 = closes.rolling(20).mean()
+    rsi = _rsi(closes)
+
+    candles = []
+    for i, date in enumerate(dates):
+        close = float(closes.iloc[i])
+        dma50 = dma50_map.get(date)
+        dma200 = dma200_map.get(date)
+        vol = vol_map.get(date)
+        candles.append({
+            "date": date,
+            "close": round(close, 2),
+            "open": round(close, 2),
+            "high": round(close, 2),
+            "low": round(close, 2),
+            "volume": int(vol) if vol else 0,
+            "ma20": round(float(ma20.iloc[i]), 2) if not pd.isna(ma20.iloc[i]) else None,
+            "ma50": round(float(dma50), 2) if dma50 is not None else None,
+            "ma200": round(float(dma200), 2) if dma200 is not None else None,
+            "rsi": round(float(rsi.iloc[i]), 1) if not pd.isna(rsi.iloc[i]) else None,
+        })
+
+    first, last = candles[0]["close"], candles[-1]["close"]
+    pct = (last - first) / first * 100 if first else 0
+    daily = closes.pct_change()
+    vol_pct = float(daily.std() * (252 ** 0.5) * 100) if len(daily) > 1 else 0
+
+    return _clean({
+        "ticker": ticker,
+        "period": period,
+        "first_price": round(first, 2),
+        "last_price": round(last, 2),
+        "pct_change": round(pct, 2),
+        "volatility_pct": round(vol_pct, 2),
+        "latest_rsi": candles[-1]["rsi"],
+        "candles": candles,
+    })
 
 
 async def get_history(ticker: str, period: str = "6mo") -> dict:
@@ -654,16 +408,7 @@ async def get_history(ticker: str, period: str = "6mo") -> dict:
     if (c := cache.get(ck)) is not None:
         return c
 
-    # Tier 1 (primary): yfinance — most complete, handles all periods
-    res = await _run(_history_sync, ticker, period)
-    if res and "error" in res:
-        res = None
-
-    # Tier 2 (fallback): IndianAPI historical_data — when yfinance fails
-    if res is None:
-        logger.info("get_history: yfinance failed for %s/%s, trying IndianAPI", t, period)
-        res = await _history_from_indianapi(t, period)
-
+    res = await _history_from_indianapi(t, period)
     if res is None:
         res = {"ticker": t, "period": period, "error": "No history data available"}
 

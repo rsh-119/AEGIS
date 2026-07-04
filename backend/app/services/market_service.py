@@ -2,9 +2,9 @@
 market_service.py — market overview: indices, gainers, losers, cap segments.
 
 Data priority per data type:
-  gainers / losers / high_volume : IndianAPI /trending + /NSE_most_active  (1 fast call each)
-  nifty50 / nifty100 / buckets   : yfinance batch                           (1 call, 175 tickers)
-  indices bar                    : yfinance history(period="2d")              (5 parallel calls)
+  gainers / losers / high_volume : NSE direct API (no key needed)
+  nifty50 / nifty100 / buckets   : IndianAPI (sector/ETF pages only)
+  indices bar                    : NSE direct API
   IPO / commodities / 52wk / announcements : IndianAPI dedicated endpoints
 """
 
@@ -16,10 +16,9 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import requests as _requests
-import yfinance as yf
-from app.core.yf_session import YF_SESSION
 
 from app.core.cache import cache
+from app.services import indianapi_service
 from app.services.stock_service import _clean, _TTL
 
 logger = logging.getLogger(__name__)
@@ -281,262 +280,83 @@ _NIFTY_MIDCAP100: set[str]   = set(_MID_CAP_TICKERS)
 _NIFTY_SMALLCAP100: set[str] = set(_SMALL_CAP_TICKERS)
 
 
-def _fetch_quote_sync(ticker: str) -> dict | None:
-    try:
-        info = yf.Ticker(ticker).info or {}
-        price = info.get("currentPrice") or info.get("regularMarketPrice")
-        prev = info.get("previousClose")
-        if not price:
-            return None
-        chg = (price - prev) / prev * 100 if prev else 0
-        mc = info.get("marketCap")
-        return _clean({
-            "ticker": ticker,
-            "name": info.get("shortName") or ticker.replace(".NS", ""),
-            "price": price,
-            "change_pct": round(chg, 2),
-            "market_cap": mc,
-            "pe_ratio": info.get("trailingPE"),
-            "pb_ratio": info.get("priceToBook"),
-            "roe": info.get("returnOnEquity"),
-            "revenue_growth": info.get("revenueGrowth"),
-            "debt_to_equity": info.get("debtToEquity"),
-            "dividend_yield": info.get("dividendYield"),
-            "volume": info.get("volume"),
-            "avg_volume": info.get("averageVolume"),
-            "sector": info.get("sector"),
-            "website": info.get("website"),
-            "cap_type": (
-                "large" if mc and mc >= _LARGE_CAP
-                else "mid" if mc and mc >= _MID_CAP
-                else "small"
-            ),
-        })
-    except Exception as e:
-        logger.debug("mover fetch failed %s: %s", ticker, e)
+async def _fetch_sector_quote(ticker: str) -> dict | None:
+    """Extended quote for sector/peer pages — IndianAPI /get_stock_data gives
+    ratios + margins + YoY growth (via financials cagr) in a single call."""
+    bare = ticker.replace(".NS", "").replace(".BO", "")
+    raw = await indianapi_service.get_stock_data(bare)
+    if not raw:
         return None
-
-
-def _safe_info(ticker: str) -> dict:
-    try:
-        return yf.Ticker(ticker).info or {}
-    except Exception:
-        return {}
-
-
-def _batch_overview_sync(tickers: list[str]) -> list[dict]:
-    """
-    Batch-download prices via yf.download() (one HTTP request, rate-limit safe),
-    then enrich each valid ticker with .info in a capped thread pool.
-    Cap type is read from _CAP_TYPE_MAP (predefined), so misclassification due to
-    missing marketCap values never happens.
-    """
-    from app.core.yf_session import yf_blocked, yf_on_rate_limit
-    from yfinance.exceptions import YFRateLimitError
-    import pandas as pd
-
-    if yf_blocked():
-        return []
-
-    # Step 1: Batch price + volume download — far more reliable than 130 individual .info calls
-    try:
-        raw = yf.download(
-            tickers, period="5d", auto_adjust=True,
-            group_by="ticker", progress=False, threads=True,
-            session=YF_SESSION,
-        )
-    except YFRateLimitError:
-        yf_on_rate_limit()
-        return []
-    except Exception as exc:
-        logger.warning("batch overview download failed (%s); falling back to individual fetch", exc)
-        return [r for r in (_fetch_quote_sync(t) for t in tickers) if r]
-
-    multi = isinstance(raw.columns, pd.MultiIndex)
-
-    # Parse price + volume per ticker
-    price_map: dict[str, tuple[float, float | None, int | None]] = {}
-    for t in tickers:
-        try:
-            closes = raw[t]["Close"].dropna() if multi else raw["Close"].dropna()
-            vols   = raw[t]["Volume"].dropna() if multi else raw["Volume"].dropna()
-            if closes.empty:
-                continue
-            price = float(closes.iloc[-1])
-            prev  = float(closes.iloc[-2]) if len(closes) >= 2 else None
-            vol   = int(vols.iloc[-1]) if not vols.empty else None
-            price_map[t] = (price, prev, vol)
-        except Exception:
-            pass
-
-    if not price_map:
-        return []
-
-    # Step 2: Fetch .info for all tickers that have a valid price (reduced concurrency)
-    valid = list(price_map.keys())
-    with ThreadPoolExecutor(max_workers=16) as ex:
-        info_map: dict[str, dict] = dict(zip(valid, ex.map(_safe_info, valid)))
-
-    results: list[dict] = []
-    for ticker in valid:
-        price, prev, vol = price_map[ticker]
-        chg  = round((price - prev) / prev * 100, 2) if prev else 0.0
-        info = info_map.get(ticker, {})
-
-        mc      = info.get("marketCap")
-        name    = info.get("shortName") or ticker.replace(".NS", "").replace(".BO", "")
-        pe      = info.get("trailingPE")
-        avg_vol = info.get("averageVolume")
-        website = info.get("website")
-
-        results.append(_clean({
-            "ticker":     ticker,
-            "name":       name,
-            "price":      price,
-            "change_pct": chg,
-            "market_cap": mc,
-            "pe_ratio":   pe,
-            "volume":     vol,
-            "avg_volume": avg_vol,
-            "website":    website,
-            "cap_type":   _CAP_TYPE_MAP.get(ticker, "small"),
-        }))
-
-    return results
-
-
-def _fetch_sector_quote_sync(ticker: str) -> dict | None:
-    """Extended quote fetch for sector/peer pages — includes QoQ revenue growth + net profit."""
-    from app.core.yf_session import yf_blocked, yf_on_rate_limit
-    from yfinance.exceptions import YFRateLimitError
-    if yf_blocked():
+    parsed = indianapi_service.parse_stock_data(raw)
+    price_raw = await indianapi_service.get_stock(bare)
+    price = None
+    change_pct = None
+    if price_raw:
+        p = indianapi_service.parse_stock(price_raw)
+        price = p.get("current_price")
+        prev = p.get("previous_close")
+        if price and prev:
+            change_pct = round((price - prev) / prev * 100, 2)
+    if not price:
         return None
-    try:
-        t    = yf.Ticker(ticker)
-        info = t.info or {}
-        price = info.get("currentPrice") or info.get("regularMarketPrice")
-        prev  = info.get("previousClose")
-        if not price:
-            return None
-        chg = (price - prev) / prev * 100 if prev else 0
-        mc  = info.get("marketCap")
-
-        # Revenue growth QoQ — computed from last 2 quarters of income stmt
-        rev_qoq: float | None = None
-        net_income = info.get("netIncomeToCommon")   # TTM net income (INR)
-        try:
-            qf = t.quarterly_income_stmt
-            if qf is not None and not qf.empty:
-                rev_rows = [r for r in qf.index if "Total Revenue" in str(r) or "Operating Revenue" in str(r)]
-                if rev_rows:
-                    revs = qf.loc[rev_rows[0]].dropna().tolist()
-                    if len(revs) >= 2 and revs[1]:
-                        rev_qoq = round((revs[0] / revs[1] - 1) * 100, 2)
-                # Net income from quarterly if not in info
-                if net_income is None:
-                    ni_rows = [r for r in qf.index if "Net Income" in str(r)]
-                    if ni_rows:
-                        ni_vals = qf.loc[ni_rows[0]].dropna().tolist()
-                        net_income = sum(ni_vals[:4]) if len(ni_vals) >= 4 else ni_vals[0] if ni_vals else None
-        except Exception:
-            pass
-
-        return _clean({
-            "ticker":             ticker,
-            "name":               info.get("shortName") or ticker.replace(".NS", ""),
-            "price":              price,
-            "change_pct":         round(chg, 2),
-            "market_cap":         mc,
-            "pe_ratio":           info.get("trailingPE"),
-            "pb_ratio":           info.get("priceToBook"),
-            "roe":                info.get("returnOnEquity"),
-            "revenue_growth":     info.get("revenueGrowth"),       # YoY
-            "revenue_growth_qoq": rev_qoq,                         # QoQ
-            "profit_margin":      info.get("profitMargins"),
-            "net_income":         net_income,                       # TTM (INR)
-            "debt_to_equity":     info.get("debtToEquity"),
-            "dividend_yield":     info.get("dividendYield"),
-            "volume":             info.get("volume"),
-            "sector":             info.get("sector"),
-            "website":            info.get("website"),
-            "cap_type": (
-                "large" if mc and mc >= _LARGE_CAP
-                else "mid"   if mc and mc >= _MID_CAP
-                else "small"
-            ),
-        })
-    except YFRateLimitError:
-        yf_on_rate_limit()
-        return None
-    except Exception as e:
-        logger.debug("sector fetch failed %s: %s", ticker, e)
-        return None
+    mc = parsed.get("market_cap")
+    return _clean({
+        "ticker":         ticker,
+        "name":           raw.get("name") or ticker.replace(".NS", ""),
+        "price":          price,
+        "change_pct":     change_pct,
+        "market_cap":     mc,
+        "pe_ratio":       parsed.get("pe_ratio"),
+        "pb_ratio":       parsed.get("pb_ratio"),
+        "roe":            parsed.get("roe"),
+        "revenue_growth": parsed.get("revenue_growth"),
+        "profit_margin":  parsed.get("profit_margin"),
+        "debt_to_equity": parsed.get("debt_to_equity"),
+        "dividend_yield": parsed.get("dividend_yield"),
+        "cap_type": (
+            "large" if mc and mc >= _LARGE_CAP
+            else "mid"   if mc and mc >= _MID_CAP
+            else "small"
+        ),
+    })
 
 
-def _fetch_index_sync(name: str, symbol: str) -> dict | None:
-    try:
-        # history(period="2d") is ~10× faster than .info — returns OHLCV only
-        hist = yf.Ticker(symbol, session=YF_SESSION).history(period="2d")
-        if hist.empty:
-            return None
-        price = float(hist["Close"].iloc[-1])
-        prev  = float(hist["Close"].iloc[-2]) if len(hist) >= 2 else price
-        chg_pts = price - prev
-        chg_pct = chg_pts / prev * 100 if prev else 0
-        return {
-            "name":       name,
-            "symbol":     symbol,
-            "price":      round(price, 2),
-            "change_pts": round(chg_pts, 2),
-            "change_pct": round(chg_pct, 2),
+async def _batch_returns(tickers: list[str]) -> dict[str, dict]:
+    """1Y/3Y/5Y price returns per ticker via IndianAPI historical_data."""
+    out: dict[str, dict] = {}
+
+    async def _one(t: str) -> None:
+        bare = t.replace(".NS", "").replace(".BO", "")
+        raw = await indianapi_service.get_historical_data(bare, "5y")
+        if not raw:
+            return
+        price_ds = next((d for d in (raw.get("datasets") or []) if d.get("metric") == "Price"), None)
+        if not price_ds or not price_ds.get("values"):
+            return
+        values = price_ds["values"]
+        closes = [float(v[1]) for v in values]
+        n = len(closes)
+        curr = closes[-1]
+
+        def _ret(days: int) -> float | None:
+            if n < days * 0.6:
+                return None
+            base = closes[max(0, n - days)]
+            return round((curr / base - 1) * 100, 2) if base else None
+
+        out[t] = {
+            "return_1y": _ret(252),
+            "return_3y": _ret(756),
+            "return_5y": _ret(1260),
         }
-    except Exception as e:
-        logger.debug("index fetch failed %s: %s", symbol, e)
-        return None
 
-
-def _batch_returns_sync(tickers: list[str]) -> dict[str, dict]:
-    """Batch-download 5Y history for all tickers; return 1Y/3Y/5Y price returns."""
-    import pandas as pd
-    try:
-        data = yf.download(
-            tickers, period="5y", auto_adjust=True,
-            group_by="ticker", progress=False, threads=True,
-            session=YF_SESSION,
-        )
-        out: dict[str, dict] = {}
-        for t in tickers:
-            try:
-                # MultiIndex columns when >1 ticker; flat when exactly 1
-                if isinstance(data.columns, pd.MultiIndex):
-                    closes = data[t]["Close"].dropna()
-                else:
-                    closes = data["Close"].dropna()
-                n = len(closes)
-                if n == 0:
-                    continue
-                curr = float(closes.iloc[-1])
-                def _ret(days: int) -> float | None:
-                    if n < days * 0.6:
-                        return None
-                    base = float(closes.iloc[max(0, n - days)])
-                    return round((curr / base - 1) * 100, 2) if base else None
-                out[t] = {
-                    "return_1y": _ret(252),
-                    "return_3y": _ret(756),
-                    "return_5y": _ret(1260),
-                }
-            except Exception:
-                pass
-        return out
-    except Exception:
-        return {}
+    await asyncio.gather(*[_one(t) for t in tickers], return_exceptions=True)
+    return out
 
 
 async def get_sector_stocks(sector: str) -> dict:
     """Return all tracked stocks for a given sector with live quotes + price returns."""
     from app.services.peer_service import _SECTOR_PEERS
-    from app.core.yf_session import yf_blocked
 
     key = f"sector:{sector}"
 
@@ -554,21 +374,10 @@ async def get_sector_stocks(sector: str) -> dict:
     if not tickers:
         return {"sector": sector, "stocks": [], "error": "No stocks found for this sector"}
 
-    # When yfinance is blocked return stub list so the picker is still usable
-    if yf_blocked():
-        stub_stocks = [
-            {"ticker": t, "name": t.replace(".NS", "").replace(".BO", ""),
-             "price": None, "change_pct": None, "market_cap": None}
-            for t in tickers
-        ]
-        return {"sector": matched_key or sector, "stocks": stub_stocks, "stats": {}, "partial": True}
-
-    loop = asyncio.get_event_loop()
-
-    # Fetch extended quotes (with QoQ revenue + net income) + batch history in parallel
+    # Fetch extended quotes + batch history returns in parallel
     quote_results, returns = await asyncio.gather(
-        asyncio.gather(*[loop.run_in_executor(_pool, _fetch_sector_quote_sync, t) for t in tickers]),
-        loop.run_in_executor(_pool, _batch_returns_sync, tickers),
+        asyncio.gather(*[_fetch_sector_quote(t) for t in tickers]),
+        _batch_returns(tickers),
     )
 
     stocks = [r for r in quote_results if r is not None]
@@ -644,11 +453,7 @@ async def get_market_overview(_force: bool = False) -> dict:
 
     loop = asyncio.get_event_loop()
 
-    # ── Run all 3 data sources in parallel ────────────────────────────────────
-    # IndianAPI: gainers/losers + high-volume  (2 fast calls, no Sugra credits)
-    # yfinance:  full 175-ticker batch          (1 batch call for nifty buckets)
-    # Sugra:     indices bar only              (5 symbols, minimal credits)
-    # Primary: NSE direct API for gainers/losers (no yfinance, no API key)
+    # ── Run indices + movers in parallel (both NSE-direct, no quota cost) ────
     nse_movers_task = loop.run_in_executor(_pool, _fetch_nse_gainers_losers_sync)
     indices_task    = get_indices()
 
@@ -684,69 +489,6 @@ async def get_market_overview(_force: bool = False) -> dict:
     else:
         logger.warning("Market overview: NSE returned no data — keeping existing cache")
     return _cache.get("market_overview") or result
-
-
-# ── Curated ETF list ──────────────────────────────────────────────────────────
-_ETFS = [
-    {"ticker": "NIFTYBEES.NS",  "name": "Nifty 50 BeES",       "category": "Index"},
-    {"ticker": "JUNIORBEES.NS", "name": "Nifty Next 50 BeES",  "category": "Index"},
-    {"ticker": "BANKBEES.NS",   "name": "Bank Nifty BeES",      "category": "Sector"},
-    {"ticker": "ITBEES.NS",     "name": "Nifty IT BeES",        "category": "Sector"},
-    {"ticker": "PHARMABEES.NS", "name": "Pharma BeES",          "category": "Sector"},
-    {"ticker": "GOLDBEES.NS",   "name": "Gold BeES",            "category": "Commodity"},
-    {"ticker": "SILVERBEES.NS", "name": "Silver BeES",          "category": "Commodity"},
-    {"ticker": "ICICIB22.NS",   "name": "Bharat 22 ETF",        "category": "Index"},
-    {"ticker": "BSLNIFTY.NS",   "name": "ABSL Nifty 50 ETF",    "category": "Index"},
-    {"ticker": "UTINIFTETF.NS", "name": "UTI Nifty 50 ETF",     "category": "Index"},
-    {"ticker": "MOM100.NS",     "name": "Motilal Midcap 100",   "category": "Index"},
-]
-
-
-def _fetch_etf_sync(etf: dict) -> dict | None:
-    try:
-        info = yf.Ticker(etf["ticker"]).info or {}
-        price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("navPrice")
-        prev  = info.get("previousClose")
-        if not price:
-            return None
-        chg = (price - prev) / prev * 100 if prev else 0
-        return _clean({
-            "ticker":   etf["ticker"],
-            "name":     etf["name"],
-            "category": etf["category"],
-            "price":    price,
-            "change_pct": round(chg, 2),
-        })
-    except Exception:
-        return None
-
-
-async def get_etf_data() -> list:
-    cached = _cache.get("etfs")
-    if cached is not None:
-        return cached
-
-    loop    = asyncio.get_event_loop()
-    tickers = [e["ticker"] for e in _ETFS]
-
-    quote_results, returns = await asyncio.gather(
-        asyncio.gather(*[loop.run_in_executor(_pool, _fetch_etf_sync, e) for e in _ETFS]),
-        loop.run_in_executor(_pool, _batch_returns_sync, tickers),
-    )
-
-    out = []
-    for q in quote_results:
-        if q is None:
-            continue
-        ret = returns.get(q["ticker"], {})
-        out.append({**q,
-            "return_1y": ret.get("return_1y"),
-            "return_3y": ret.get("return_3y"),
-            "return_5y": ret.get("return_5y"),
-        })
-
-    _cache.set("etfs", out)
-    return out
 
 
 async def get_cap_stocks(size: str) -> dict:

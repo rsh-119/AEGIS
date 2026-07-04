@@ -73,19 +73,6 @@ class _PrettyFormatter(logging.Formatter):
         )
 
 
-class _YFinanceFilter(logging.Filter):
-    """Drop known-noisy yfinance messages so the log stays actionable."""
-    _SUPPRESS = frozenset({
-        "401", "Invalid Crumb", "no price data found", "possibly delisted",
-        "Failed download", "no timezone found", "No data found",
-        "User is unable to access", "YFPricesMissingError",
-    })
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        msg = record.getMessage()
-        return not any(s in msg for s in self._SUPPRESS)
-
-
 def configure_logging(app_env: str = "development", log_level: str = "INFO") -> None:
     """
     Call once at application startup (before any logger is used).
@@ -106,12 +93,5 @@ def configure_logging(app_env: str = "development", log_level: str = "INFO") -> 
     root.addHandler(handler)
 
     # silence noisy libraries
-    for noisy in ("yfinance", "urllib3", "httpx", "asyncio", "httpcore", "hpack"):
+    for noisy in ("urllib3", "httpx", "asyncio", "httpcore", "hpack"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
-
-    # suppress known-expected yfinance errors (401 crumb, delisted tickers, etc.)
-    yf_filter = _YFinanceFilter()
-    logging.getLogger("yfinance").addFilter(yf_filter)
-    # yfinance sub-loggers that emit the download errors
-    for sub in ("yfinance.base", "yfinance.utils", "yfinance.multi"):
-        logging.getLogger(sub).addFilter(yf_filter)

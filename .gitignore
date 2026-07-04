@@ -37,3 +37,6 @@ Thumbs.db
 .claude/
 *.swp
 *.swo
+
+# ── Local reference docs — never pushed to GitHub ────────────────────────────
+PROJECT_KNOWLEDGE.md

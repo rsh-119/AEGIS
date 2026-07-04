@@ -90,7 +90,7 @@ async def readiness():
         "open_count": len(cb_open),
     }
     # Open circuits on critical services → not ready
-    _CRITICAL = {"indianapi", "yfinance", "database"}
+    _CRITICAL = {"indianapi", "database"}
     if any(name in _CRITICAL for name in cb_open):
         overall_ok = False
 

@@ -3,7 +3,7 @@ news_service.py — fetches up to 1 year of headlines for an Indian stock
 and scores sentiment locally with VADER (no API key needed).
 
 Sources:
-  1. yfinance .news  (fast, often India-relevant, includes publish timestamps)
+  1. IndianAPI /company_news  (fast, India-specific)
   2. Google News RSS — multiple search queries to maximise coverage
 """
 
@@ -18,9 +18,9 @@ from datetime import datetime, timezone
 from urllib.parse import quote_plus
 
 import feedparser
-import yfinance as yf
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+from app.services import indianapi_service
 from app.services.stock_service import normalise_ticker
 
 logger = logging.getLogger(__name__)
@@ -55,63 +55,50 @@ def _fmt_date(ts: float | None) -> str | None:
         return None
 
 
-def _fetch_sync(ticker: str, company: str | None) -> list[dict]:
+async def _fetch_indianapi_news(ticker: str, company: str | None, cutoff: float) -> tuple[list[dict], set[str]]:
+    """IndianAPI /company_news — India-specific, no yfinance involved."""
     t = normalise_ticker(ticker)
     name = company or t.replace(".NS", "").replace(".BO", "")
-    now = _now_ts()
-    cutoff = now - _ONE_YEAR
     items: list[dict] = []
     seen: set[str] = set()
-
-    # ── 1. yfinance news ────────────────────────────────────────────────────
     try:
-        for n in (yf.Ticker(t).news or [])[:30]:
-            content = n.get("content", n)
-            if isinstance(content, dict):
-                title = content.get("title")
-                publisher = (content.get("provider") or {}).get("displayName", "")
-                link = (content.get("canonicalUrl") or {}).get("url", "")
-                # New yfinance schema has pubDate inside content
-                raw_ts = content.get("pubDate")
-            else:
-                title = n.get("title")
-                publisher = n.get("publisher", "")
-                link = n.get("link", "")
-                raw_ts = n.get("providerPublishTime")
-
+        for n in await indianapi_service.get_company_news(name):
+            title = (n.get("title") or "").strip()
             if not title:
                 continue
-
-            # Parse timestamp
             ts: float | None = None
-            if raw_ts:
+            raw_published = n.get("published")
+            if raw_published:
                 try:
-                    ts = float(raw_ts)
-                    # If it looks like milliseconds (>1e11), convert
-                    if ts > 1e11:
-                        ts /= 1000
+                    # e.g. "Sat, 04 Jul 2026 10:49:42 IST" — drop tz abbreviation, treat as naive
+                    naive = raw_published.rsplit(" ", 1)[0]
+                    ts = datetime.strptime(naive, "%a, %d %b %Y %H:%M:%S").timestamp()
                 except Exception:
-                    pass
-
-            # Skip if older than 1 year
+                    ts = None
             if ts and ts < cutoff:
                 continue
-
             key = title[:60]
             if key in seen:
                 continue
             seen.add(key)
             items.append({
                 "title": title,
-                "publisher": publisher,
-                "link": link,
+                "publisher": n.get("source", ""),
+                "link": n.get("article_link", ""),
                 "date": _fmt_date(ts),
                 "ts": ts or 0,
             })
     except Exception as e:
-        logger.debug("yfinance news failed: %s", e)
+        logger.debug("IndianAPI company_news failed: %s", e)
+    return items, seen
 
-    # ── 2. Google News RSS — multiple queries for wider coverage ────────────
+
+def _fetch_rss_sync(ticker: str, company: str | None, cutoff: float, seen: set[str]) -> list[dict]:
+    t = normalise_ticker(ticker)
+    name = company or t.replace(".NS", "").replace(".BO", "")
+    items: list[dict] = []
+
+    # ── Google News RSS — multiple queries for wider coverage ────────────
     rss_queries = [
         f"{name} NSE stock",
         f"{name} earnings results quarterly",
@@ -155,10 +142,7 @@ def _fetch_sync(ticker: str, company: str | None) -> list[dict]:
         except Exception as e:
             logger.debug("google rss failed for query '%s': %s", q, e)
 
-    # Sort by recency (most recent first, unknown dates last)
-    items.sort(key=lambda x: x.get("ts", 0), reverse=True)
-
-    return items[:60]  # cap at 60 articles
+    return items
 
 
 def _score(items: list[dict]) -> dict:
@@ -188,7 +172,16 @@ def _score(items: list[dict]) -> dict:
 
 
 async def get_news_and_sentiment(ticker: str, company: str | None = None) -> dict:
+    cutoff = _now_ts() - _ONE_YEAR
+
+    india_items, seen = await _fetch_indianapi_news(ticker, company, cutoff)
+
     loop = asyncio.get_event_loop()
-    items = await loop.run_in_executor(_pool, _fetch_sync, ticker, company)
+    rss_items = await loop.run_in_executor(_pool, _fetch_rss_sync, ticker, company, cutoff, seen)
+
+    items = india_items + rss_items
+    items.sort(key=lambda x: x.get("ts", 0), reverse=True)
+    items = items[:60]
+
     sentiment = _score(items)
     return {"articles": items, "sentiment": sentiment}

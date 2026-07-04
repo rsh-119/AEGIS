@@ -1,24 +1,42 @@
 """/api/market/* — market overview: indices, gainers, losers, cap segments, sector drilldown."""
 
 from fastapi import APIRouter, HTTPException, Query
-from app.services import market_service, stock_service
+from app.services import market_service, stock_service, indianapi_service
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
-# Slug → yfinance symbol
+# Slug → IndianAPI index name. These are NOT yfinance symbols — IndianAPI's
+# historical_data does fuzzy company-name matching, so plain "SENSEX" actually
+# resolves to an unrelated instrument; "BSE SENSEX" is the verified-correct form.
 _INDEX_SYMBOLS: dict[str, str] = {
-    "nifty50":      "^NSEI",
-    "sensex":       "^BSESN",
-    "banknifty":    "^NSEBANK",
-    "niftyit":      "^CNXIT",
-    "niftypharma":  "^CNXPHARMA",
-    "niftyauto":    "^CNXAUTO",
-    "niftyfmcg":    "^CNXFMCG",
-    "niftymetal":   "^CNXMETAL",
-    "niftyenergy":  "^CNXENERGY",
-    "niftyinfra":   "^CNXINFRA",
-    "niftyrealty":  "^CNXREALTY",
-    "niftymedia":   "^CNXMEDIA",
+    "nifty50":      "NIFTY",
+    "sensex":       "BSE SENSEX",
+    "banknifty":    "NIFTY BANK",
+    "niftyit":      "NIFTY IT",
+    "niftypharma":  "NIFTY PHARMA",
+    "niftyauto":    "NIFTY AUTO",
+    "niftyfmcg":    "NIFTY FMCG",
+    "niftymetal":   "NIFTY METAL",
+    "niftyenergy":  "NIFTY ENERGY",
+    "niftyinfra":   "NIFTY INFRA",
+    "niftyrealty":  "NIFTY REALTY",
+    "niftymedia":   "NIFTY MEDIA",
+}
+
+# Slug → display name shown in /indices snapshot lookups for the quote portion
+_INDEX_DISPLAY_NAMES: dict[str, str] = {
+    "nifty50":      "NIFTY 50",
+    "sensex":       "SENSEX",
+    "banknifty":    "NIFTY Bank",
+    "niftyit":      "NIFTY IT",
+    "niftypharma":  "NIFTY PHARMA",
+    "niftyauto":    "NIFTY AUTO",
+    "niftyfmcg":    "NIFTY FMCG",
+    "niftymetal":   "NIFTY METAL",
+    "niftyenergy":  "NIFTY ENERGY",
+    "niftyinfra":   "NIFTY INFRA",
+    "niftyrealty":  "NIFTY REALTY",
+    "niftymedia":   "NIFTY MEDIA",
 }
 
 @router.get("/sectors")
@@ -44,14 +62,30 @@ async def overview():
 
 @router.get("/index/{slug}")
 async def index_data(slug: str, period: str = "1y"):
-    yf_sym = _INDEX_SYMBOLS.get(slug.lower())
-    if not yf_sym:
+    index_name = _INDEX_SYMBOLS.get(slug.lower())
+    if not index_name:
         raise HTTPException(status_code=404, detail=f"Unknown index: {slug}")
     if period not in {"1mo", "3mo", "6mo", "1y", "2y", "5y", "max"}:
         period = "1y"
-    hist = await stock_service.get_history(yf_sym, period)
-    quote = await stock_service.get_quote(yf_sym)
-    return {"slug": slug, "symbol": yf_sym, "history": hist, "quote": quote}
+
+    hist = await stock_service._history_from_indianapi(index_name, period)
+    if hist is None:
+        hist = {"symbol": index_name, "period": period, "error": "No history data available"}
+
+    display_name = _INDEX_DISPLAY_NAMES.get(slug.lower(), index_name)
+    indices = await indianapi_service.get_indices_data()
+    row = next((i for i in indices if i.get("name") == display_name), None)
+    quote = None
+    if row:
+        price = float(row["price"])
+        net_change = float(row.get("netChange") or 0)
+        quote = {
+            "current_price": price,
+            "previous_close": round(price - net_change, 2),
+            "pct_change": float(row.get("percentChange") or 0),
+        }
+
+    return {"slug": slug, "symbol": index_name, "history": hist, "quote": quote}
 
 
 @router.get("/cap/{size}")
@@ -60,12 +94,6 @@ async def cap_stocks(size: str):
     if size not in {"large", "mid", "small"}:
         raise HTTPException(status_code=400, detail="size must be large, mid, or small")
     return await market_service.get_cap_stocks(size)
-
-
-@router.get("/etfs")
-async def etf_data():
-    """Return curated NSE ETF list with 1Y/3Y/5Y price returns."""
-    return await market_service.get_etf_data()
 
 
 @router.get("/bulk-deals")

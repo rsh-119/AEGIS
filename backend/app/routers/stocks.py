@@ -151,7 +151,8 @@ async def full_analysis(ticker: str, period: str = "6mo"):
 async def peers(ticker: str):
     """Peer comparison + sector averages."""
     q = await stock_service.get_quote(ticker)
-    # When yfinance is rate-limited, return an empty peers shell rather than 503
+    # When the quote lookup fails (e.g. IndianAPI quota exhausted), return an
+    # empty peers shell rather than a 503
     if "error" in q and "current_price" not in q:
         return {"peers": [], "sector_avg": {}, "partial": True, "error": q["error"]}
     result = await peer_service.get_peer_comparison(
@@ -221,34 +222,7 @@ async def stock_announcements(ticker: str):
 
 @router.get("/{ticker}/corporate-actions")
 async def stock_corporate_actions(ticker: str):
-    """Dividends, splits, and bonus history — IndianAPI primary, yfinance fallback."""
-    import asyncio
+    """Dividends, splits, and bonus history from IndianAPI."""
     from app.services.indianapi_service import get_corporate_actions
     bare = ticker.upper().replace(".NS", "").replace(".BO", "")
-    data = await get_corporate_actions(bare)
-    if data:
-        return data
-
-    # yfinance fallback: dividends + stock splits
-    def _yf_actions():
-        import yfinance as yf
-        from app.core.yf_session import YF_SESSION
-        t = yf.Ticker(ticker, session=YF_SESSION)
-        out = []
-        try:
-            for date, amt in t.dividends.items():
-                if amt > 0:
-                    out.append({"type": "Dividend", "date": str(date.date()), "amount": round(float(amt), 2)})
-        except Exception:
-            pass
-        try:
-            for date, ratio in t.splits.items():
-                if ratio > 0:
-                    out.append({"type": "Split", "date": str(date.date()), "ratio": float(ratio)})
-        except Exception:
-            pass
-        out.sort(key=lambda x: x["date"], reverse=True)
-        return out[:30]
-
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _yf_actions)
+    return await get_corporate_actions(bare) or []

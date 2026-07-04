@@ -33,7 +33,6 @@ from app.routers import stocks, ai, portfolio, watchlist, market, chat, document
 from app.routers.auth import router as auth_router
 from app.routers.alerts import router as alerts_router
 from app.routers.health import router as health_router
-from app.routers import stream as stream_router
 
 settings = get_settings()
 
@@ -45,12 +44,11 @@ logger = logging.getLogger(__name__)
 async def _prewarm():
     """Warm the slowest caches in background so the first user request is fast.
 
-    NO Sugra calls here — pre-warm must not exhaust rate-limit keys so they
-    remain available for actual user requests (stock quotes, etc.).
+    IndianAPI has a metered monthly quota, so pre-warm is deliberately light —
+    it must not burn quota that real user requests would otherwise use.
 
-      R1 — no external API (MF/ETF lists from AMFI)
-      R2 — IndianAPI only: trending + most-active (fast, unlimited)
-      R3 — yfinance batch (175 tickers) + bulk deals + MF highlights
+      R1 — no external API (MF list from AMFI)
+      R2 — IndianAPI: trending + most-active + market overview + ETF/MF highlights
     """
     await asyncio.sleep(3)
     try:
@@ -61,15 +59,14 @@ async def _prewarm():
         logger.info("Cache: pre-warming…")
 
         # R1 — no external API calls
-        await asyncio.gather(get_mf_list(), get_etf_list(), return_exceptions=True)
+        await asyncio.gather(get_mf_list(), return_exceptions=True)
 
         # R2 — IndianAPI only (skipped when INDIANAPI_ENABLED=false)
         if settings.indianapi_enabled:
             await asyncio.gather(get_trending(), get_nse_most_active(), return_exceptions=True)
+            await asyncio.gather(get_etf_list(), get_mf_highlights("1y"), get_etf_highlights(), return_exceptions=True)
 
-        # R3 — yfinance batch for 175-ticker buckets; bulk deals; MF highlights
         await asyncio.gather(get_market_overview(), get_bulk_deals(), return_exceptions=True)
-        await asyncio.gather(get_mf_highlights("1y"), get_etf_highlights(), return_exceptions=True)
 
         logger.info("Cache: pre-warm done")
     except Exception as exc:
@@ -86,20 +83,15 @@ async def lifespan(app: FastAPI):
     if settings.readonly_mode:
         logger.warning("READONLY MODE is active — write operations are blocked.")
     asyncio.create_task(_prewarm())
-    # Start stream after pre-warm finishes (yfinance batch takes ~60s → 90s total)
-    from app.services.stream_service import exchange_stream
     from app.services.home_refresh_service import home_refresh
 
     async def _start_background():
         await asyncio.sleep(90)
-        exchange_stream.start()
         # HomeRefreshTask starts after the first prewarm so cache is already warm
         home_refresh.start()
 
     asyncio.create_task(_start_background())
     yield
-    from app.services.stream_service import exchange_stream as _es
-    _es.stop()
     home_refresh.stop()
     logger.info("Aegis API shutting down")
 
@@ -150,7 +142,6 @@ app.include_router(market.router)
 app.include_router(chat.router)
 app.include_router(documents.router)
 app.include_router(mf.router)
-app.include_router(stream_router.router)
 
 
 # ── Legacy health endpoint (kept for backward compat) ─────────────────────────

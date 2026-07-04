@@ -114,7 +114,6 @@ _NAME_TO_TICKER: dict[str, str] = {
 
 def _lookup_stocks(tickers: list[str]) -> list[dict]:
     """Fetch stock data from cache for tickers mentioned in the reply."""
-    from app.services.stream_service import price_cache
     from app.core.cache import cache
 
     results = []
@@ -124,18 +123,6 @@ def _lookup_stocks(tickers: list[str]) -> list[dict]:
         if ticker in seen:
             continue
         seen.add(ticker)
-
-        # Try price cache first (real-time stream data)
-        tick = price_cache.get(ticker)
-        if tick:
-            results.append({
-                "ticker":     ticker,
-                "symbol":     ticker.replace(".NS", "").replace(".BO", ""),
-                "price":      tick.get("price"),
-                "change_pct": tick.get("change_pct"),
-                "source":     "live",
-            })
-            continue
 
         # Try quote cache
         cached_q = cache.get(f"quote:{ticker}")

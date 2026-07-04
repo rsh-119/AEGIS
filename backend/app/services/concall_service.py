@@ -1,7 +1,7 @@
 """
 concall_service.py — generates AI concall summaries from quarterly financials.
 
-Uses yfinance quarterly income statement, balance sheet, and cashflow.
+Uses IndianAPI /historical_stats (quarter_results + annual balancesheet/cashflow).
 Sends structured data to Groq to produce plain-English summaries for
 each of the last 4 quarters, as if synthesizing a management concall.
 """
@@ -12,13 +12,12 @@ import asyncio
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date as _date
+from datetime import datetime
 from urllib.parse import quote_plus
 
 import feedparser
-import pandas as pd
-import yfinance as yf
 
+from app.services import indianapi_service
 from app.services.stock_service import normalise_ticker, _clean
 from app.services import cache_service
 from app.core.config import get_settings
@@ -32,137 +31,128 @@ _CONCALL_TTL_HOURS = 20  # quarterly data barely changes — regenerate once a d
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _fy_label(date: pd.Timestamp) -> str:
-    """Convert a quarter end date to Indian FY label like Q2 FY25."""
-    m, y = date.month, date.year
-    if m >= 4:
-        fy = y + 1
-        q = (m - 4) // 3 + 1
-    else:
-        fy = y
-        q = 4
-    return f"Q{q} FY{str(fy)[2:]}"
-
-
-def _safe(df: pd.DataFrame, row: str, col) -> float | None:
+def _parse_label(label: str) -> tuple[int, int] | None:
+    """'Mar 2024' -> (2024, 3)."""
     try:
-        if row not in df.index:
-            return None
-        val = df.loc[row, col]
-        return None if pd.isna(val) else float(val)
+        dt = datetime.strptime(label.strip(), "%b %Y")
+        return (dt.year, dt.month)
     except Exception:
         return None
 
 
+def _fy_label(label: str) -> str:
+    """Convert an IndianAPI quarter label like 'Mar 2024' to Indian FY label 'Q4 FY24'."""
+    parsed = _parse_label(label)
+    if not parsed:
+        return label
+    y, m = parsed
+    if m >= 4:
+        fy, q = y + 1, (m - 4) // 3 + 1
+    else:
+        fy, q = y, 4
+    return f"Q{q} FY{str(fy)[2:]}"
+
+
+def _nearest_annual(annual: dict, label: str) -> float | None:
+    """Find the closest fiscal-year-end value (annual data) at or before `label`."""
+    target = _parse_label(label)
+    if not target or not annual:
+        return None
+    candidates = [(p, v) for k, v in annual.items() if (p := _parse_label(k))]
+    if not candidates:
+        return None
+    at_or_before = [(p, v) for p, v in candidates if p <= target]
+    pick = max(at_or_before, key=lambda x: x[0]) if at_or_before else min(candidates, key=lambda x: x[0])
+    try:
+        return float(pick[1])
+    except (TypeError, ValueError):
+        return None
+
+
 def _cr(v: float | None) -> str | None:
-    """Format a raw INR value to Crores string."""
+    """Format a raw ₹-Crore value (IndianAPI already reports in Cr) to a display string."""
     if v is None:
         return None
-    return f"₹{v / 1e7:,.2f} Cr"
+    return f"₹{v:,.2f} Cr"
 
 
 # ── quarterly data fetch ──────────────────────────────────────────────────────
 
-def _fetch_sync(ticker: str) -> dict:
-    from app.core.yf_session import yf_blocked, yf_on_rate_limit
-    from yfinance.exceptions import YFRateLimitError
-    t = normalise_ticker(ticker)
-    if yf_blocked():
-        return {"error": "yfinance rate-limited — try again later"}
-    try:
-        stock = yf.Ticker(t)
-        info = stock.info or {}
-        company = info.get("longName") or info.get("shortName") or t.replace(".NS", "")
-        sector = info.get("sector", "")
-
-        income = stock.quarterly_income_stmt
-        balance = stock.quarterly_balance_sheet
-        cashflow = stock.quarterly_cashflow
-
-        if income is None or income.empty:
-            return {"error": "No quarterly financial data available for this stock on Yahoo Finance."}
-
-        # Take up to 8 columns to allow YoY comparison (4 current + 4 prior year)
-        all_cols = list(income.columns)
-        # Skip quarters that haven't ended yet (period_end > today)
-        today = _date.today()
-        all_cols = [c for c in all_cols if pd.Timestamp(c).date() <= today]
-        recent_cols = all_cols[:4]
-        prior_cols = all_cols[4:8] if len(all_cols) >= 8 else []
-
-        quarters: list[dict] = []
-        for i, col in enumerate(recent_cols):
-            date = pd.Timestamp(col)
-            label = _fy_label(date)
-
-            rev = _safe(income, "Total Revenue", col)
-            gross = _safe(income, "Gross Profit", col)
-            op_inc = _safe(income, "Operating Income", col)
-            net = _safe(income, "Net Income", col)
-            ebitda = _safe(income, "EBITDA", col)
-            interest = _safe(income, "Interest Expense", col)
-            tax = _safe(income, "Tax Provision", col)
-
-            total_debt = _safe(balance, "Total Debt", col) if balance is not None and not balance.empty else None
-            equity = (
-                _safe(balance, "Stockholders Equity", col) or _safe(balance, "Common Stock Equity", col)
-                if balance is not None and not balance.empty else None
-            )
-            ocf = _safe(cashflow, "Operating Cash Flow", col) if cashflow is not None and not cashflow.empty else None
-            capex = _safe(cashflow, "Capital Expenditure", col) if cashflow is not None and not cashflow.empty else None
-
-            q: dict = {
-                "label": label,
-                "period_end": date.strftime("%Y-%m-%d"),
-                "revenue_raw": rev,
-                "net_income_raw": net,
-                "revenue": _cr(rev),
-                "gross_profit": _cr(gross),
-                "operating_income": _cr(op_inc),
-                "net_income": _cr(net),
-                "ebitda": _cr(ebitda),
-                "interest_expense": _cr(interest),
-                "tax": _cr(tax),
-                "gross_margin_pct": round(gross / rev * 100, 1) if rev and gross else None,
-                "operating_margin_pct": round(op_inc / rev * 100, 1) if rev and op_inc else None,
-                "net_margin_pct": round(net / rev * 100, 1) if rev and net else None,
-                "total_debt": _cr(total_debt),
-                "equity": _cr(equity),
-                "operating_cashflow": _cr(ocf),
-                "capex": _cr(capex),
-                "free_cashflow": _cr((ocf or 0) + (capex or 0)) if ocf else None,
-            }
-
-            # YoY comparison with same quarter last year
-            if i < len(prior_cols):
-                pcol = prior_cols[i]
-                prev_rev = _safe(income, "Total Revenue", pcol)
-                prev_net = _safe(income, "Net Income", pcol)
-                prev_op = _safe(income, "Operating Income", pcol)
-                if prev_rev and rev:
-                    q["revenue_yoy_pct"] = round((rev - prev_rev) / abs(prev_rev) * 100, 1)
-                if prev_net and net:
-                    q["net_income_yoy_pct"] = round((net - prev_net) / abs(prev_net) * 100, 1)
-                if prev_op and op_inc:
-                    q["op_income_yoy_pct"] = round((op_inc - prev_op) / abs(prev_op) * 100, 1)
-                q["prev_revenue"] = _cr(prev_rev)
-                q["prev_net_income"] = _cr(prev_net)
-
-            quarters.append(q)
-
-        return _clean({"company": company, "sector": sector, "quarters": quarters})
-
-    except YFRateLimitError as e:
-        yf_on_rate_limit()
-        return {"error": "yfinance rate-limited — try again later"}
-    except Exception as e:
-        logger.error("concall fetch error %s: %s", ticker, e)
-        return {"error": str(e)}
-
-
 async def _fetch_quarterly(ticker: str) -> dict:
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(_pool, _fetch_sync, ticker)
+    t = normalise_ticker(ticker)
+    bare = t.replace(".NS", "").replace(".BO", "")
+
+    stats = await indianapi_service.get_historical_stats(bare, "all")
+    if not stats or not stats.get("quarter_results"):
+        return {"error": "No quarterly financial data available for this stock."}
+
+    stock_raw = await indianapi_service.get_stock(bare)
+    company = (stock_raw or {}).get("companyName") or bare
+    sector = (stock_raw or {}).get("industry") or ""
+
+    qr = stats["quarter_results"]
+    balance = stats.get("balancesheet") or {}
+    cashflow = stats.get("cashflow") or {}
+
+    all_labels = list(qr.get("Sales", {}).keys())   # oldest → newest
+    recent_labels = list(reversed(all_labels[-4:]))
+    # Same quarter one year earlier, for YoY — offset 4 back in the (chronological) list
+    idx = {lbl: i for i, lbl in enumerate(all_labels)}
+
+    quarters: list[dict] = []
+    for label in recent_labels:
+        rev = qr.get("Sales", {}).get(label)
+        op_inc = qr.get("Operating Profit", {}).get(label)
+        net = qr.get("Net Profit", {}).get(label)
+        interest = qr.get("Interest", {}).get(label)
+        opm = qr.get("OPM %", {}).get(label)
+
+        total_debt = _nearest_annual(balance.get("Borrowings", {}), label)
+        equity = (
+            (_nearest_annual(balance.get("Equity Capital", {}), label) or 0)
+            + (_nearest_annual(balance.get("Reserves", {}), label) or 0)
+        ) or None
+        ocf = _nearest_annual(cashflow.get("Cash from Operating Activity", {}), label)
+        fcf = _nearest_annual(cashflow.get("Free Cash Flow", {}), label)
+        capex = (ocf - fcf) if (ocf is not None and fcf is not None) else None
+
+        q: dict = {
+            "label": _fy_label(label),
+            "period_end": label,
+            "revenue_raw": rev,
+            "net_income_raw": net,
+            "revenue": _cr(rev),
+            "operating_income": _cr(op_inc),
+            "net_income": _cr(net),
+            "interest_expense": _cr(interest),
+            "operating_margin_pct": opm,
+            "net_margin_pct": round(net / rev * 100, 1) if rev and net else None,
+            "total_debt": _cr(total_debt),
+            "equity": _cr(equity),
+            "operating_cashflow": _cr(ocf),
+            "capex": _cr(capex),
+            "free_cashflow": _cr(fcf),
+        }
+
+        # YoY: same label one year earlier (4 quarters back in chronological order)
+        i = idx.get(label)
+        if i is not None and i >= 4:
+            prev_label = all_labels[i - 4]
+            prev_rev = qr.get("Sales", {}).get(prev_label)
+            prev_net = qr.get("Net Profit", {}).get(prev_label)
+            prev_op = qr.get("Operating Profit", {}).get(prev_label)
+            if prev_rev and rev:
+                q["revenue_yoy_pct"] = round((rev - prev_rev) / abs(prev_rev) * 100, 1)
+            if prev_net and net:
+                q["net_income_yoy_pct"] = round((net - prev_net) / abs(prev_net) * 100, 1)
+            if prev_op and op_inc:
+                q["op_income_yoy_pct"] = round((op_inc - prev_op) / abs(prev_op) * 100, 1)
+            q["prev_revenue"] = _cr(prev_rev)
+            q["prev_net_income"] = _cr(prev_net)
+
+        quarters.append(q)
+
+    return _clean({"company": company, "sector": sector, "quarters": quarters})
 
 
 # ── Earnings news per quarter ─────────────────────────────────────────────────

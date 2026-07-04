@@ -44,15 +44,18 @@ logger = logging.getLogger(__name__)
 
 # ── TTL registry (seconds) ────────────────────────────────────────────────────
 TTL: dict[str, int] = {
-    "prices":    120,     # 2 min   — live tick; stream keeps it fresher anyway
-    "history":   3600,    # 1 h     — OHLCV candles rarely change intraday
-    "market":    300,     # 5 min   — indices/movers
-    "sector":    1800,    # 30 min
-    "peers":     1800,    # 30 min
+    # NOTE: quote/history/sector/peers/etf TTLs are intentionally generous —
+    # IndianAPI is the sole live-data source with a metered monthly quota
+    # (~10k requests/month), so every cache hit avoided is quota saved.
+    "prices":    600,     # 10 min  — live tick / quote data
+    "history":   21600,   # 6 h     — OHLCV candles are daily granularity anyway
+    "market":    300,     # 5 min   — indices/movers (NSE-direct, not quota-metered)
+    "sector":    21600,   # 6 h
+    "peers":     21600,   # 6 h     — peer fundamentals barely move intraday
     "mf_nav":    86400,   # 24 h    — NAV is published once per day by AMFI, never changes intraday
     "mf_list":   86400,   # 24 h
-    "etf":       300,     # 5 min   — ETF prices are live
-    "nifty50":   3600,    # 1 h
+    "etf":       3600,    # 1 h     — ETF prices now sourced from IndianAPI (metered)
+    "nifty50":   21600,   # 6 h
     "ai":        86400,   # 24 h    — one AI analysis per day per ticker
     "forecast":  3600,    # 1 h     — ML forecast stable intraday
     "search":    900,     # 15 min  — autocomplete results
