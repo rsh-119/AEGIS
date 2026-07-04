@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import clsx from "clsx";
+import { Card } from "@/components/ui/card";
 
 // ── types ──────────────────────────────────────────────────────────────────────
 type Promise = { commitment: string; timeline: string; metric: string };
@@ -579,7 +580,7 @@ export default function DocumentPage() {
 
       {/* Loading state */}
       {(mode === "loading-pdf" || mode === "loading-analysis") && (
-        <div className="card mx-auto max-w-lg p-8 text-center space-y-5">
+        <Card className="mx-auto max-w-lg p-8 text-center space-y-5">
           <div className="mx-auto h-12 w-12 rounded-2xl bg-saffron/10 flex items-center justify-center">
             <Sparkles className="h-6 w-6 text-saffron animate-pulse" />
           </div>
@@ -600,19 +601,19 @@ export default function DocumentPage() {
             <div className="h-full rounded-full bg-gradient-to-r from-saffron to-up animate-pulse" style={{ width: mode === "loading-pdf" ? "30%" : "70%" }} />
           </div>
           <p className="text-xs text-muted">15–30 seconds for large documents</p>
-        </div>
+        </Card>
       )}
 
       {/* Error */}
       {error && (
-        <div className="card mx-auto max-w-lg p-5 border-down/25 bg-down/5 flex items-start gap-3">
+        <Card className="mx-auto max-w-lg p-5 border-down/25 bg-down/5 flex items-start gap-3">
           <AlertTriangle className="h-5 w-5 shrink-0 text-down mt-0.5" />
           <div className="flex-1">
             <p className="font-medium text-down">Something went wrong</p>
             <p className="text-sm text-fg/80 mt-0.5">{error}</p>
           </div>
           <button onClick={() => setError("")} className="text-muted hover:text-fg"><X className="h-4 w-4" /></button>
-        </div>
+        </Card>
       )}
 
       {/* Landing — search + upload or paste */}

@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { AnimatedGradient } from "@/components/ui/animated-gradient-with-svg";
+import { Card } from "@/components/ui/card";
 
 /* ─── Types ──────────────────────────────────────── */
 type Stock = {
@@ -392,7 +393,7 @@ function SectionCard({
   const accent = topBorder ? accentColors[topBorder] : "from-saffron";
   const gradColors = CARD_GRADIENT_COLORS[topBorder ?? "neutral"];
   return (
-    <div className="card relative overflow-hidden">
+    <Card className="relative overflow-hidden">
       {/* Animated gradient background — light mode only; dark mode uses CSS rim gradient */}
       <div className="dark:hidden">
         <AnimatedGradient colors={gradColors} speed={0.03} blur="heavy" />
@@ -418,7 +419,7 @@ function SectionCard({
         )}
       </div>
       <div className="relative">{children}</div>
-    </div>
+    </Card>
   );
 }
 
@@ -747,10 +748,11 @@ function FeatureCard({
   icon: React.ReactNode; title: string; body: string; href: string; color: string; accentColor: string;
 }) {
   return (
-    <Link
-      href={href}
-      className="card card-hover group relative flex flex-col gap-4 overflow-hidden p-5"
+    <Card
+      asChild
+      className="group relative flex flex-col gap-4 overflow-hidden p-5 transition-all duration-200 hover:-translate-y-px hover:border-[rgba(21,128,61,0.22)] hover:shadow-[var(--shadow-md),0_0_0_1px_rgba(21,128,61,0.07)] dark:hover:border-[rgba(74,222,128,0.22)] dark:hover:shadow-[var(--shadow-md),0_0_0_1px_rgba(74,222,128,0.08),inset_0_1px_0_rgba(255,255,255,0.05)]"
     >
+    <Link href={href}>
       {/* Top gradient line */}
       <div className={clsx("absolute inset-x-0 top-0 h-[2px] opacity-0 transition-opacity duration-300 group-hover:opacity-100", accentColor)} />
 
@@ -768,6 +770,7 @@ function FeatureCard({
         Explore <ChevronRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
       </div>
     </Link>
+    </Card>
   );
 }
 

@@ -6,6 +6,7 @@ import { SearchBox } from "@/components/SearchBox";
 import { LoginPrompt } from "@/components/LoginPrompt";
 import { useAuth } from "@/lib/auth";
 import { Trash2 } from "lucide-react";
+import { Card } from "@/components/ui/card";
 
 export default function WatchlistPage() {
   const { user, isLoading: authLoading } = useAuth();
@@ -37,10 +38,10 @@ export default function WatchlistPage() {
         </div>
       </div>
 
-      <div className="card overflow-hidden">
+      <Card className="overflow-hidden">
         <table className="w-full text-sm">
           <thead className="border-b border-border text-muted">
-            <tr className="[&>th]:px-5 [&>th]:py-3 [&>th]:text-left [&>th]:label">
+            <tr className="[&>th]:px-5 [&>th]:py-3 [&>th]:text-left [&>th]:text-[10px] [&>th]:font-normal [&>th]:uppercase [&>th]:tracking-[0.1px]">
               <th>Asset</th>
               <th className="!text-right">LTP</th>
               <th className="!text-right">Change</th>
@@ -71,7 +72,7 @@ export default function WatchlistPage() {
             ))}
           </tbody>
         </table>
-      </div>
+      </Card>
     </div>
   );
 }

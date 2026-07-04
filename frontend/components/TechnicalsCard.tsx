@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { inr } from "@/lib/api";
 import clsx from "clsx";
+import { Card } from "@/components/ui/card";
 
 type Candle = {
   close: number;
@@ -244,9 +245,9 @@ export function TechnicalsCard({
 
   if (!candles.length || !currentPrice) {
     return (
-      <div className="card p-5">
+      <Card className="p-5">
         <p className="text-sm text-muted">Technicals unavailable</p>
-      </div>
+      </Card>
     );
   }
 
@@ -254,7 +255,7 @@ export function TechnicalsCard({
   const oscIndicators = indicators.filter((i) => i.group === "osc");
 
   return (
-    <div className="card overflow-hidden">
+    <Card className="overflow-hidden">
       {/* Header */}
       <div className="border-b border-border bg-raised/40 px-4 py-3">
         <h3 className="text-sm font-semibold">Technical Indicators</h3>
@@ -311,6 +312,6 @@ export function TechnicalsCard({
           ))}
         </div>
       </div>
-    </div>
+    </Card>
   );
 }

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { ChartCard } from "@/components/ui/animated-card-chart";
+import { Card } from "@/components/ui/card";
 
 /* ─── Types ──────────────────────────────────────── */
 type Candle = { date: string; close: number; ma20: number | null; ma50: number | null };
@@ -328,7 +329,7 @@ function SectorDetail({ cfg }: { cfg: SectorCfg }) {
 
       {/* Sector index chart (if available) */}
       {cfg.indexSlug && (
-        <div className="card overflow-hidden">
+        <Card className="overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
             <div>
               <p className="text-xs text-muted">Sector Index</p>
@@ -366,11 +367,11 @@ function SectorDetail({ cfg }: { cfg: SectorCfg }) {
               <PriceChart candles={indexCandles} up={indexUp} />
             )}
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Tab list */}
-      <div className="card overflow-hidden">
+      <Card className="overflow-hidden">
         {/* Tab header */}
         <div className="flex items-center justify-between border-b border-border">
           <div className="flex overflow-x-auto">
@@ -432,7 +433,7 @@ function SectorDetail({ cfg }: { cfg: SectorCfg }) {
             ))}
           </div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

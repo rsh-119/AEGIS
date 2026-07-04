@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { ChartCard } from "@/components/ui/animated-card-chart";
+import { Card } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 
 type Stock = {
   ticker: string;
@@ -120,10 +122,10 @@ function GrowthCell({ value, multiply100 = false }: { value: number | null; mult
 
 function StatBox({ label, value, up }: { label: string; value: string; up?: boolean }) {
   return (
-    <div className="metric-card text-center">
-      <p className="label">{label}</p>
+    <Card className="p-4 cursor-default select-none text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-[rgba(21,128,61,0.22)] hover:shadow-[var(--shadow-md),var(--shadow-glow)]">
+      <Label className="block">{label}</Label>
       <p className={clsx("nums mt-1.5 text-xl font-bold", up ? "text-up" : "text-fg")}>{value}</p>
-    </div>
+    </Card>
   );
 }
 
@@ -206,9 +208,9 @@ export default function SectorPage({ params }: { params: Promise<{ name: string 
       )}
 
       {error && (
-        <div className="card p-8 text-center">
+        <Card className="p-8 text-center">
           <p className="text-muted">Could not load sector data. Try again shortly.</p>
-        </div>
+        </Card>
       )}
 
       {sortedStocks.length > 0 && (
@@ -343,10 +345,10 @@ export default function SectorPage({ params }: { params: Promise<{ name: string 
       )}
 
       {data?.stocks?.length === 0 && !isLoading && (
-        <div className="card p-8 text-center">
+        <Card className="p-8 text-center">
           <Building2 className="mx-auto mb-3 h-8 w-8 text-muted/30" />
           <p className="text-muted">No tracked stocks found for <strong>{sector}</strong>.</p>
-        </div>
+        </Card>
       )}
     </div>
   );

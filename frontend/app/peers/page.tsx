@@ -6,6 +6,7 @@ import Link from "next/link";
 import { fetcher, inrCompact, num } from "@/lib/api";
 import { GitCompareArrows, ChevronRight, Search, TrendingUp, TrendingDown, Users } from "lucide-react";
 import clsx from "clsx";
+import { Card } from "@/components/ui/card";
 
 /* ─── Types ──────────────────────────────────────── */
 type SectorMeta = { sector: string; count: number; tickers: string[] };
@@ -96,7 +97,7 @@ function SectorList({ selected, onSelect }: { selected: string | null; onSelect:
   const sectors = (data ?? []).filter((s) => s.sector.toLowerCase().includes(filter.toLowerCase()));
 
   return (
-    <div className="card flex flex-col overflow-hidden">
+    <Card className="flex flex-col overflow-hidden">
       <div className="border-b border-border bg-raised/40 px-4 py-3">
         <h2 className="text-sm font-semibold">NSE/BSE Sectors</h2>
         <div className="relative mt-2">
@@ -134,7 +135,7 @@ function SectorList({ selected, onSelect }: { selected: string | null; onSelect:
               </button>
             ))}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -154,7 +155,7 @@ function StockPicker({
   });
 
   return (
-    <div className="card flex flex-col overflow-hidden">
+    <Card className="flex flex-col overflow-hidden">
       <div className="border-b border-border bg-raised/40 px-4 py-3">
         <h2 className="text-sm font-semibold">{sector}</h2>
         <p className="text-xs text-muted">Pick a stock · sorted by market cap</p>
@@ -201,7 +202,7 @@ function StockPicker({
               );
             })}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -211,9 +212,9 @@ function ComparisonTable({ rows, targetTicker, sector }: {
 }) {
   if (!rows.length) {
     return (
-      <div className="card flex items-center justify-center p-8 text-center">
+      <Card className="flex items-center justify-center p-8 text-center">
         <p className="text-sm text-muted">No comparison data available.</p>
-      </div>
+      </Card>
     );
   }
 
@@ -245,7 +246,7 @@ function ComparisonTable({ rows, targetTicker, sector }: {
   const peerCount = rows.filter((r) => r.ticker !== targetTicker).length;
 
   return (
-    <div className="card overflow-hidden">
+    <Card className="overflow-hidden">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-raised/40 px-5 py-3">
         <div>
@@ -357,7 +358,7 @@ function ComparisonTable({ rows, targetTicker, sector }: {
           </tbody>
         </table>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -460,20 +461,20 @@ export default function PeersPage() {
             partial={isPartial}
           />
         ) : (
-          <div className="card flex items-center justify-center p-8 text-center">
+          <Card className="flex items-center justify-center p-8 text-center">
             <div>
               <Users className="mx-auto mb-2 h-7 w-7 text-muted" />
               <p className="text-sm font-medium text-muted">Select a sector</p>
               <p className="text-xs text-muted/60">to see stocks</p>
             </div>
-          </div>
+          </Card>
         )}
 
         {/* Comparison table */}
         {ticker && comparisonRows.length ? (
           <ComparisonTable rows={comparisonRows} targetTicker={ticker} sector={sector ?? ""} />
         ) : (
-          <div className="card flex items-center justify-center p-8 text-center">
+          <Card className="flex items-center justify-center p-8 text-center">
             <div>
               <GitCompareArrows className="mx-auto mb-2 h-7 w-7 text-muted" />
               <p className="text-sm font-medium text-muted">
@@ -483,7 +484,7 @@ export default function PeersPage() {
                 Compares against top 7 sector stocks by market cap
               </p>
             </div>
-          </div>
+          </Card>
         )}
       </div>
     </div>

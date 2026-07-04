@@ -20,6 +20,10 @@ import { ChartCard } from "@/components/ui/animated-card-chart";
 import Link from "next/link";
 import { Plus, ExternalLink, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, BarChart3, CheckCircle2, AlertTriangle, AlertCircle, Info, Newspaper, Target, Eye, Zap, Bell, Calendar, ArrowUpRight, Gift } from "lucide-react";
 import clsx from "clsx";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 
 const PERIODS = [
   { label: "1M", value: "1mo" },
@@ -123,19 +127,19 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="font-display text-xl sm:text-2xl md:text-3xl font-bold leading-tight">{q.company_name}</h1>
-            <span className="pill bg-raised text-muted ring-1 ring-border text-xs">{q.exchange}</span>
+            <Badge className="bg-raised text-muted ring-1 ring-border text-xs">{q.exchange}</Badge>
           </div>
           <div className="mt-1.5 flex items-center gap-2 flex-wrap text-muted">
             <span className="font-mono text-xs">{symbol}</span>
             {q.sector && (
               <>
                 <span className="text-xs">·</span>
-                <Link
-                  href={`/sector/${encodeURIComponent(q.sector)}`}
-                  className="pill bg-raised text-muted ring-1 ring-border hover:bg-saffron/10 hover:text-saffron hover:ring-saffron/30 transition-colors text-xs"
+                <Badge
+                  asChild
+                  className="bg-raised text-muted ring-1 ring-border hover:bg-saffron/10 hover:text-saffron hover:ring-saffron/30 transition-colors text-xs"
                 >
-                  {q.sector}
-                </Link>
+                  <Link href={`/sector/${encodeURIComponent(q.sector)}`}>{q.sector}</Link>
+                </Badge>
               </>
             )}
             {q.industry && q.industry !== q.sector && (
@@ -143,13 +147,15 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
             )}
           </div>
           <div className="mt-2 flex gap-2 flex-wrap">
-            <button onClick={addToWatchlist} className="btn-ghost flex items-center gap-1.5 text-xs py-1.5 px-3">
+            <Button variant="ghost" onClick={addToWatchlist} className="flex items-center gap-1.5 text-xs py-1.5 px-3">
               <Plus className="h-3.5 w-3.5" /> Watchlist
-            </button>
+            </Button>
             {q.website && (
-              <a href={q.website} target="_blank" rel="noopener" className="btn-ghost flex items-center gap-1.5 text-xs py-1.5 px-3">
-                <ExternalLink className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Website</span>
-              </a>
+              <Button variant="ghost" asChild className="flex items-center gap-1.5 text-xs py-1.5 px-3">
+                <a href={q.website} target="_blank" rel="noopener">
+                  <ExternalLink className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Website</span>
+                </a>
+              </Button>
             )}
           </div>
         </div>
@@ -193,8 +199,8 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
 
           {/* About company */}
           {q.summary && (
-            <div className="card p-5">
-              <p className="label mb-2">About</p>
+            <Card className="p-5">
+              <Label className="mb-2 block">About</Label>
               <AboutParagraph text={q.summary} />
               {q.officers?.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t border-border pt-3">
@@ -206,7 +212,7 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
                   ))}
                 </div>
               )}
-            </div>
+            </Card>
           )}
 
           {/* Chart card — Price / Volume tabs */}
@@ -295,7 +301,7 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
         </div>
 
         {/* RIGHT: All financial numbers in a 2-column compact grid */}
-        <div className="card overflow-hidden lg:col-span-2">
+        <Card className="overflow-hidden lg:col-span-2">
           <div className="border-b border-border bg-raised/40 px-4 py-3">
             <h2 className="text-sm font-semibold">Financial Overview</h2>
           </div>
@@ -339,13 +345,13 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
                     idx >= 2 && "border-t border-border"
                   )}
                 >
-                  <span className="label text-[10px]">{m.label}</span>
+                  <Label className="text-[10px]">{m.label}</Label>
                   <span className={clsx("nums text-xs sm:text-sm font-bold leading-tight", m.color ?? "text-fg")}>{m.value}</span>
                 </div>
               ))}
             </div>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* ── Valuation Charts + Shareholding ── */}
@@ -559,9 +565,9 @@ function SignalCard({ signal }: { signal: RatioSignal }) {
       </div>
       <p className="text-xs leading-relaxed text-fg/75">{signal.detail}</p>
       <div className="mt-auto flex items-center justify-between gap-2">
-        <span className={clsx("pill ring-1 text-[10px] font-bold", styles.pill)}>
+        <Badge className={clsx("ring-1 text-[10px] font-bold", styles.pill)}>
           {signal.metric}
-        </span>
+        </Badge>
         {signal.severity === "high" && (
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted/60">HIGH</span>
         )}
@@ -572,11 +578,11 @@ function SignalCard({ signal }: { signal: RatioSignal }) {
 
 function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="metric-card">
-      <p className="label">{label}</p>
+    <Card className="p-4 cursor-default select-none transition-all duration-200 hover:-translate-y-0.5 hover:border-[rgba(21,128,61,0.22)] hover:shadow-[var(--shadow-md),var(--shadow-glow)]">
+      <Label className="block">{label}</Label>
       <p className="nums mt-1.5 text-lg font-bold">{value}</p>
       {sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}
-    </div>
+    </Card>
   );
 }
 
@@ -584,7 +590,7 @@ function Section({ label, text }: { label: string; text?: string }) {
   if (!text) return null;
   return (
     <div>
-      <p className="label mb-1">{label}</p>
+      <Label className="mb-1 block">{label}</Label>
       <p className="text-sm leading-relaxed text-fg/90">{text}</p>
     </div>
   );
@@ -624,17 +630,17 @@ function AIAnalysisCard({ ai }: { ai: Record<string, any> }) {
 
   if (ai.error) {
     return (
-      <div className="card p-5">
+      <Card className="p-5">
         <h2 className="font-semibold mb-3">AI Analysis</h2>
         <p className="text-sm text-muted">{ai.error}</p>
-      </div>
+      </Card>
     );
   }
 
   const hasRichData = ai.key_metrics?.length > 0 || ai.bull_case || ai.what_to_watch?.length > 0;
 
   return (
-    <div className="card p-5 space-y-6">
+    <Card className="p-5 space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -645,10 +651,10 @@ function AIAnalysisCard({ ai }: { ai: Record<string, any> }) {
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {ai.valuation_grade && (
-            <span className={`pill ring-1 text-xs font-bold ${gradeStyle}`}>Grade {ai.valuation_grade}</span>
+            <Badge className={`ring-1 text-xs font-bold ${gradeStyle}`}>Grade {ai.valuation_grade}</Badge>
           )}
           {ai.verdict && (
-            <span className={`pill ring-1 text-xs ${verdictStyle}`}>{ai.verdict}</span>
+            <Badge className={`ring-1 text-xs ${verdictStyle}`}>{ai.verdict}</Badge>
           )}
         </div>
       </div>
@@ -664,7 +670,7 @@ function AIAnalysisCard({ ai }: { ai: Record<string, any> }) {
       {/* Key metrics grid */}
       {ai.key_metrics?.length > 0 && (
         <div>
-          <p className="label mb-3">Key Metrics at a Glance</p>
+          <Label className="mb-3 block">Key Metrics at a Glance</Label>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {(ai.key_metrics as AiMetric[]).map((m) => (
               <div
@@ -689,9 +695,9 @@ function AIAnalysisCard({ ai }: { ai: Record<string, any> }) {
         <div className="grid gap-4 sm:grid-cols-2">
           {ai.risks?.length > 0 && (
             <div>
-              <p className="label mb-2 flex items-center gap-1.5 text-down">
+              <Label className="mb-2 flex items-center gap-1.5 text-down">
                 <AlertTriangle className="h-3.5 w-3.5" /> Risks
-              </p>
+              </Label>
               <ul className="space-y-2">
                 {(ai.risks as string[]).map((r, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-fg/80">
@@ -704,9 +710,9 @@ function AIAnalysisCard({ ai }: { ai: Record<string, any> }) {
           )}
           {ai.positives?.length > 0 && (
             <div>
-              <p className="label mb-2 flex items-center gap-1.5 text-up">
+              <Label className="mb-2 flex items-center gap-1.5 text-up">
                 <CheckCircle2 className="h-3.5 w-3.5" /> Positives
-              </p>
+              </Label>
               <ul className="space-y-2">
                 {(ai.positives as string[]).map((p, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-fg/80">
@@ -725,17 +731,17 @@ function AIAnalysisCard({ ai }: { ai: Record<string, any> }) {
         <div className="grid gap-3 sm:grid-cols-2">
           {ai.bull_case && (
             <div className="rounded-xl border border-up/20 bg-up/5 p-3.5">
-              <p className="label mb-1.5 flex items-center gap-1.5 text-up">
+              <Label className="mb-1.5 flex items-center gap-1.5 text-up">
                 <TrendingUp className="h-3.5 w-3.5" /> Bull Case
-              </p>
+              </Label>
               <p className="text-sm leading-relaxed text-fg/85">{ai.bull_case}</p>
             </div>
           )}
           {ai.bear_case && (
             <div className="rounded-xl border border-down/20 bg-down/5 p-3.5">
-              <p className="label mb-1.5 flex items-center gap-1.5 text-down">
+              <Label className="mb-1.5 flex items-center gap-1.5 text-down">
                 <TrendingDown className="h-3.5 w-3.5" /> Bear Case
-              </p>
+              </Label>
               <p className="text-sm leading-relaxed text-fg/85">{ai.bear_case}</p>
             </div>
           )}
@@ -748,9 +754,9 @@ function AIAnalysisCard({ ai }: { ai: Record<string, any> }) {
       {/* What to watch */}
       {ai.what_to_watch?.length > 0 && (
         <div>
-          <p className="label mb-2 flex items-center gap-1.5">
+          <Label className="mb-2 flex items-center gap-1.5">
             <Eye className="h-3.5 w-3.5 text-saffron" /> What to Watch
-          </p>
+          </Label>
           <ul className="space-y-2">
             {(ai.what_to_watch as string[]).map((w, i) => (
               <li key={i} className="flex items-start gap-2.5 text-sm text-fg/80">
@@ -769,7 +775,7 @@ function AIAnalysisCard({ ai }: { ai: Record<string, any> }) {
           <Section label="Outlook" text={ai.outlook} />
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -878,7 +884,7 @@ function SplitNewsCard({ articles, sentiment }: { articles: any[]; sentiment: an
     sentiment?.label === "Negative" ? "text-down" : "text-saffron";
 
   return (
-    <div className="card overflow-hidden">
+    <Card className="overflow-hidden">
       {/* Header with sentiment inline */}
       <div className="flex items-center justify-between border-b border-border bg-raised/40 px-5 py-3">
         <div className="flex items-center gap-2">
@@ -906,7 +912,7 @@ function SplitNewsCard({ articles, sentiment }: { articles: any[]; sentiment: an
         <div>
           <div className="mb-2.5 flex items-center gap-1.5">
             <TrendingUp className="h-3.5 w-3.5 text-up" />
-            <span className="label text-up">Positive ({positive.length})</span>
+            <Label className="text-up">Positive ({positive.length})</Label>
           </div>
           <NewsSlider articles={positive} color="up" />
         </div>
@@ -915,12 +921,12 @@ function SplitNewsCard({ articles, sentiment }: { articles: any[]; sentiment: an
         <div>
           <div className="mb-2.5 flex items-center gap-1.5">
             <TrendingDown className="h-3.5 w-3.5 text-down" />
-            <span className="label text-down">Negative ({negative.length})</span>
+            <Label className="text-down">Negative ({negative.length})</Label>
           </div>
           <NewsSlider articles={negative} color="down" />
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -941,7 +947,7 @@ function AnalystTargetCard({ targets, currentPrice }: { targets: any; currentPri
   const sellW = total ? Math.round((sell / total) * 100) : 0;
 
   return (
-    <div className="card p-5 space-y-4">
+    <Card className="p-5 space-y-4">
       <div className="flex items-center gap-2">
         <Target className="h-4 w-4 text-saffron" />
         <h3 className="font-semibold text-sm">Analyst Price Targets</h3>
@@ -991,7 +997,7 @@ function AnalystTargetCard({ targets, currentPrice }: { targets: any; currentPri
           </div>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -1002,7 +1008,7 @@ function AnalystForecastCard({ forecasts }: { forecasts: any }) {
   if (periods.length === 0) return null;
 
   return (
-    <div className="card p-5 space-y-4">
+    <Card className="p-5 space-y-4">
       <div className="flex items-center gap-2">
         <TrendingUp className="h-4 w-4 text-blue-500" />
         <h3 className="font-semibold text-sm">Analyst Forecasts</h3>
@@ -1041,7 +1047,7 @@ function AnalystForecastCard({ forecasts }: { forecasts: any }) {
           </tbody>
         </table>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -1057,7 +1063,7 @@ function AnnouncementsCard({ items }: { items: any[] }) {
   };
 
   return (
-    <div className="card p-5 space-y-3">
+    <Card className="p-5 space-y-3">
       <div className="flex items-center gap-2">
         <Bell className="h-4 w-4 text-saffron" />
         <h3 className="font-semibold text-sm">Announcements</h3>
@@ -1082,13 +1088,13 @@ function AnnouncementsCard({ items }: { items: any[] }) {
                 )}
               </div>
               {type && (
-                <span className={clsx("pill ring-1 text-[10px] shrink-0 mt-0.5", typeStyle)}>{type}</span>
+                <Badge className={clsx("ring-1 text-[10px] shrink-0 mt-0.5", typeStyle)}>{type}</Badge>
               )}
             </div>
           );
         })}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -1104,7 +1110,7 @@ function CorporateActionsCard({ items }: { items: any[] }) {
   };
 
   return (
-    <div className="card p-5 space-y-3">
+    <Card className="p-5 space-y-3">
       <div className="flex items-center gap-2">
         <Gift className="h-4 w-4 text-up" />
         <h3 className="font-semibold text-sm">Corporate Actions</h3>
@@ -1131,7 +1137,7 @@ function CorporateActionsCard({ items }: { items: any[] }) {
                 <tr key={i} className="border-b border-border/50 hover:bg-raised/50 transition-colors last:border-0">
                   <td className="py-2 px-2 text-muted">{date || "—"}</td>
                   <td className="py-2 px-2">
-                    <span className={clsx("pill ring-1 text-[10px]", typeStyle)}>{type}</span>
+                    <Badge className={clsx("ring-1 text-[10px]", typeStyle)}>{type}</Badge>
                   </td>
                   <td className="py-2 px-2 text-right nums font-medium">{String(details)}</td>
                 </tr>
@@ -1140,7 +1146,7 @@ function CorporateActionsCard({ items }: { items: any[] }) {
           </tbody>
         </table>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -1160,11 +1166,11 @@ function LoadingState() {
 
 function ErrorState({ symbol }: { symbol: string }) {
   return (
-    <div className="card p-8 text-center">
+    <Card className="p-8 text-center">
       <h2 className="font-display text-xl">Couldn't load {symbol}</h2>
       <p className="mt-2 text-sm text-muted">
         Yahoo Finance may be rate-limited, or this isn't a valid NSE/BSE symbol. Try again shortly.
       </p>
-    </div>
+    </Card>
   );
 }

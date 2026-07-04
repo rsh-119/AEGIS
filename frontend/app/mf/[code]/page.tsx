@@ -12,6 +12,7 @@ import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis,
   Tooltip, Legend, CartesianGrid, ReferenceLine,
 } from "recharts";
+import { Card } from "@/components/ui/card";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Period = "1y" | "3y" | "5y" | "all";
@@ -133,7 +134,7 @@ function CompareChart({
   const niftyEnd = normNifty.at(-1)?.value;
 
   return (
-    <div className="card p-5">
+    <Card className="p-5">
       <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
         <h2 className="font-semibold text-sm">Performance vs Nifty 50 (Base 100)</h2>
         <div className="flex rounded-xl bg-raised p-1 ring-1 ring-border">
@@ -190,7 +191,7 @@ function CompareChart({
         </ResponsiveContainer>
       </div>
       <p className="mt-2 text-[10px] text-muted">Both series indexed to 100 at period start · For information only</p>
-    </div>
+    </Card>
   );
 }
 
@@ -223,10 +224,10 @@ function MFDetailView({ code }: { code: number }) {
   );
 
   if (!data) return (
-    <div className="card p-8 text-center">
+    <Card className="p-8 text-center">
       <AlertTriangle className="mx-auto mb-3 h-7 w-7 text-muted" />
       <p className="text-muted">Could not load this fund.</p>
-    </div>
+    </Card>
   );
 
   const fundPts  = data.chart.map(p => ({ date: p.date, value: p.nav }));
@@ -235,7 +236,7 @@ function MFDetailView({ code }: { code: number }) {
   return (
     <div className="space-y-5">
       {/* Header card */}
-      <div className="card p-5">
+      <Card className="p-5">
         <div className="flex items-start gap-4">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-saffron/10 ring-1 ring-saffron/20">
             <Layers className="h-6 w-6 text-saffron" />
@@ -263,7 +264,7 @@ function MFDetailView({ code }: { code: number }) {
             </div>
           )}
         </div>
-      </div>
+      </Card>
 
       {/* Return badges */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -319,10 +320,10 @@ function ETFDetailView({ ticker }: { ticker: string }) {
   );
 
   if (!data) return (
-    <div className="card p-8 text-center">
+    <Card className="p-8 text-center">
       <AlertTriangle className="mx-auto mb-3 h-7 w-7 text-muted" />
       <p className="text-muted">Could not load this ETF.</p>
-    </div>
+    </Card>
   );
 
   const up = (data.day_change_pct ?? 0) >= 0;
@@ -332,7 +333,7 @@ function ETFDetailView({ ticker }: { ticker: string }) {
   return (
     <div className="space-y-5">
       {/* Header card */}
-      <div className="card p-5">
+      <Card className="p-5">
         <div className="flex items-start gap-4">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent/10 ring-1 ring-accent/20">
             <BarChart3 className="h-6 w-6 text-accent" />
@@ -369,7 +370,7 @@ function ETFDetailView({ ticker }: { ticker: string }) {
             </div>
           )}
         </div>
-      </div>
+      </Card>
 
       {/* Return badges */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

@@ -13,6 +13,7 @@ import {
   Hammer, Search, Building2,
 } from "lucide-react";
 import clsx from "clsx";
+import { Card } from "@/components/ui/card";
 
 // ─── Quarter types ────────────────────────────────────────────────────────────
 type Quarter = {
@@ -569,7 +570,7 @@ function UploadSection({ symbol, company: initialCompany }: { symbol?: string; c
 
   if (mode === "loading-pdf" || mode === "loading-analysis") {
     return (
-      <div className="card p-8 text-center space-y-5">
+      <Card className="p-8 text-center space-y-5">
         <div className="mx-auto h-12 w-12 rounded-2xl bg-saffron/10 flex items-center justify-center">
           <Sparkles className="h-6 w-6 text-saffron animate-pulse" />
         </div>
@@ -590,7 +591,7 @@ function UploadSection({ symbol, company: initialCompany }: { symbol?: string; c
           <div className="h-full rounded-full bg-gradient-to-r from-saffron to-up animate-pulse" style={{ width: mode === "loading-pdf" ? "30%" : "75%" }} />
         </div>
         <p className="text-xs text-muted">{aiModel === "deepseek" ? "~4s" : aiModel === "minimax" ? "~3s" : "~2s"} — analysing first ~4 pages of document</p>
-      </div>
+      </Card>
     );
   }
 
@@ -644,11 +645,11 @@ function UploadSection({ symbol, company: initialCompany }: { symbol?: string; c
   return (
     <div className="space-y-4">
       {error && (
-        <div className="card p-4 border-down/25 bg-down/5 flex items-start gap-3">
+        <Card className="p-4 border-down/25 bg-down/5 flex items-start gap-3">
           <AlertTriangle className="h-5 w-5 shrink-0 text-down mt-0.5" />
           <p className="text-sm text-fg/80 flex-1">{error}</p>
           <button onClick={() => setError("")}><X className="h-4 w-4 text-muted hover:text-fg" /></button>
-        </div>
+        </Card>
       )}
 
       {/* AI Model picker */}
@@ -749,9 +750,9 @@ function ConcallResults({ symbol, company }: { symbol: string; company: string }
     return (
       <div className="space-y-3">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="card p-5 space-y-3">
+          <Card key={i} className="p-5 space-y-3">
             <div className="skeleton h-5 w-32 rounded" /><div className="skeleton h-4 w-full rounded" /><div className="skeleton h-4 w-3/4 rounded" />
-          </div>
+          </Card>
         ))}
       </div>
     );
@@ -777,7 +778,7 @@ function ConcallResults({ symbol, company }: { symbol: string; company: string }
 
   return (
     <div className="space-y-4">
-      <div className="card flex flex-wrap items-center gap-4 p-4">
+      <Card className="flex flex-wrap items-center gap-4 p-4">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-saffron text-white">
           <Mic2 className="h-4 w-4" />
         </div>
@@ -789,7 +790,7 @@ function ConcallResults({ symbol, company }: { symbol: string; company: string }
           <Calendar className="h-3.5 w-3.5 text-muted" />
           <span className="text-xs text-muted">Last {data.quarters.length}Q</span>
         </div>
-      </div>
+      </Card>
       {data.quarters.map((q: Quarter, i: number) => (
         <QuarterCard key={q.label} q={q} company={company} isFirst={i === 0} symbol={symbol} />
       ))}

@@ -8,6 +8,10 @@ import { SearchBox } from "@/components/SearchBox";
 import { LoginPrompt } from "@/components/LoginPrompt";
 import { useAuth } from "@/lib/auth";
 import { Trash2, Plus } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 
 export default function PortfolioPage() {
   const { user, isLoading: authLoading } = useAuth();
@@ -71,7 +75,7 @@ export default function PortfolioPage() {
       </div>
 
       {/* Add form */}
-      <div className="card p-5">
+      <Card className="p-5">
         <h2 className="mb-4 flex items-center gap-2 font-medium"><Plus className="h-4 w-4 text-saffron" /> Add holding</h2>
         <div className="grid gap-3 sm:grid-cols-4">
           {/* SearchBox for ticker with onSelect callback */}
@@ -79,26 +83,26 @@ export default function PortfolioPage() {
             placeholder="Search ticker (TCS, INFY…)"
             onSelect={(symbol) => setForm({ ...form, ticker: symbol })}
           />
-          <input className="input nums" type="number" placeholder="Shares" value={form.shares}
+          <Input className="nums" type="number" placeholder="Shares" value={form.shares}
             onChange={(e) => setForm({ ...form, shares: e.target.value })} />
-          <input className="input nums" type="number" placeholder="Avg price ₹" value={form.avg_price}
+          <Input className="nums" type="number" placeholder="Avg price ₹" value={form.avg_price}
             onChange={(e) => setForm({ ...form, avg_price: e.target.value })} />
-          <input className="input" type="date" value={form.buy_date}
+          <Input type="date" value={form.buy_date}
             onChange={(e) => setForm({ ...form, buy_date: e.target.value })} />
         </div>
         {form.ticker && (
           <p className="mt-2 text-xs text-muted">Selected: <span className="font-semibold text-saffron">{form.ticker}</span></p>
         )}
-        <button onClick={add} disabled={busy || !form.ticker} className="btn-primary mt-3">
+        <Button onClick={add} disabled={busy || !form.ticker} className="mt-3">
           {busy ? "Adding…" : "Add to portfolio"}
-        </button>
-      </div>
+        </Button>
+      </Card>
 
       {/* Holdings */}
-      <div className="card overflow-hidden">
+      <Card className="overflow-hidden">
         <table className="w-full text-sm">
           <thead className="border-b border-border text-muted">
-            <tr className="[&>th]:px-5 [&>th]:py-3 [&>th]:text-left [&>th]:label">
+            <tr className="[&>th]:px-5 [&>th]:py-3 [&>th]:text-left [&>th]:text-[10px] [&>th]:font-normal [&>th]:uppercase [&>th]:tracking-[0.1px]">
               <th>Asset</th>
               <th className="!text-right">Shares</th>
               <th className="!text-right">Avg</th>
@@ -131,16 +135,16 @@ export default function PortfolioPage() {
             ))}
           </tbody>
         </table>
-      </div>
+      </Card>
     </div>
   );
 }
 
 function Stat({ label, value, cls }: { label: string; value: string; cls?: string }) {
   return (
-    <div className="card p-4">
-      <p className="label">{label}</p>
+    <Card className="p-4">
+      <Label>{label}</Label>
       <p className={`nums mt-1 text-lg font-semibold ${cls || ""}`}>{value}</p>
-    </div>
+    </Card>
   );
 }

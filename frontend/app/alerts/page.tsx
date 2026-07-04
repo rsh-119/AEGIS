@@ -6,6 +6,12 @@ import { fetcher, inr, pct, del, post, patch } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
 import { Bell, BellOff, Pencil, Trash2, Plus, CheckCircle2 } from "lucide-react";
 import clsx from "clsx";
+import { Card } from "@/components/ui/card";
+import { Input, inputBaseClasses } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 interface Alert {
   id: number;
@@ -81,7 +87,7 @@ export default function AlertsPage() {
       </div>
 
       {/* Create form */}
-      <div className="card p-5">
+      <Card className="p-5">
         <h2 className="mb-4 flex items-center gap-2 font-medium text-sm">
           <Plus className="h-4 w-4 text-saffron" /> New Alert
         </h2>
@@ -96,39 +102,38 @@ export default function AlertsPage() {
           <select
             value={type}
             onChange={e => setType(e.target.value as "above" | "below")}
-            className="input"
+            className={inputBaseClasses}
           >
             <option value="above">Price Above ↑</option>
             <option value="below">Price Below ↓</option>
           </select>
-          <input
+          <Input
             type="number"
             step="0.01"
             min="0.01"
             placeholder="Target price (₹)"
             value={price}
             onChange={e => setPrice(e.target.value)}
-            className="input"
             required
           />
-          <button
+          <Button
             type="submit"
             disabled={busy || !ticker}
-            className="btn-primary sm:col-span-4 flex items-center justify-center gap-2"
+            className="sm:col-span-4 flex items-center justify-center gap-2"
           >
             <Bell className="h-4 w-4" />
             {busy ? "Creating…" : "Set Alert"}
-          </button>
+          </Button>
         </form>
-      </div>
+      </Card>
 
       {isLoading ? (
-        <div className="card p-8 text-center text-muted animate-pulse">Loading alerts…</div>
+        <Card className="p-8 text-center text-muted animate-pulse">Loading alerts…</Card>
       ) : alerts.length === 0 ? (
-        <div className="card p-10 text-center text-muted">
+        <Card className="p-10 text-center text-muted">
           <Bell className="mx-auto h-10 w-10 mb-3 opacity-20" />
           <p>No alerts yet. Set your first alert above.</p>
-        </div>
+        </Card>
       ) : (
         <>
           {/* Triggered alerts */}
@@ -206,14 +211,14 @@ function AlertTable({
   onSaveEdit: (id: number) => void;
 }) {
   return (
-    <div className="card overflow-hidden">
+    <Card className="overflow-hidden">
       <div className="px-5 py-3 border-b border-border flex items-center gap-2">
-        <span className={clsx("text-xs font-semibold uppercase tracking-widest label", titleColor)}>{title}</span>
-        <span className="pill bg-raised text-muted text-[10px]">{alerts.length}</span>
+        <Label className={clsx("text-xs font-semibold uppercase tracking-widest", titleColor)}>{title}</Label>
+        <Badge className="bg-raised text-muted text-[10px]">{alerts.length}</Badge>
       </div>
       <table className="w-full text-sm">
         <thead className="border-b border-border text-muted">
-          <tr className="[&>th]:px-5 [&>th]:py-2.5 [&>th]:text-left [&>th]:label">
+          <tr className="[&>th]:px-5 [&>th]:py-2.5 [&>th]:text-left [&>th]:text-[10px] [&>th]:font-normal [&>th]:uppercase [&>th]:tracking-[0.1px]">
             <th>Stock</th>
             <th>Condition</th>
             <th className="!text-right">Target</th>
@@ -236,25 +241,27 @@ function AlertTable({
                 )}
               </td>
               <td>
-                <span className={clsx(
-                  "pill text-xs",
-                  a.alert_type === "above" ? "bg-up/10 text-up" : "bg-down/10 text-down"
-                )}>
+                <Badge
+                  className={clsx(
+                    "text-xs",
+                    a.alert_type === "above" ? "bg-up/10 text-up" : "bg-down/10 text-down"
+                  )}
+                >
                   {a.alert_type === "above" ? "↑ Above" : "↓ Below"}
-                </span>
+                </Badge>
               </td>
               <td className="nums text-right">
                 {editId === a.id ? (
                   <span className="flex items-center gap-1 justify-end">
-                    <input
+                    <Input
                       type="number"
                       value={editPrice}
                       onChange={e => setEditPrice(e.target.value)}
-                      className="input w-24 text-right text-sm py-1"
+                      className="w-24 text-right text-sm py-1"
                       autoFocus
                     />
-                    <button onClick={() => onSaveEdit(a.id)} className="btn-ghost py-1 px-2 text-xs text-up">Save</button>
-                    <button onClick={() => setEditId(null)} className="btn-ghost py-1 px-2 text-xs text-muted">✕</button>
+                    <Button variant="ghost" onClick={() => onSaveEdit(a.id)} className="py-1 px-2 text-xs text-up">Save</Button>
+                    <Button variant="ghost" onClick={() => setEditId(null)} className="py-1 px-2 text-xs text-muted">✕</Button>
                   </span>
                 ) : (
                   inr(a.target_price)
@@ -263,36 +270,38 @@ function AlertTable({
               <td>
                 <div className="flex items-center gap-1 justify-end">
                   {a.triggered_at ? (
-                    <button onClick={() => onDismiss(a.id)} className="btn-ghost py-1 px-2 text-xs text-muted" title="Dismiss">
+                    <Button variant="ghost" onClick={() => onDismiss(a.id)} className="py-1 px-2 text-xs text-muted" title="Dismiss">
                       Dismiss
-                    </button>
+                    </Button>
                   ) : (
                     <>
-                      <button
+                      <Button
+                        variant="ghost"
                         onClick={() => { setEditId(a.id); setEditPrice(String(a.target_price)); }}
-                        className="btn-ghost p-1.5 text-muted"
+                        className="p-1.5 text-muted"
                         title="Edit target"
                       >
                         <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="ghost"
                         onClick={() => onToggle(a)}
-                        className="btn-ghost p-1.5 text-muted"
+                        className="p-1.5 text-muted"
                         title={a.is_active ? "Pause" : "Resume"}
                       >
                         {a.is_active ? <BellOff className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
-                      </button>
+                      </Button>
                     </>
                   )}
-                  <button onClick={() => onDelete(a.id)} className="btn-ghost p-1.5 text-muted hover:text-down" title="Delete">
+                  <Button variant="ghost" onClick={() => onDelete(a.id)} className="p-1.5 text-muted hover:text-down" title="Delete">
                     <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  </Button>
                 </div>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
+    </Card>
   );
 }

@@ -23,6 +23,9 @@ import {
   Sparkles,
 } from "lucide-react";
 import clsx from "clsx";
+import { Card } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 
 type Quarter = {
   label: string;
@@ -71,11 +74,11 @@ function YoY({ pct, label }: { pct: number | null; label?: string }) {
 function StatBox({ label, value, sub }: { label: string; value: string | number | null; sub?: React.ReactNode }) {
   if (value == null) return null;
   return (
-    <div className="metric-card text-center">
-      <p className="label mb-1">{label}</p>
+    <Card className="p-4 cursor-default select-none text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-[rgba(21,128,61,0.22)] hover:shadow-[var(--shadow-md),var(--shadow-glow)]">
+      <Label className="mb-1 block">{label}</Label>
       <p className="nums text-sm font-bold text-fg">{value}</p>
       {sub && <div className="mt-1">{sub}</div>}
-    </div>
+    </Card>
   );
 }
 
@@ -112,14 +115,14 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
         className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition hover:bg-raised/40"
       >
         <div className="flex items-center gap-3 min-w-0">
-          <span className={clsx(
-            "pill shrink-0 ring-1 font-bold text-xs",
+          <Badge className={clsx(
+            "shrink-0 ring-1 font-bold text-xs",
             idx === 0 ? "bg-saffron text-white ring-saffron/40" : "bg-saffron/10 text-saffron ring-saffron/20"
           )}>
             {q.label}
-          </span>
+          </Badge>
           {idx === 0 && (
-            <span className="pill bg-up/10 text-up ring-1 ring-up/20 text-[10px] font-bold shrink-0">LATEST</span>
+            <Badge className="bg-up/10 text-up ring-1 ring-up/20 text-[10px] font-bold shrink-0">LATEST</Badge>
           )}
           <div className="min-w-0">
             {q.headline ? (
@@ -133,14 +136,14 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
         <div className="flex shrink-0 items-center gap-4">
           {q.revenue && (
             <div className="hidden sm:block text-right">
-              <p className="label">Revenue</p>
+              <Label className="block">Revenue</Label>
               <p className="nums text-xs font-bold text-fg">{q.revenue}</p>
               {q.revenue_yoy_pct != null && <YoY pct={q.revenue_yoy_pct} />}
             </div>
           )}
           {q.net_income && (
             <div className="hidden md:block text-right">
-              <p className="label">Net P&amp;L</p>
+              <Label className="block">Net P&amp;L</Label>
               <p className={clsx("nums text-xs font-bold", isProfit ? "text-up" : "text-down")}>
                 {q.net_income}
               </p>
@@ -149,7 +152,7 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
           )}
           {q.total_debt && (
             <div className="hidden lg:block text-right">
-              <p className="label">Total Debt</p>
+              <Label className="block">Total Debt</Label>
               <p className="nums text-xs font-bold text-saffron">{q.total_debt}</p>
             </div>
           )}
@@ -166,9 +169,9 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
 
           {/* ── Key Financials ── */}
           <div>
-            <p className="label mb-3 flex items-center gap-1.5">
+            <Label className="mb-3 flex items-center gap-1.5">
               <BarChart3 className="h-3 w-3" /> Key Financials
-            </p>
+            </Label>
 
             {/* Top 3 highlighted cards */}
             <div className="grid grid-cols-1 gap-2 mb-3 sm:grid-cols-3">
@@ -206,9 +209,9 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
           {/* ── Margin bars ── */}
           {(q.gross_margin_pct != null || q.operating_margin_pct != null || q.net_margin_pct != null) && (
             <div>
-              <p className="label mb-3 flex items-center gap-1.5">
+              <Label className="mb-3 flex items-center gap-1.5">
                 <Wallet className="h-3 w-3" /> Margins
-              </p>
+              </Label>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <MarginBar label="Gross Margin" value={q.gross_margin_pct} color="text-up" />
                 <MarginBar label="EBIT Margin" value={q.operating_margin_pct} color="text-saffron" />
@@ -236,9 +239,9 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
           {/* ── AI Narrative Summary ── */}
           {q.summary && (
             <div className="rounded-xl bg-raised/60 border border-border p-4 space-y-2">
-              <p className="label flex items-center gap-1.5">
+              <Label className="flex items-center gap-1.5">
                 <Mic2 className="h-3.5 w-3.5 text-saffron" /> AI Concall Summary
-              </p>
+              </Label>
               <p className="text-sm leading-relaxed text-fg/90">{q.summary}</p>
             </div>
           )}
@@ -246,9 +249,9 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
           {/* ── Management Commentary ── */}
           {q.management_commentary && (
             <div className="rounded-xl bg-raised/40 border border-border p-4">
-              <p className="label mb-2 flex items-center gap-1.5">
+              <Label className="mb-2 flex items-center gap-1.5">
                 <MessageSquare className="h-3.5 w-3.5 text-saffron" /> Management Commentary
-              </p>
+              </Label>
               <p className="text-sm leading-relaxed text-fg/80 italic">&ldquo;{q.management_commentary}&rdquo;</p>
             </div>
           )}
@@ -256,9 +259,9 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
           {/* ── Management Promises ── */}
           {q.management_promises?.length > 0 && (
             <div className="rounded-xl border border-amber-400/25 bg-amber-400/5 p-4">
-              <p className="label mb-3 flex items-center gap-1.5 text-saffron">
+              <Label className="mb-3 flex items-center gap-1.5 text-saffron">
                 <Target className="h-3.5 w-3.5" /> Management Commitments &amp; Promises
-              </p>
+              </Label>
               <ul className="space-y-2">
                 {q.management_promises.map((promise, i) => (
                   <li key={i} className="flex items-start gap-2.5">
@@ -274,9 +277,9 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
           <div className="grid gap-4 sm:grid-cols-2">
             {q.highlights?.length > 0 && (
               <div>
-                <p className="label mb-3 flex items-center gap-1.5 text-up">
+                <Label className="mb-3 flex items-center gap-1.5 text-up">
                   <CheckCircle2 className="h-3.5 w-3.5" /> Highlights
-                </p>
+                </Label>
                 <ul className="space-y-2">
                   {q.highlights.map((h, i) => (
                     <li key={i} className="flex items-start gap-2.5 text-sm text-fg/85">
@@ -289,9 +292,9 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
             )}
             {q.concerns?.length > 0 && (
               <div>
-                <p className="label mb-3 flex items-center gap-1.5 text-down">
+                <Label className="mb-3 flex items-center gap-1.5 text-down">
                   <AlertCircle className="h-3.5 w-3.5" /> Concerns
-                </p>
+                </Label>
                 <ul className="space-y-2">
                   {q.concerns.map((c, i) => (
                     <li key={i} className="flex items-start gap-2.5 text-sm text-fg/85">
@@ -327,7 +330,7 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
             <div>
               <button
                 onClick={() => setNewsExpanded((e) => !e)}
-                className="label mb-2 flex items-center gap-1.5 hover:text-fg transition-colors"
+                className="text-[10px] font-normal uppercase tracking-[0.1px] text-muted mb-2 flex items-center gap-1.5 hover:text-fg transition-colors"
               >
                 <Newspaper className="h-3.5 w-3.5" />
                 Source news ({q.news_headlines.length})
@@ -387,7 +390,7 @@ export function ConcallCard({ ticker }: { ticker: string }) {
         )}
       </div>
 
-      <div className="card p-5">
+      <Card className="p-5">
         {isLoading && <Skeleton />}
 
         {error && (
@@ -403,7 +406,7 @@ export function ConcallCard({ ticker }: { ticker: string }) {
             {/* Sector tag */}
             {data.sector && (
               <div className="flex items-center gap-2 mb-2">
-                <span className="pill bg-raised text-muted ring-1 ring-border text-[10px]">{data.sector}</span>
+                <Badge className="bg-raised text-muted ring-1 ring-border text-[10px]">{data.sector}</Badge>
                 <span className="text-[10px] text-muted">· AI context: financial data + earnings news headlines</span>
               </div>
             )}
@@ -436,7 +439,7 @@ export function ConcallCard({ ticker }: { ticker: string }) {
             </div>
           </div>
         )}
-      </div>
+      </Card>
     </section>
   );
 }

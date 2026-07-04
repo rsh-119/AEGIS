@@ -8,6 +8,8 @@ import { PriceChart } from "@/components/PriceChart";
 import { ChevronLeft, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
 import clsx from "clsx";
 import { ChartCard } from "@/components/ui/animated-card-chart";
+import { Card } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 
 const PERIODS = [
   { label: "1M", value: "1mo" },
@@ -100,10 +102,10 @@ export default function IndexPage({ params }: { params: Promise<{ slug: string }
             { label: "52W Low", value: q.week52_low?.toLocaleString("en-IN", { maximumFractionDigits: 2 }) ?? "—" },
             { label: `${periodLabel} Change`, value: hist.pct_change != null ? `${hist.pct_change >= 0 ? "+" : ""}${hist.pct_change.toFixed(2)}%` : "—" },
           ].map((s) => (
-            <div key={s.label} className="metric-card min-w-[110px] text-center shrink-0 px-3 py-2.5">
-              <p className="label">{s.label}</p>
+            <Card key={s.label} className="cursor-default select-none transition-all duration-200 hover:-translate-y-0.5 hover:border-[rgba(21,128,61,0.22)] hover:shadow-[var(--shadow-md),var(--shadow-glow)] min-w-[110px] text-center shrink-0 px-3 py-2.5">
+              <Label className="block">{s.label}</Label>
               <p className="nums mt-1 text-sm font-bold">{s.value}</p>
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -140,13 +142,13 @@ export default function IndexPage({ params }: { params: Promise<{ slug: string }
       </ChartCard>
 
       {/* About */}
-      <div className="card p-5">
+      <Card className="p-5">
         <h2 className="mb-2 font-semibold">About {meta.name}</h2>
         <p className="text-sm leading-relaxed text-muted">{meta.desc}</p>
         <p className="mt-3 text-xs text-muted/60">
           Index data from Yahoo Finance · {meta.exchange} · For reference only, not investment advice.
         </p>
-      </div>
+      </Card>
     </div>
   );
 }

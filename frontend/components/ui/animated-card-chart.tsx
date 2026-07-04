@@ -4,6 +4,7 @@ import * as React from "react";
 import { useId, useState } from "react";
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { cardBaseClasses } from "@/components/ui/card";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -218,7 +219,7 @@ const Layer4: React.FC<LayerProps> = ({ color, secondaryColor, hovered }) => {
 // ─── ChartCard — wraps any existing chart with Visual3-inspired hover effects ──
 
 /**
- * Drop-in replacement for `<div className="card overflow-hidden">` on chart sections.
+ * Drop-in replacement for `<Card className="overflow-hidden">` on chart sections.
  * On hover:
  *   - Colored top accent line sweeps in from the left
  *   - Gradient tint rises from the bottom
@@ -238,7 +239,8 @@ export function ChartCard({
   return (
     <div
       className={cn(
-        "group/animated-card card relative overflow-hidden transition-all duration-300",
+        "group/animated-card relative overflow-hidden transition-all duration-300",
+        cardBaseClasses,
         className
       )}
     >

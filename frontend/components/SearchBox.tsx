@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Search, Loader2, TrendingUp, X } from "lucide-react";
 import clsx from "clsx";
+import { Badge } from "@/components/ui/badge";
 
 type Suggestion = { symbol: string; name: string; exchange: string };
 
@@ -217,14 +218,14 @@ export function SearchBox({
                             </div>
                           </div>
                         </div>
-                        <span className={clsx(
-                          "pill shrink-0 ring-1 text-[10px] font-bold transition-all",
+                        <Badge className={clsx(
+                          "shrink-0 ring-1 text-[10px] font-bold transition-all",
                           s.exchange === "NSE"
                             ? isAct ? "bg-saffron text-white ring-saffron" : "bg-saffron/10 text-saffron ring-saffron/20"
                             : "bg-raised text-muted ring-border"
                         )}>
                           {s.exchange}
-                        </span>
+                        </Badge>
                       </button>
                     </li>
                   );
@@ -330,14 +331,14 @@ export function SearchBox({
                           </div>
                         </div>
                       </div>
-                      <span className={clsx(
-                        "pill shrink-0 ring-1 text-[10px] font-bold transition-all duration-150",
+                      <Badge className={clsx(
+                        "shrink-0 ring-1 text-[10px] font-bold transition-all duration-150",
                         s.exchange === "NSE"
                           ? isAct ? "bg-saffron text-white ring-saffron" : "bg-saffron/10 text-saffron ring-saffron/20"
                           : "bg-raised text-muted ring-border"
                       )}>
                         {s.exchange}
-                      </span>
+                      </Badge>
                     </button>
                   </li>
                 );

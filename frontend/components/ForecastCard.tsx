@@ -4,6 +4,7 @@ import { useState } from "react";
 import { inr, signCls } from "@/lib/api";
 import { TrendingUp, TrendingDown, Minus, Activity, Cpu, Zap, BarChart2 } from "lucide-react";
 import clsx from "clsx";
+import { Card } from "@/components/ui/card";
 
 type Point     = { day: number; price: number; upper: number; lower: number };
 type Milestone = { days: number; price: number; upper: number; lower: number; return_pct: number };
@@ -244,7 +245,7 @@ export function ForecastCard({ forecast: fc }: { forecast: ForecastProp | undefi
   const activeAlgo = ALGOS.find((a) => a.key === algo)!;
 
   return (
-    <div className="card overflow-hidden">
+    <Card className="overflow-hidden">
       {/* Header with algo switcher */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-raised/40 px-4 py-3">
         <div className="flex items-center gap-2">
@@ -288,6 +289,6 @@ export function ForecastCard({ forecast: fc }: { forecast: ForecastProp | undefi
       <p className="border-t border-border/40 px-4 py-2 text-[10px] text-muted/70">
         {activeFc?.disclaimer ?? "Statistical projection only. Not investment advice."}
       </p>
-    </div>
+    </Card>
   );
 }

@@ -6,6 +6,8 @@ import { fetcher, inrCompact, inr, num } from "@/lib/api";
 import { Users, ArrowUpRight, Star, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import Link from "next/link";
 import clsx from "clsx";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 type Peer = {
   ticker: string;
@@ -157,13 +159,13 @@ export function PeerComparison({ ticker, selfName, selfData }: {
 
   if (isLoading) {
     return (
-      <div className="card p-5">
+      <Card className="p-5">
         <div className="mb-4 flex items-center gap-2">
           <Users className="h-4 w-4 text-saffron" />
           <h2 className="font-medium">Peer Comparison</h2>
         </div>
         <div className="skeleton h-48 w-full rounded-lg" />
-      </div>
+      </Card>
     );
   }
 
@@ -173,13 +175,13 @@ export function PeerComparison({ ticker, selfName, selfData }: {
 
   if (!peers.length) {
     return (
-      <div className="card p-5">
+      <Card className="p-5">
         <div className="mb-3 flex items-center gap-2">
           <Users className="h-4 w-4 text-saffron" />
           <h2 className="font-medium">Peer Comparison</h2>
         </div>
         <p className="text-sm text-muted">Peer data not available for this sector.</p>
-      </div>
+      </Card>
     );
   }
 
@@ -196,13 +198,13 @@ export function PeerComparison({ ticker, selfName, selfData }: {
     : peers;
 
   return (
-    <div className="card p-5">
+    <Card className="p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Users className="h-4 w-4 text-saffron" />
           <h2 className="font-medium">Peer Comparison</h2>
           {sector && (
-            <span className="pill bg-raised text-muted ring-1 ring-border text-[10px]">{sector}</span>
+            <Badge className="bg-raised text-muted ring-1 ring-border text-[10px]">{sector}</Badge>
           )}
         </div>
         <span className="text-xs text-muted">{peers.length} peers · click headers to sort</span>
@@ -310,6 +312,6 @@ export function PeerComparison({ ticker, selfName, selfData }: {
       <p className="mt-2 text-[10px] text-muted">
         Green = better than sector median · Red = weaker · Click column headers to sort ↑↓ · Hover for definitions
       </p>
-    </div>
+    </Card>
   );
 }

@@ -1,4 +1,7 @@
 import { AlertTriangle, CheckCircle2, Activity, ShieldAlert } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 
 type Health = {
   status?: string;
@@ -37,10 +40,10 @@ function ScoreDot({ score }: { score: number }) {
 export function HealthCard({ health }: { health: Health }) {
   if (health?.error) {
     return (
-      <div className="card p-5">
+      <Card className="p-5">
         <h3 className="mb-1 font-medium">Company Health</h3>
         <p className="text-sm text-muted">{health.error}</p>
-      </div>
+      </Card>
     );
   }
 
@@ -48,19 +51,19 @@ export function HealthCard({ health }: { health: Health }) {
   const style = STATUS_STYLE[status] || "text-muted ring-border bg-raised";
 
   return (
-    <div className="card p-5 space-y-5">
+    <Card className="p-5 space-y-5">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <h3 className="flex items-center gap-2 font-medium">
           <Activity className="h-4 w-4 text-saffron" /> Company Health
         </h3>
-        <span className={`pill ring-1 ${style}`}>{status}</span>
+        <Badge className={`ring-1 ${style}`}>{status}</Badge>
       </div>
 
       {/* Health score */}
       {typeof health?.financial_health_score === "number" && (
         <div>
-          <p className="label mb-2">Health Score</p>
+          <Label className="mb-2 block">Health Score</Label>
           <ScoreDot score={health.financial_health_score} />
           {health?.status_reason && (
             <p className="mt-2 text-xs text-muted">{health.status_reason}</p>
@@ -76,9 +79,9 @@ export function HealthCard({ health }: { health: Health }) {
       {/* Red flags — critical issues only */}
       {health?.red_flags && health.red_flags.length > 0 && (
         <div className="rounded-xl border border-down/30 bg-down/5 p-3.5">
-          <p className="label mb-2.5 flex items-center gap-1.5 text-down">
+          <Label className="mb-2.5 flex items-center gap-1.5 text-down">
             <ShieldAlert className="h-3.5 w-3.5" /> Red Flags
-          </p>
+          </Label>
           <ul className="space-y-1.5">
             {health.red_flags.map((f, i) => (
               <li key={i} className="flex items-start gap-2 text-sm font-medium text-down/90">
@@ -93,9 +96,9 @@ export function HealthCard({ health }: { health: Health }) {
       {/* Concerns & Positives */}
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <p className="label mb-2 flex items-center gap-1.5 text-down">
+          <Label className="mb-2 flex items-center gap-1.5 text-down">
             <AlertTriangle className="h-3.5 w-3.5" /> Concerns
-          </p>
+          </Label>
           <ul className="space-y-2">
             {(health?.concerns?.length ? health.concerns : ["None flagged"]).map((c, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-fg/80">
@@ -106,9 +109,9 @@ export function HealthCard({ health }: { health: Health }) {
           </ul>
         </div>
         <div>
-          <p className="label mb-2 flex items-center gap-1.5 text-up">
+          <Label className="mb-2 flex items-center gap-1.5 text-up">
             <CheckCircle2 className="h-3.5 w-3.5" /> Positives
-          </p>
+          </Label>
           <ul className="space-y-2">
             {(health?.positives?.length ? health.positives : ["None flagged"]).map((p, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-fg/80">
@@ -119,6 +122,6 @@ export function HealthCard({ health }: { health: Health }) {
           </ul>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }

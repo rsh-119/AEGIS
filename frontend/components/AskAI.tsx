@@ -3,6 +3,9 @@
 import { useState, useRef, useEffect } from "react";
 import { post } from "@/lib/api";
 import { Send, Sparkles, AlertCircle, Plus, FileText, X } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 type Msg = { role: "user" | "ai"; text: string; confidence?: string; source?: string; error?: boolean };
 
@@ -130,7 +133,7 @@ export function AskAI({ ticker }: { ticker: string }) {
   const suggested = docText ? SUGGESTED_DOC : SUGGESTED;
 
   return (
-    <div className="card flex flex-col p-5" style={{ minHeight: "360px" }}>
+    <Card className="flex flex-col p-5" style={{ minHeight: "360px" }}>
       <div className="mb-3 flex items-center justify-between">
         <h3 className="flex items-center gap-2 font-medium">
           <Sparkles className="h-4 w-4 text-saffron" />
@@ -249,22 +252,22 @@ export function AskAI({ ticker }: { ticker: string }) {
           <Plus className="h-4 w-4" />
         </button>
 
-        <input
+        <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !busy && send()}
           placeholder={docText ? `Ask about ${docName}…` : "Ask about bulk deals, ownership, growth…"}
-          className="input flex-1 text-sm"
+          className="flex-1 text-sm"
           disabled={busy || docLoading}
         />
-        <button
+        <Button
           onClick={() => send()}
           disabled={busy || docLoading || !q.trim()}
-          className="btn-primary grid place-items-center px-3 disabled:opacity-40"
+          className="grid place-items-center px-3 disabled:opacity-40"
         >
           <Send className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
-    </div>
+    </Card>
   );
 }

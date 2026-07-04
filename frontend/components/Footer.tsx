@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Github, Twitter, Linkedin, Mail, X, Send } from "lucide-react";
+import { Card } from "@/components/ui/card";
 
 const SOCIALS = [
   { icon: Github,   label: "GitHub",   href: "https://github.com/rishabh" },
@@ -27,7 +28,7 @@ function ContactModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="card w-full max-w-md overflow-hidden">
+      <Card className="w-full max-w-md overflow-hidden">
         <div className="flex items-center justify-between border-b border-border bg-raised/40 px-5 py-4">
           <div>
             <h2 className="text-sm font-bold">Contact Us</h2>
@@ -84,7 +85,7 @@ function ContactModal({ onClose }: { onClose: () => void }) {
             </button>
           </form>
         )}
-      </div>
+      </Card>
     </div>
   );
 }
