@@ -2,8 +2,10 @@
 
 import { use, useRef, useState } from "react";
 import useSWR from "swr";
+import { useRouter } from "next/navigation";
 import { fetcher, inr, inrCompact, pct, num, signCls, post } from "@/lib/api";
 import { useRealtimePrice } from "@/lib/useRealtimePrice";
+import { useAuth } from "@/lib/auth";
 import { PriceChart } from "@/components/PriceChart";
 import { VolumeChart } from "@/components/VolumeChart";
 import { ValuationChart } from "@/components/ValuationChart";
@@ -32,6 +34,8 @@ const PERIODS = [
 export default function StockPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = use(params);
   const symbol = decodeURIComponent(ticker);
+  const { user } = useAuth();
+  const router = useRouter();
   const [period, setPeriod]           = useState("max");
   const [chartTab, setChartTab]       = useState<"price" | "volume">("price");
   const [valuationTab, setValuationTab] = useState<"pe" | "pb">("pe");
@@ -97,6 +101,10 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
   const up = (hist?.pct_change ?? 0) >= 0;
 
   async function addToWatchlist() {
+    if (!user) {
+      router.push("/login");
+      return;
+    }
     try {
       await post("/api/watchlist", { ticker: symbol });
       alert(`${symbol} added to watchlist`);

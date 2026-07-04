@@ -4,10 +4,13 @@ import { useState } from "react";
 import useSWR, { mutate } from "swr";
 import { fetcher, inr, pct, signCls, post, del } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
+import { LoginPrompt } from "@/components/LoginPrompt";
+import { useAuth } from "@/lib/auth";
 import { Trash2, Plus } from "lucide-react";
 
 export default function PortfolioPage() {
-  const { data } = useSWR("/api/portfolio", fetcher, { revalidateOnFocus: false });
+  const { user, isLoading: authLoading } = useAuth();
+  const { data } = useSWR(user ? "/api/portfolio" : null, fetcher, { revalidateOnFocus: false });
   const [form, setForm] = useState({ ticker: "", shares: "", avg_price: "", buy_date: "" });
   const [busy, setBusy] = useState(false);
 
@@ -37,6 +40,16 @@ export default function PortfolioPage() {
     if (!confirm("Remove this holding?")) return;
     await del(`/api/portfolio/${id}`);
     mutate("/api/portfolio");
+  }
+
+  if (authLoading) return null;
+  if (!user) {
+    return (
+      <div className="space-y-6 animate-fade-up">
+        <h1 className="font-display text-3xl font-semibold">Portfolio</h1>
+        <LoginPrompt what="your portfolio" />
+      </div>
+    );
   }
 
   return (

@@ -1,12 +1,18 @@
 "use client";
 
 import useSWR, { mutate as globalMutate } from "swr";
+import { useRouter } from "next/navigation";
 import { fetcher, post, del } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 type WatchItem = { id: number; ticker: string; company_name: string };
 
 export function useWatchlist() {
-  const { data } = useSWR<{ items: WatchItem[] }>("/api/watchlist", fetcher, {
+  const { user } = useAuth();
+  const router = useRouter();
+
+  // Don't even attempt the request when logged out — avoids a guaranteed 401.
+  const { data } = useSWR<{ items: WatchItem[] }>(user ? "/api/watchlist" : null, fetcher, {
     revalidateOnFocus: false,
   });
 
@@ -18,6 +24,10 @@ export function useWatchlist() {
   }
 
   async function toggle(ticker: string, name: string) {
+    if (!user) {
+      router.push("/login");
+      return;
+    }
     if (byTicker.has(ticker)) {
       await del(`/api/watchlist/${byTicker.get(ticker)}`);
     } else {
@@ -31,5 +41,5 @@ export function useWatchlist() {
     globalMutate("/api/watchlist");
   }
 
-  return { isWatched, toggle };
+  return { isWatched, toggle, isLoggedIn: !!user };
 }

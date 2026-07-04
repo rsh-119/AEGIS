@@ -3,16 +3,29 @@
 import useSWR, { mutate } from "swr";
 import { fetcher, inr, pct, signCls, del } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
+import { LoginPrompt } from "@/components/LoginPrompt";
+import { useAuth } from "@/lib/auth";
 import { Trash2 } from "lucide-react";
 
 export default function WatchlistPage() {
-  const { data } = useSWR("/api/watchlist", fetcher, { revalidateOnFocus: false });
+  const { user, isLoading: authLoading } = useAuth();
+  const { data } = useSWR(user ? "/api/watchlist" : null, fetcher, { revalidateOnFocus: false });
   const items = data?.items || [];
 
   async function remove(id: number) {
     if (!confirm("Remove from watchlist?")) return;
     await del(`/api/watchlist/${id}`);
     mutate("/api/watchlist");
+  }
+
+  if (authLoading) return null;
+  if (!user) {
+    return (
+      <div className="space-y-6 animate-fade-up">
+        <h1 className="font-display text-3xl font-semibold">Watchlist</h1>
+        <LoginPrompt what="your watchlist" />
+      </div>
+    );
   }
 
   return (
