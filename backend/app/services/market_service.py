@@ -214,6 +214,30 @@ def _fetch_nse_gainers_losers_sync() -> dict[str, list[dict]]:
     return result
 
 
+async def _fetch_movers_from_indianapi() -> dict[str, list[dict]]:
+    """Fallback when NSE direct is blocked (403 from cloud IPs, e.g. Render).
+
+    IMPORTANT: this restricts to the same large-cap (_LARGE_CAP_TICKERS)
+    universe as the NSE-direct primary path, via IndianAPI's batch live-price
+    endpoint. Using IndianAPI's /trending instead (a whole-market scan) was
+    tried first but surfaces thinly-traded small/micro-caps with extreme %
+    swings (e.g. a stock up 20% on a handful of trades) — a materially worse
+    "Market Movers" experience than the curated large-cap list users expect.
+    """
+    bare = [t.replace(".NS", "") for t in _LARGE_CAP_TICKERS]
+    prices = await indianapi_service.batch_live_price(bare, exchange="NSE")
+
+    stocks: list[dict] = []
+    for sym, row in prices.items():
+        s = _nse_stock(sym, row.get("ltp"), None, row.get("day_change_percent"), row.get("volume"))
+        if s:
+            stocks.append(s)
+
+    gainers = sorted([s for s in stocks if s["change_pct"] > 0], key=lambda x: -x["change_pct"])[:30]
+    losers = sorted([s for s in stocks if s["change_pct"] < 0], key=lambda x: x["change_pct"])[:30]
+    return {"gainers": gainers, "losers": losers}
+
+
 # ── Watchlist for movers — split by cap tier so classification is predefined ──
 _LARGE_CAP_TICKERS = [
     "RELIANCE.NS","TCS.NS","HDFCBANK.NS","INFY.NS","ICICIBANK.NS","HINDUNILVR.NS",
@@ -524,11 +548,11 @@ async def get_market_overview(_force: bool = False) -> dict:
     source = "nse"
 
     # Fallback when NSE direct is blocked (403 from cloud IPs, e.g. Render) —
-    # IndianAPI's /trending already returns the same {ticker, name, price,
-    # change_pct, ...} shape, so it's a drop-in replacement.
+    # restricted to the same large-cap universe as the primary path (see
+    # _fetch_movers_from_indianapi docstring for why /trending alone isn't used).
     if not gainers and not losers:
         try:
-            trending = await indianapi_service.get_trending()
+            trending = await _fetch_movers_from_indianapi()
             gainers, losers = trending.get("gainers", []), trending.get("losers", [])
             if gainers or losers:
                 source = "indianapi"

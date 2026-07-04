@@ -97,6 +97,12 @@ async def get_mf_list(
             resp = await c.get(f"{MFAPI}/mf")
             resp.raise_for_status()
             all_funds = resp.json()
+        # mfapi.in doesn't guarantee stable ordering across fetches — sort by
+        # schemeCode so get_mf_highlights()'s every-Nth-fund sampling picks the
+        # same funds regardless of when/where the list was last cached
+        # (was producing different "Top Gainers" and "Popular" funds on every
+        # fresh deploy vs. a long-running local server).
+        all_funds = sorted(all_funds, key=lambda f: f["schemeCode"])
         cache.set(ck, all_funds, "mf_list")
 
     if search:
