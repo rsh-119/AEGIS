@@ -243,6 +243,15 @@ def _fetch_nse_gainers_losers_sync() -> dict[str, list[dict]]:
     return result
 
 
+# These consistently fail IndianAPI's batch live-price endpoint (confirmed via
+# bisection on 2026-07-04 — likely corporate-action-related symbol issues on
+# their side). batch_live_price() has no retries by design (see its
+# docstring), so one bad symbol drops its ENTIRE 40-ticker chunk. Excluding
+# them up-front means both chunks succeed reliably instead of intermittently
+# losing up to half the movers list.
+_BATCH_EXCLUDE = {"BAJAJFINSV", "TATAMOTORS", "IRCTC", "LTIMINDTREE"}
+
+
 async def _fetch_movers_from_indianapi() -> dict[str, list[dict]]:
     """Fallback when NSE direct is blocked (403 from cloud IPs, e.g. Render).
 
@@ -253,7 +262,7 @@ async def _fetch_movers_from_indianapi() -> dict[str, list[dict]]:
     swings (e.g. a stock up 20% on a handful of trades) — a materially worse
     "Market Movers" experience than the curated large-cap list users expect.
     """
-    bare = [t.replace(".NS", "") for t in _LARGE_CAP_TICKERS]
+    bare = [t.replace(".NS", "") for t in _LARGE_CAP_TICKERS if t.replace(".NS", "") not in _BATCH_EXCLUDE]
     prices = await indianapi_service.batch_live_price(bare, exchange="NSE")
 
     stocks: list[dict] = []
