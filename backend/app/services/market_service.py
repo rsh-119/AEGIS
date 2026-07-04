@@ -14,6 +14,8 @@ import asyncio
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, time as _dtime
+from zoneinfo import ZoneInfo
 
 import requests as _requests
 
@@ -23,8 +25,35 @@ from app.services.stock_service import _clean, _TTL
 
 logger = logging.getLogger(__name__)
 _pool = ThreadPoolExecutor(max_workers=32)
-_cache = _TTL(ttl=720)   # 12-min TTL — background refresh runs every 10 min
+_cache = _TTL(ttl=1800)   # 30-min TTL — matches trading-hours refetch cadence
 _idx_cache = _TTL(ttl=60)  # 60-second cache for indices-only endpoint
+
+# ── NSE trading-hours gate ────────────────────────────────────────────────────
+# Outside these hours, prices can't have changed, so indices/movers are served
+# straight from the long-lived snapshot cache with no live fetch attempted at
+# all — see get_indices()/get_market_overview() and home_refresh_service.py's
+# end-of-day snapshot job.
+_IST = ZoneInfo("Asia/Kolkata")
+_MARKET_OPEN = _dtime(9, 15)
+_MARKET_CLOSE = _dtime(15, 30)
+
+# Fixed-date national holidays (never move year to year) — safe to hardcode.
+# Variable-date festivals (Diwali, Holi, Eid, etc.) are NOT included since
+# guessing wrong dates isn't worth the risk; add exact dates here if you have
+# NSE's official trading-holiday list for the year.
+_FIXED_HOLIDAYS_MMDD = {(1, 26), (8, 15), (10, 2)}  # Republic Day, Independence Day, Gandhi Jayanti
+
+_SNAPSHOT_INDICES_KEY = "market:snapshot:indices"
+_SNAPSHOT_OVERVIEW_KEY = "market:snapshot:overview"
+
+
+def is_market_hours(now: datetime | None = None) -> bool:
+    now = now.astimezone(_IST) if now else datetime.now(_IST)
+    if now.weekday() >= 5:  # Sat/Sun
+        return False
+    if (now.month, now.day) in _FIXED_HOLIDAYS_MMDD:
+        return False
+    return _MARKET_OPEN <= now.time() <= _MARKET_CLOSE
 
 # ── NSE direct session for index data (no yfinance) ──────────────────────────
 _nse_session = _requests.Session()
@@ -483,8 +512,19 @@ async def get_indices(_force: bool = False) -> list[dict]:
     """
     Fetch the 5 headline index prices — NSE direct primary (free, but blocked
     from cloud IPs like Render with a 403), IndianAPI as fallback.
-    Cached 60 s. Pass _force=True to bypass cache (used by HomeRefreshTask).
+
+    Outside NSE trading hours, prices can't have changed, so this returns the
+    last snapshot with NO live fetch attempted at all (unless there's no
+    snapshot yet, e.g. a cold start). During trading hours it's cached 60s
+    in-process / 30min in Redis. Pass _force=True to bypass both checks
+    (used by the end-of-day snapshot job).
     """
+    if not _force and not is_market_hours():
+        snap = cache.get(_SNAPSHOT_INDICES_KEY)
+        if snap:
+            return snap
+        # No snapshot yet at all — fall through and fetch once so there's something to show
+
     if not _force:
         cached = _idx_cache.get("indices")
         if cached is not None:
@@ -505,6 +545,7 @@ async def get_indices(_force: bool = False) -> list[dict]:
 
     if indices:
         _idx_cache.set("indices", indices)
+        cache.set(_SNAPSHOT_INDICES_KEY, indices, "market_snapshot")
     return indices
 
 
@@ -514,6 +555,12 @@ _OVERVIEW_REDIS_KEY = "market:overview"
 
 
 async def get_market_overview(_force: bool = False) -> dict:
+    if not _force and not is_market_hours():
+        snap = cache.get(_SNAPSHOT_OVERVIEW_KEY)
+        if snap:
+            return snap
+        # No snapshot yet at all — fall through and fetch once so there's something to show
+
     if not _force:
         # L1 — module-level in-memory (fastest)
         cached = _cache.get("market_overview")
@@ -573,6 +620,7 @@ async def get_market_overview(_force: bool = False) -> dict:
     if has_data or not old_cached:
         _cache.set("market_overview", result)
         cache.set(_OVERVIEW_REDIS_KEY, result, "overview")
+        cache.set(_SNAPSHOT_OVERVIEW_KEY, result, "market_snapshot")
     else:
         logger.warning("Market overview: both NSE and IndianAPI returned no data — keeping existing cache")
     return _cache.get("market_overview") or result
