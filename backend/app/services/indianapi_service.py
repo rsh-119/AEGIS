@@ -136,18 +136,37 @@ def _parse_mcap(raw) -> float | None:
 
 # ── normalizer for movers-style list endpoints (trending, most_active, etc.) ──
 
-def _normalize(raw: dict) -> dict | None:
-    """Map any IndianAPI movers-list stock dict → Aegis' internal Stock format."""
-    ticker = (
-        raw.get("stock_name") or raw.get("ticker") or raw.get("ticker_id") or
-        raw.get("symbol") or raw.get("nse_code") or
-        raw.get("ric") or raw.get("company") or raw.get("company_name") or ""
+def _normalize(raw: dict, name_to_nse: dict[str, str] | None = None) -> dict | None:
+    """Map any IndianAPI movers-list stock dict → Aegis' internal Stock format.
+
+    IMPORTANT: several endpoints (52-week-high-low, price-shockers, and the
+    per-stock entries under /trending) only expose an internal "ticker_id"
+    (e.g. "S0003057") — that is NOT a usable NSE/BSE symbol and must never be
+    used as one (it silently produced broken "S0003057.NS"-style tickers
+    before this fix). Prefer real symbol fields; "ric" (e.g. "NTPC.NS")
+    already carries the correct exchange suffix, so it's kept as-is rather
+    than always forcing ".NS". Only fall back to a company-name lookup
+    against the free static stock list, and drop the row entirely (return
+    None) if no real ticker can be resolved — a missing row beats a broken link.
+    """
+    exchange_suffix = ".BO" if str(raw.get("exchange_type", "")).upper() in ("BSE", "BO") else ".NS"
+
+    real_symbol = (
+        raw.get("stock_name") or raw.get("ticker") or raw.get("symbol") or
+        raw.get("nse_code") or raw.get("ric") or ""
     ).strip().upper()
-    ticker = ticker.replace(".NS", "").replace(".BO", "")
+
+    if real_symbol:
+        ticker = real_symbol if "." in real_symbol else f"{real_symbol}{exchange_suffix}"
+    else:
+        company = (raw.get("company_name") or raw.get("company") or raw.get("displayName") or "").strip()
+        nse_code = (name_to_nse or {}).get(company.lower())
+        ticker = f"{nse_code}.NS" if nse_code else None
+
     if not ticker:
         return None
 
-    name = (raw.get("company_name") or raw.get("company") or raw.get("name") or ticker).strip()
+    name = (raw.get("company_name") or raw.get("company") or raw.get("displayName") or raw.get("name") or ticker).strip()
 
     price = _f(
         raw.get("current_price") or raw.get("price") or
@@ -166,7 +185,7 @@ def _normalize(raw: dict) -> dict | None:
     pe = _f(raw.get("pe_ratio") or raw.get("pe") or raw.get("p_e"))
 
     return {
-        "ticker":      f"{ticker}.NS",
+        "ticker":      ticker,
         "name":        name,
         "price":       price,
         "change_pct":  change_pct,
@@ -611,16 +630,30 @@ async def search_stocks(query: str, limit: int = 8) -> list[dict]:
 
 # ── Market overview / discovery endpoints ─────────────────────────────────────
 
+async def _name_to_nse_map() -> dict[str, str]:
+    """Company name (lowercased) -> NSE code, built from the free static stock
+    list. Used by _normalize() as a last-resort ticker lookup for endpoints
+    that only expose an internal ticker_id, not a real symbol."""
+    stocks = await _get_all_stocks()
+    return {
+        s["name"].strip().lower(): s["nse-code"]
+        for s in stocks if s.get("name") and s.get("nse-code")
+    }
+
+
 async def get_trending() -> dict[str, list[dict]]:
-    """/trending — top gainers and losers."""
-    data = await _get("/trending")
+    """/trending — top gainers and losers. Explicitly NSE — the API defaults
+    to BSE otherwise, which doesn't match the rest of the app's NSE-first
+    convention (this is the fallback for the NSE-direct gainers/losers path)."""
+    data = await _get("/trending", {"exchange": "NSE"})
     if not data or not isinstance(data, dict):
         return {"gainers": [], "losers": []}
     nested = data.get("trending_stocks") or {}
     raw_gainers = nested.get("top_gainers") or data.get("gainers") or []
     raw_losers = nested.get("top_losers") or data.get("losers") or []
-    gainers = [s for s in (_normalize(r) for r in raw_gainers) if s]
-    losers = [s for s in (_normalize(r) for r in raw_losers) if s]
+    name_map = await _name_to_nse_map()
+    gainers = [s for s in (_normalize(r, name_map) for r in raw_gainers) if s]
+    losers = [s for s in (_normalize(r, name_map) for r in raw_losers) if s]
     return {"gainers": gainers, "losers": losers}
 
 
@@ -647,9 +680,10 @@ async def get_52_week_high_low() -> dict[str, list[dict]]:
     nse = data.get("NSE_52WeekHighLow") or {}
     highs = nse.get("high52Week") or []
     lows = nse.get("low52Week") or []
+    name_map = await _name_to_nse_map()
     return {
-        "highs": [s for s in (_normalize(r) for r in highs) if s],
-        "lows":  [s for s in (_normalize(r) for r in lows) if s],
+        "highs": [s for s in (_normalize(r, name_map) for r in highs) if s],
+        "lows":  [s for s in (_normalize(r, name_map) for r in lows) if s],
     }
 
 
@@ -658,7 +692,8 @@ async def get_price_shockers() -> list[dict]:
     if not data or not isinstance(data, dict):
         return []
     items = (data.get("NSE_PriceShocker") or []) + (data.get("BSE_PriceShocker") or [])
-    return [s for s in (_normalize(r) for r in items) if s]
+    name_map = await _name_to_nse_map()
+    return [s for s in (_normalize(r, name_map) for r in items) if s]
 
 
 async def get_news(page_no: int = 1, size: int = 20) -> list[dict]:

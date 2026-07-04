@@ -56,6 +56,16 @@ _NSE_INDEX_MAP = {
     "NIFTY PHARMA":  "Nifty Pharma",
 }
 
+# IndianAPI's /indices name (uppercased for matching) → same display names as above.
+# Used as a fallback when NSE direct is blocked (403 from cloud IPs, e.g. Render).
+_INDIANAPI_INDEX_MAP = {
+    "NIFTY 50":      "Nifty 50",
+    "NIFTY NEXT 50": "Nifty Next 50",
+    "NIFTY BANK":    "Bank Nifty",
+    "NIFTY IT":      "Nifty IT",
+    "NIFTY PHARMA":  "Nifty Pharma",
+}
+
 # Keep _INDICES for any legacy callers (no longer used for actual fetching)
 _INDICES = {
     "Nifty 50":      "^NSEI",
@@ -409,9 +419,46 @@ async def get_sector_stocks(sector: str) -> dict:
     return out
 
 
+async def _fetch_indices_from_indianapi() -> list[dict]:
+    """Fallback when NSE direct is blocked (403 from cloud IPs, e.g. Render).
+    IndianAPI's /indices works fine from any cloud IP but lacks open/high/low/
+    year-high/year-low — those are set to None (MarketBar only needs
+    name/price/change_pct/change_pts, so this is a safe degradation)."""
+    # No exchange/index_type filter — "POPULAR" excludes sector indices like
+    # Bank/IT/Pharma (those are under "SECTOR"), so fetch the full unfiltered list.
+    rows = await indianapi_service.get_indices_data()
+    out: list[dict] = []
+    for row in rows:
+        display = _INDIANAPI_INDEX_MAP.get((row.get("name") or "").upper())
+        if not display:
+            continue
+        try:
+            price = float(row["price"])
+            net_change = float(row.get("netChange") or 0)
+            out.append({
+                "name":       display,
+                "price":      round(price, 2),
+                "prev_close": round(price - net_change, 2),
+                "change_pct": float(row.get("percentChange") or 0),
+                "change_pts": round(net_change, 2),
+                "open":       None,
+                "high":       None,
+                "low":        None,
+                "year_high":  None,
+                "year_low":   None,
+            })
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    order = list(_INDIANAPI_INDEX_MAP.values())
+    out.sort(key=lambda x: order.index(x["name"]) if x["name"] in order else 99)
+    return out
+
+
 async def get_indices(_force: bool = False) -> list[dict]:
     """
-    Fetch the 5 headline index prices from NSE's official API (no yfinance).
+    Fetch the 5 headline index prices — NSE direct primary (free, but blocked
+    from cloud IPs like Render with a 403), IndianAPI as fallback.
     Cached 60 s. Pass _force=True to bypass cache (used by HomeRefreshTask).
     """
     if not _force:
@@ -428,6 +475,9 @@ async def get_indices(_force: bool = False) -> list[dict]:
     except asyncio.TimeoutError:
         logger.warning("NSE indices fetch timed out")
         indices = []
+
+    if not indices:
+        indices = await _fetch_indices_from_indianapi()
 
     if indices:
         _idx_cache.set("indices", indices)
@@ -471,8 +521,21 @@ async def get_market_overview(_force: bool = False) -> dict:
     losers      = nse_movers.get("losers",  [])
     high_volume: list[dict] = []
     stocks: list[dict]      = []  # full bucket list — not fetched anymore
+    source = "nse"
 
-    logger.info("Market overview: NSE gainers=%d losers=%d", len(gainers), len(losers))
+    # Fallback when NSE direct is blocked (403 from cloud IPs, e.g. Render) —
+    # IndianAPI's /trending already returns the same {ticker, name, price,
+    # change_pct, ...} shape, so it's a drop-in replacement.
+    if not gainers and not losers:
+        try:
+            trending = await indianapi_service.get_trending()
+            gainers, losers = trending.get("gainers", []), trending.get("losers", [])
+            if gainers or losers:
+                source = "indianapi"
+        except Exception as exc:
+            logger.warning("IndianAPI trending fallback failed: %s", exc)
+
+    logger.info("Market overview: source=%s gainers=%d losers=%d", source, len(gainers), len(losers))
 
     result = {
         "indices":           indices,
@@ -487,7 +550,7 @@ async def get_market_overview(_force: bool = False) -> dict:
         _cache.set("market_overview", result)
         cache.set(_OVERVIEW_REDIS_KEY, result, "overview")
     else:
-        logger.warning("Market overview: NSE returned no data — keeping existing cache")
+        logger.warning("Market overview: both NSE and IndianAPI returned no data — keeping existing cache")
     return _cache.get("market_overview") or result
 
 
