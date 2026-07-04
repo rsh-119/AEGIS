@@ -624,7 +624,13 @@ async def get_market_overview(_force: bool = False) -> dict:
         "high_volume":       high_volume,
         "fetched_at":        int(__import__("time").time()),
     }
-    has_data = bool(gainers or losers or indices)
+    # Require gainers/losers specifically — indices are fetched (and cached)
+    # independently via get_indices(), so a lone indices success shouldn't
+    # mask a movers failure and lock in an empty result for 30 min / 5 days.
+    # (This exact bug happened on the first production fetch after deploying
+    # the snapshot feature: indices succeeded, movers didn't, and the empty
+    # movers got cached anyway because `indices` alone satisfied the old check.)
+    has_data = bool(gainers or losers)
     old_cached = _cache.get("market_overview") or cache.get(_OVERVIEW_REDIS_KEY)
     if has_data or not old_cached:
         _cache.set("market_overview", result)
