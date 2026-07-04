@@ -8,6 +8,7 @@ ALL calls for _BACKOFF_SECONDS to let the rate-limit window reset.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -407,6 +408,99 @@ async def get_historical_stats(name_or_symbol: str, stats: str = "all") -> dict 
     result = data if isinstance(data, dict) else None
     if result:
         cache.set(ck, result, "history")
+    return result
+
+
+# ── /stock_target_price, /stock_forecasts — analyst estimates ────────────────
+# Both require IndianAPI's internal stock_id (e.g. "S0003051"), not an NSE
+# symbol, so resolve via the free static stock list first.
+
+async def _stock_id_for(name_or_symbol: str) -> str | None:
+    stocks = await _get_all_stocks()
+    bare = name_or_symbol.upper().strip()
+    for s in stocks:
+        if (s.get("nse-code") or "").upper() == bare:
+            return s.get("id")
+    return None
+
+
+async def get_stock_target_price(name_or_symbol: str) -> dict | None:
+    """/stock_target_price — analyst price targets + Buy/Hold/Sell distribution.
+    Cached 24h — analyst targets update at most weekly."""
+    ck = f"indianapi:target:{name_or_symbol}"
+    hit = cache.get(ck)
+    if hit is not None:
+        return hit or None
+
+    stock_id = await _stock_id_for(name_or_symbol)
+    if not stock_id:
+        return None
+    data = await _get("/stock_target_price", {"stock_id": stock_id})
+    if not isinstance(data, dict) or "error" in data:
+        return None
+
+    pt = data.get("priceTarget") or {}
+    rec = data.get("recommendation") or {}
+    stats = (rec.get("Statistics") or {}).get("Statistic") or []
+    by_rating = {int(s["Recommendation"]): int(s.get("NumberOfAnalysts") or 0) for s in stats if "Recommendation" in s}
+
+    result = {
+        "mean_target": _f(pt.get("Mean")),
+        "high_target": _f(pt.get("High")),
+        "low_target": _f(pt.get("Low")),
+        "median_target": _f(pt.get("Median")),
+        "strong_buy": by_rating.get(1, 0),
+        "buy": by_rating.get(2, 0),
+        "hold": by_rating.get(3, 0),
+        "sell": by_rating.get(4, 0),
+        "strong_sell": by_rating.get(5, 0),
+    }
+    if result["mean_target"] is None and not by_rating:
+        return None
+    cache.set(ck, result, "analyst")
+    return result
+
+
+async def get_stock_forecasts(name_or_symbol: str) -> dict | None:
+    """/stock_forecasts — analyst revenue (SAL) + EPS estimates by fiscal year.
+    Cached 24h."""
+    ck = f"indianapi:forecasts:{name_or_symbol}"
+    hit = cache.get(ck)
+    if hit is not None:
+        return hit or None
+
+    stock_id = await _stock_id_for(name_or_symbol)
+    if not stock_id:
+        return None
+
+    async def _measure(code: str) -> dict:
+        data = await _get("/stock_forecasts", {
+            "stock_id": stock_id, "measure_code": code,
+            "period_type": "Annual", "data_type": "Estimates", "age": "Current",
+        })
+        if not isinstance(data, dict) or "error" in data:
+            return {}
+        rows = data.get("data") or data.get("values") or []
+        out: dict[str, float] = {}
+        for r in rows:
+            period = r.get("period") or r.get("fiscalYear") or r.get("FiscalYear")
+            val = _f(r.get("value") or r.get("Value") or r.get("mean") or r.get("Mean"))
+            if period and val is not None:
+                out[str(period)] = val
+        return out
+
+    revenue_by_period, eps_by_period = await asyncio.gather(_measure("SAL"), _measure("EPS"))
+    if not revenue_by_period and not eps_by_period:
+        return None
+
+    periods = sorted(set(revenue_by_period) | set(eps_by_period))
+    result = {
+        "periods": [
+            {"period": p, "revenue": revenue_by_period.get(p), "eps": eps_by_period.get(p)}
+            for p in periods
+        ]
+    }
+    cache.set(ck, result, "analyst")
     return result
 
 
