@@ -537,30 +537,28 @@ async def get_concalls(name_or_symbol: str) -> list[dict]:
     return result
 
 
-# ── batch live price (chunked, tolerant of individual bad symbols) ───────────
+# ── batch live price (chunked, NO retries — cost must stay bounded) ──────────
 
 async def batch_live_price(symbols: list[str], exchange: str = "NSE", chunk_size: int = 40) -> dict[str, dict]:
     """
     /nse_stock_batch_live_price or /bse_stock_batch_live_price.
 
-    A single invalid/delisted symbol fails the WHOLE batch on this API, so we
-    chunk requests and, on a chunk failure, retry that chunk's symbols one by
-    one to isolate and skip only the bad ones.
+    A single invalid/delisted symbol fails the WHOLE batch on this API, and
+    failures are NOT reliably tied to the same symbol every time (confirmed
+    empirically — a bisection-based retry that assumed deterministic bad
+    symbols spiralled to 100+ requests per call chasing failures that moved
+    around between attempts). So: exactly ONE request per chunk, no retries
+    of any kind. A failed chunk is simply dropped (partial results are far
+    better than an unbounded-cost retry loop on a metered API). Cost is
+    always exactly ceil(len(symbols) / chunk_size) requests, guaranteed.
     """
     path = "/nse_stock_batch_live_price" if exchange == "NSE" else "/bse_stock_batch_live_price"
     out: dict[str, dict] = {}
-
     chunks = [symbols[i:i + chunk_size] for i in range(0, len(symbols), chunk_size)]
     for chunk in chunks:
         data = await _post(path, {"stock_symbols": chunk})
         if isinstance(data, dict) and "error" not in data:
             out.update(data)
-            continue
-        # Chunk failed (likely one bad symbol) — retry individually
-        for sym in chunk:
-            single = await _post(path, {"stock_symbols": [sym]})
-            if isinstance(single, dict) and "error" not in single:
-                out.update(single)
     return out
 
 
