@@ -1,34 +1,37 @@
 """
 home_refresh_service.py — Background task that keeps homepage data warm.
 
-Instead of fetching from external APIs on every user request, this task
-pre-fetches data on a fixed schedule and stores it in the module-level caches.
-User-facing endpoints always read from cache → instant response.
+Market data (indices, gainers/losers) is otherwise purely demand-driven:
+during NSE trading hours (Mon-Fri 9:15am-3:30pm IST, minus a couple of fixed
+national holidays — see market_service.is_market_hours), the first user
+request after the 30-min cache expires triggers a live fetch; outside those
+hours prices can't change, so requests are served straight from a long-lived
+snapshot with NO live fetch attempted at all.
 
-Schedule (all intervals are multiples of the base 10 s tick):
-  Every  10 s  → indices       (NSE direct API — 5 index levels)
-  Every  10 min → market overview  (gainers/losers/active via IndianAPI)
-  Every  60 min → MF highlights    (MFApi.in — NAVs published once daily)
+This task's only job is to capture that snapshot once, right after market
+close each trading day, so it reflects the actual end-of-day closing prices
+rather than whatever the last intraday cache-miss happened to catch. It
+checks every 10 minutes (cheap — no API calls unless it's actually time to
+snapshot) and fires at most once per trading day.
 
-  Bulk deals: NOT refreshed here — NSE publishes them once per day so the
-  1-hour cache TTL is sufficient. First request after startup/expiry fetches
-  them and the same data serves for the rest of the day.
+MF highlights: refreshed hourly — mfapi.in isn't quota-metered like IndianAPI,
+and NAVs only publish once a day anyway.
 
-If a refresh fails, the previous cached value stays valid until its TTL expires
-so users never see an error mid-cycle.
+Bulk deals: no longer fetched (removed 2026-07-04 — NSE's bulk-deals API and
+its CSV fallback both fail unreliably from cloud IPs; IndianAPI has no
+equivalent endpoint).
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import date, datetime
 
 logger = logging.getLogger(__name__)
 
-_BASE           = 10     # base tick in seconds
-_INDICES_TICKS  = 1      # every 1 tick  = 10 s
-_OVERVIEW_TICKS = 60     # every 60 ticks = 10 min
-_MF_TICKS       = 360    # every 360 ticks = 60 min
+_CHECK_INTERVAL = 600    # 10 min — just a clock check, negligible cost
+_MF_TICKS       = 6      # every 6 checks of _CHECK_INTERVAL = 60 min
 
 
 class HomeRefreshTask:
@@ -36,6 +39,7 @@ class HomeRefreshTask:
         self._running = False
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
+        self._last_snapshot_date: date | None = None
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -45,10 +49,8 @@ class HomeRefreshTask:
         self._running = True
         self._task = asyncio.create_task(self._loop(), name="home-refresh")
         logger.info(
-            "HomeRefreshTask started — indices=%ds overview=%dmin mf=%dmin",
-            _BASE * _INDICES_TICKS,
-            _BASE * _OVERVIEW_TICKS // 60,
-            _BASE * _MF_TICKS // 60,
+            "HomeRefreshTask started — end-of-day snapshot once/trading-day, mf=%dmin",
+            _MF_TICKS * _CHECK_INTERVAL // 60,
         )
 
     def stop(self) -> None:
@@ -63,38 +65,39 @@ class HomeRefreshTask:
         tick = 0
         while self._running:
             async with self._lock:
-                # Overview: every 10 min (and on tick 0 so first run is full)
-                if tick % _OVERVIEW_TICKS == 0:
-                    await self._refresh_overview()
-                else:
-                    await self._refresh_indices()
+                await self._maybe_snapshot_close()
 
-                # MF highlights: every 60 min
                 if tick % _MF_TICKS == 0:
                     await self._refresh_mf_highlights()
 
-
             tick += 1
-            await asyncio.sleep(_BASE)
+            await asyncio.sleep(_CHECK_INTERVAL)
 
     # ── Refresh methods ───────────────────────────────────────────────────────
 
-    async def _refresh_indices(self) -> None:
-        try:
-            from app.services.market_service import get_indices
-            indices = await get_indices(_force=True)
-            logger.debug("HomeRefresh: indices (%d)", len(indices))
-        except Exception as exc:
-            logger.warning("HomeRefresh: indices failed — %s", exc)
+    async def _maybe_snapshot_close(self) -> None:
+        from app.services.market_service import _IST, _MARKET_CLOSE, is_market_hours
 
-    async def _refresh_overview(self) -> None:
+        now = datetime.now(_IST)
+        today = now.date()
+        if self._last_snapshot_date == today:
+            return
+        # Fire once, shortly after close on a trading day (not itself "market
+        # hours" anymore, so this won't retrigger on every check afterward).
+        if now.weekday() >= 5 or now.time() < _MARKET_CLOSE or is_market_hours(now):
+            return
         try:
-            from app.services.market_service import get_market_overview
-            ov = await get_market_overview(_force=True)
-            logger.info("HomeRefresh: overview (gainers=%d losers=%d)",
-                        len(ov.get("gainers", [])), len(ov.get("losers", [])))
+            from app.services.market_service import get_indices, get_market_overview
+            indices, overview = await asyncio.gather(
+                get_indices(_force=True), get_market_overview(_force=True),
+            )
+            self._last_snapshot_date = today
+            logger.info(
+                "HomeRefresh: end-of-day snapshot captured (indices=%d gainers=%d losers=%d)",
+                len(indices), len(overview.get("gainers", [])), len(overview.get("losers", [])),
+            )
         except Exception as exc:
-            logger.warning("HomeRefresh: overview failed — %s", exc)
+            logger.warning("HomeRefresh: end-of-day snapshot failed — %s", exc)
 
     async def _refresh_mf_highlights(self) -> None:
         try:

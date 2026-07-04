@@ -49,7 +49,7 @@ TTL: dict[str, int] = {
     # (~10k requests/month), so every cache hit avoided is quota saved.
     "prices":    600,     # 10 min  — live tick / quote data
     "history":   21600,   # 6 h     — OHLCV candles are daily granularity anyway
-    "market":    300,     # 5 min   — indices/movers (NSE-direct, not quota-metered)
+    "market":    1800,    # 30 min  — indices/movers, only refetched during NSE trading hours
     "sector":    21600,   # 6 h
     "peers":     21600,   # 6 h     — peer fundamentals barely move intraday
     "mf_nav":    86400,   # 24 h    — NAV is published once per day by AMFI, never changes intraday
@@ -63,7 +63,9 @@ TTL: dict[str, int] = {
     "corporate": 86400,   # 24 h    — dividends/splits announced once per event
     "filing":    14400,   # 4 h     — BSE/NSE announcements during trading hours
     "news":      1800,    # 30 min  — company news, quota-metered on IndianAPI
-    "overview":  720,     # 12 min  — market overview, matches HomeRefreshTask interval
+    "overview":  1800,    # 30 min  — market overview, only refetched during NSE trading hours
+    "market_snapshot": 432000,  # 5 days — last-known-good indices/movers, served as-is
+                                 # outside trading hours (weekends/holidays included)
 }
 
 # ── In-memory fallback ────────────────────────────────────────────────────────
