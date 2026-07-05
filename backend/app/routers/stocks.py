@@ -245,3 +245,30 @@ async def stock_corporate_actions(ticker: str):
     from app.services.indianapi_service import get_corporate_actions
     bare = ticker.upper().replace(".NS", "").replace(".BO", "")
     return await get_corporate_actions(bare) or []
+
+
+@router.get("/{ticker}/credit-ratings")
+async def stock_credit_ratings(ticker: str):
+    """CRISIL/ICRA/CARE credit ratings from IndianAPI."""
+    from app.services.indianapi_service import get_credit_ratings
+    bare = ticker.upper().replace(".NS", "").replace(".BO", "")
+    return await get_credit_ratings(bare) or []
+
+
+@router.get("/{ticker}/annual-reports")
+async def stock_annual_reports(ticker: str):
+    """Annual report download links from IndianAPI."""
+    from app.services.indianapi_service import get_annual_reports
+    bare = ticker.upper().replace(".NS", "").replace(".BO", "")
+    return await get_annual_reports(bare) or []
+
+
+@router.get("/{ticker}/logo")
+async def stock_logo(ticker: str):
+    """Company logo as a data: URI, from IndianAPI."""
+    from app.services.indianapi_service import get_logo
+    bare = ticker.upper().replace(".NS", "").replace(".BO", "")
+    logo = await get_logo(stock_name=bare)
+    if not logo:
+        raise HTTPException(status_code=404, detail="No logo available")
+    return {"logo": logo}

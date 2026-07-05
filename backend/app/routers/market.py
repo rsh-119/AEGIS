@@ -147,3 +147,12 @@ async def announcements(ticker: str | None = None):
 async def corporate_actions(ticker: str | None = None):
     """Dividends, splits, bonuses. Pass ?ticker=INFY for stock-specific."""
     return await market_service.get_corporate_actions(ticker)
+
+
+@router.get("/indianapi-usage")
+async def indianapi_usage():
+    """IndianAPI monthly quota consumption — total requests, remaining, per-endpoint breakdown."""
+    data = await market_service.get_indianapi_usage()
+    if not data:
+        raise HTTPException(status_code=503, detail="Usage data unavailable")
+    return data

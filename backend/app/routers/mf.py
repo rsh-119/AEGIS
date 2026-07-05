@@ -73,6 +73,21 @@ async def mf_detail(scheme_code: int):
     return data
 
 
+@router.get("/mf/{scheme_code}/holdings")
+async def mf_holdings(scheme_code: int):
+    """Portfolio holdings of a fund, via IndianAPI (best-effort name match —
+    absence of a match is normal and returns an empty list, not an error)."""
+    try:
+        detail = await mf_service.get_mf_detail(scheme_code)
+        if not detail or not detail.get("name"):
+            return []
+        from app.services.indianapi_service import get_mf_holdings as _holdings
+        return await _holdings(detail["name"]) or []
+    except Exception as e:
+        logger.warning("mf_holdings %s failed: %s", scheme_code, e)
+        return []
+
+
 # ── ETFs ──────────────────────────────────────────────────────────────────────
 
 @router.get("/etf")

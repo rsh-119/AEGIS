@@ -48,14 +48,13 @@ async def _prewarm():
     it must not burn quota that real user requests would otherwise use.
 
       R1 — no external API (MF list from AMFI)
-      R2 — IndianAPI: trending + most-active + market overview + ETF/MF highlights
+      R2 — IndianAPI: market overview + ETF/MF highlights
     """
     await asyncio.sleep(3)
     try:
         from app.services.mf_service import get_mf_list, get_etf_list, get_mf_highlights, get_etf_highlights
         from app.services.market_service import get_market_overview
         from app.services.bulk_deals_service import get_bulk_deals
-        from app.services.indianapi_service import get_trending, get_nse_most_active
         logger.info("Cache: pre-warming…")
 
         # R1 — no external API calls
@@ -63,7 +62,6 @@ async def _prewarm():
 
         # R2 — IndianAPI only (skipped when INDIANAPI_ENABLED=false)
         if settings.indianapi_enabled:
-            await asyncio.gather(get_trending(), get_nse_most_active(), return_exceptions=True)
             await asyncio.gather(get_etf_list(), get_mf_highlights("1y"), get_etf_highlights(), return_exceptions=True)
 
         await asyncio.gather(get_market_overview(), get_bulk_deals(), return_exceptions=True)

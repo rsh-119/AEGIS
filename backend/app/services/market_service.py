@@ -723,3 +723,10 @@ async def get_price_shockers() -> list[dict]:
     if data:
         cache.set(ck, data, "market")
     return data or []
+
+
+async def get_indianapi_usage() -> dict | None:
+    """IndianAPI monthly quota consumption. Deliberately uncached — a
+    diagnostic check should reflect the live count, not a stale snapshot."""
+    from app.services.indianapi_service import get_usage
+    return await get_usage()

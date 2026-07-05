@@ -66,6 +66,7 @@ TTL: dict[str, int] = {
     "overview":  1800,    # 30 min  — market overview, only refetched during NSE trading hours
     "market_snapshot": 432000,  # 5 days — last-known-good indices/movers, served as-is
                                  # outside trading hours (weekends/holidays included)
+    "logo":      604800,  # 7 days  — company/fund logos essentially never change
 }
 
 # ── In-memory fallback ────────────────────────────────────────────────────────

@@ -639,38 +639,6 @@ async def _name_to_nse_map() -> dict[str, str]:
     }
 
 
-async def get_trending() -> dict[str, list[dict]]:
-    """/trending — top gainers and losers. Explicitly NSE — the API defaults
-    to BSE otherwise, which doesn't match the rest of the app's NSE-first
-    convention (this is the fallback for the NSE-direct gainers/losers path)."""
-    data = await _get("/trending", {"exchange": "NSE"})
-    if not data or not isinstance(data, dict):
-        return {"gainers": [], "losers": []}
-    nested = data.get("trending_stocks") or {}
-    raw_gainers = nested.get("top_gainers") or data.get("gainers") or []
-    raw_losers = nested.get("top_losers") or data.get("losers") or []
-    name_map = await _name_to_nse_map()
-    gainers = [s for s in (_normalize(r, name_map) for r in raw_gainers) if s]
-    losers = [s for s in (_normalize(r, name_map) for r in raw_losers) if s]
-    return {"gainers": gainers, "losers": losers}
-
-
-async def get_nse_most_active() -> list[dict]:
-    data = await _get("/NSE_most_active")
-    if not data:
-        return []
-    items = data if isinstance(data, list) else (data.get("data") or [])
-    return [s for s in (_normalize(r) for r in items) if s]
-
-
-async def get_bse_most_active() -> list[dict]:
-    data = await _get("/BSE_most_active")
-    if not data:
-        return []
-    items = data if isinstance(data, list) else (data.get("data") or [])
-    return [s for s in (_normalize(r) for r in items) if s]
-
-
 async def get_52_week_high_low() -> dict[str, list[dict]]:
     data = await _get("/fetch_52_week_high_low_data")
     if not data or not isinstance(data, dict):
@@ -692,13 +660,6 @@ async def get_price_shockers() -> list[dict]:
     items = (data.get("NSE_PriceShocker") or []) + (data.get("BSE_PriceShocker") or [])
     name_map = await _name_to_nse_map()
     return [s for s in (_normalize(r, name_map) for r in items) if s]
-
-
-async def get_news(page_no: int = 1, size: int = 20) -> list[dict]:
-    data = await _get("/news", {"page_no": page_no, "size": size})
-    if not data:
-        return []
-    return data if isinstance(data, list) else (data.get("data") or [])
 
 
 async def get_company_news(stock: str) -> list[dict]:
@@ -755,3 +716,157 @@ async def get_corporate_actions(ticker: str | None = None) -> list[dict]:
     if result:
         cache.set(ck, result, "corporate")
     return result
+
+
+# ── /usage — track IndianAPI monthly quota consumption ────────────────────────
+# Deliberately not cached — this is a diagnostic check, not a data feature, and
+# should always reflect the current live count rather than a stale snapshot.
+async def get_usage() -> dict | None:
+    data = await _get("/usage")
+    return data if isinstance(data, dict) else None
+
+
+async def get_credit_ratings(stock_name: str) -> list[dict]:
+    """/credit_ratings — CRISIL/ICRA/CARE ratings. Cached 24h — ratings change rarely."""
+    ck = f"indianapi:credit_ratings:{stock_name.lower()}"
+    hit = cache.get(ck)
+    if hit is not None:
+        return hit
+    data = await _get("/credit_ratings", {"stock_name": stock_name})
+    result: list[dict] = data if isinstance(data, list) else ((data or {}).get("data") or [])
+    if result:
+        cache.set(ck, result, "corporate")
+    return result
+
+
+async def get_annual_reports(stock_name: str) -> list[dict]:
+    """/annual_reports — download links for annual reports across years. Cached 24h."""
+    ck = f"indianapi:annual_reports:{stock_name.lower()}"
+    hit = cache.get(ck)
+    if hit is not None:
+        return hit
+    data = await _get("/annual_reports", {"stock_name": stock_name})
+    result: list[dict] = data if isinstance(data, list) else ((data or {}).get("data") or [])
+    if result:
+        cache.set(ck, result, "corporate")
+    return result
+
+
+# ── /logo — company/mutual-fund logo as a data URI ────────────────────────────
+
+async def get_logo(stock_name: str | None = None, mutual_fund: str | None = None) -> str | None:
+    """/logo — returns a ready-to-use data: URI, or None if unavailable.
+    Cached 7 days — logos essentially never change."""
+    key = stock_name or mutual_fund or ""
+    if not key:
+        return None
+    ck = f"indianapi:logo:{key.lower()}"
+    hit = cache.get(ck)
+    if hit is not None:
+        return hit or None
+
+    params: dict[str, str] = {}
+    if stock_name:
+        params["stock_name"] = stock_name
+    if mutual_fund:
+        params["mutual_fund"] = mutual_fund
+    data = await _get("/logo", params)
+    if not isinstance(data, dict) or not data.get("base64_image"):
+        return None
+
+    content_type = data.get("content_type") or "image/png"
+    uri = f"data:{content_type};base64,{data['base64_image']}"
+    cache.set(ck, uri, "logo")
+    return uri
+
+
+# ── /mf_holdings — what stocks a mutual fund holds ────────────────────────────
+# Needs IndianAPI's internal MF id (e.g. "MF007605"), which isn't the same as
+# the numeric AMFI scheme_code Aegis normally uses. Resolve via the free
+# static all_mf.json list — best-effort name match, since IndianAPI's fund
+# names don't always match AMFI's exactly. Absence of a match is expected and
+# should fail silently, not error.
+
+_MF_LIST_CACHE_KEY = "indianapi:all_mf"
+
+
+async def _get_all_mf() -> list[dict]:
+    hit = cache.get(_MF_LIST_CACHE_KEY)
+    if hit is not None:
+        return hit
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(f"{BASE_URL}/static/all_mf.json")
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        logger.warning("IndianAPI all_mf.json fetch failed: %s", e)
+        return []
+    # Nested by asset category -> sub-category -> list of fund dicts.
+    flat: list[dict] = []
+    if isinstance(data, dict):
+        for sub_categories in data.values():
+            if isinstance(sub_categories, dict):
+                for funds in sub_categories.values():
+                    if isinstance(funds, list):
+                        flat.extend(f for f in funds if isinstance(f, dict))
+    if flat:
+        cache.set(_MF_LIST_CACHE_KEY, flat, "mf_list")   # 24h — static list, no quota cost
+    return flat
+
+
+_MF_QUALIFIER_WORDS = {
+    "regular", "direct", "plan", "option", "growth", "dividend",
+    "bonus", "idcw", "payout", "reinvestment",
+}
+
+
+def _normalize_fund_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
+
+
+def _fund_name_tokens(name: str) -> set[str]:
+    """Word set with plan/option qualifiers stripped — AMFI and IndianAPI
+    interspers these differently (e.g. "X Fund - Regular Plan - Growth" vs
+    "X Fund Regular Growth"), so a plain substring check misses valid
+    matches when a qualifier word sits in the middle rather than the end."""
+    return {w for w in _normalize_fund_name(name).split() if w not in _MF_QUALIFIER_WORDS}
+
+
+async def _mf_id_for(fund_name: str) -> str | None:
+    funds = await _get_all_mf()
+    target = _normalize_fund_name(fund_name)
+    if not target:
+        return None
+    # 1) Exact normalized match.
+    for f in funds:
+        if _normalize_fund_name(f.get("mfName") or "") == target:
+            return f.get("id")
+    # 2) Token-set match with qualifier words (Plan/Growth/Direct/...) stripped
+    #    from both sides, so word order/position differences don't matter.
+    target_tokens = _fund_name_tokens(fund_name)
+    if not target_tokens:
+        return None
+    for f in funds:
+        candidate_tokens = _fund_name_tokens(f.get("mfName") or "")
+        if candidate_tokens and (candidate_tokens <= target_tokens or target_tokens <= candidate_tokens):
+            return f.get("id")
+    return None
+
+
+async def get_mf_holdings(fund_name: str) -> list[dict] | None:
+    """/mf_holdings — portfolio holdings of a mutual fund. Returns None if no
+    IndianAPI fund match is found (best-effort — expected to happen often)."""
+    ck = f"indianapi:mf_holdings:{fund_name.lower()}"
+    hit = cache.get(ck)
+    if hit is not None:
+        return hit or None
+
+    stock_id = await _mf_id_for(fund_name)
+    if not stock_id:
+        return None
+    data = await _get("/mf_holdings", {"stock_id": stock_id})
+    result: list[dict] = data if isinstance(data, list) else ((data or {}).get("data") or [])
+    if result:
+        cache.set(ck, result, "mf_list")
+    return result or None
