@@ -662,15 +662,27 @@ async def get_price_shockers() -> list[dict]:
     return [s for s in (_normalize(r, name_map) for r in items) if s]
 
 
+def _as_list(data: object) -> list[dict]:
+    """Safely coerce an IndianAPI response into a list, regardless of shape.
+    Some endpoints return a bare list, some wrap it in {"data": [...]} — and
+    occasionally, for a handful of tickers, the API returns something else
+    entirely (seen in production: a raw int), which crashed with
+    `AttributeError: 'int' object has no attribute 'get'` when the caller
+    assumed anything non-list must be dict-like."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return data.get("data") or []
+    return []
+
+
 async def get_company_news(stock: str) -> list[dict]:
     ck = f"indianapi:company_news:{stock.lower()}"
     hit = cache.get(ck)
     if hit is not None:
         return hit
     data = await _get("/company_news", {"stock_name": stock})
-    if not data:
-        return []
-    result = data if isinstance(data, list) else (data.get("data") or [])
+    result = _as_list(data)
     if result:
         cache.set(ck, result, "news")
     return result
@@ -687,9 +699,7 @@ async def get_ipo() -> list[dict]:
 
 async def get_commodities() -> list[dict]:
     data = await _get("/commodities")
-    if not data:
-        return []
-    return data if isinstance(data, list) else (data.get("data") or [])
+    return _as_list(data)
 
 
 async def get_recent_announcements(ticker: str | None = None) -> list[dict]:
@@ -699,7 +709,7 @@ async def get_recent_announcements(ticker: str | None = None) -> list[dict]:
         return hit
     params = {"stock_name": ticker} if ticker else {}
     data = await _get("/recent_announcements", params)
-    result: list[dict] = data if isinstance(data, list) else ((data or {}).get("data") or [])
+    result = _as_list(data)
     if result:
         cache.set(ck, result, "filing")
     return result
@@ -712,7 +722,7 @@ async def get_corporate_actions(ticker: str | None = None) -> list[dict]:
         return hit
     params = {"stock_name": ticker} if ticker else {}
     data = await _get("/corporate_actions", params)
-    result: list[dict] = data if isinstance(data, list) else ((data or {}).get("data") or [])
+    result = _as_list(data)
     if result:
         cache.set(ck, result, "corporate")
     return result
@@ -733,7 +743,7 @@ async def get_credit_ratings(stock_name: str) -> list[dict]:
     if hit is not None:
         return hit
     data = await _get("/credit_ratings", {"stock_name": stock_name})
-    result: list[dict] = data if isinstance(data, list) else ((data or {}).get("data") or [])
+    result = _as_list(data)
     if result:
         cache.set(ck, result, "corporate")
     return result
@@ -746,7 +756,7 @@ async def get_annual_reports(stock_name: str) -> list[dict]:
     if hit is not None:
         return hit
     data = await _get("/annual_reports", {"stock_name": stock_name})
-    result: list[dict] = data if isinstance(data, list) else ((data or {}).get("data") or [])
+    result = _as_list(data)
     if result:
         cache.set(ck, result, "corporate")
     return result
@@ -866,7 +876,7 @@ async def get_mf_holdings(fund_name: str) -> list[dict] | None:
     if not stock_id:
         return None
     data = await _get("/mf_holdings", {"stock_id": stock_id})
-    result: list[dict] = data if isinstance(data, list) else ((data or {}).get("data") or [])
+    result = _as_list(data)
     if result:
         cache.set(ck, result, "mf_list")
     return result or None
