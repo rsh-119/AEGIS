@@ -18,7 +18,7 @@ import { ShareholdingPie } from "@/components/ShareholdingPie";
 import { TechnicalsCard } from "@/components/TechnicalsCard";
 import { ChartCard } from "@/components/ui/animated-card-chart";
 import Link from "next/link";
-import { Plus, ExternalLink, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, BarChart3, CheckCircle2, AlertTriangle, AlertCircle, Info, Newspaper, Target, Eye, Zap, Bell, Calendar, ArrowUpRight, Gift } from "lucide-react";
+import { Plus, ExternalLink, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, BarChart3, CheckCircle2, AlertTriangle, AlertCircle, Info, Newspaper, Target, Eye, Zap, Bell, Calendar, ArrowUpRight, Gift, ShieldCheck, FileText } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,35 @@ const PERIODS = [
   { label: "5Y", value: "5y" },
   { label: "All", value: "max" },
 ];
+
+// Clearbit (free, domain-based) first since it costs no IndianAPI quota;
+// falls back to the IndianAPI /logo endpoint (already fetched by the page)
+// only if Clearbit has no website or 404s. Omits entirely if both fail —
+// this is the only page where the IndianAPI logo call happens at all.
+function HeaderLogo({ website, logo, name }: { website?: string | null; logo?: string | null; name?: string }) {
+  const [clearbitFailed, setClearbitFailed] = useState(false);
+  let domain: string | null = null;
+  if (website && !clearbitFailed) {
+    try {
+      domain = new URL(website).hostname.replace(/^www\./, "");
+    } catch { /* invalid URL */ }
+  }
+
+  if (domain) {
+    return (
+      <img
+        src={`https://logo.clearbit.com/${domain}`}
+        alt={name ?? "logo"}
+        className="h-8 w-8 shrink-0 rounded-lg border border-border bg-surface object-contain p-1"
+        onError={() => setClearbitFailed(true)}
+      />
+    );
+  }
+  if (logo) {
+    return <img src={logo} alt={name ?? "logo"} className="h-8 w-8 shrink-0 rounded-lg border border-border bg-surface object-contain p-1" />;
+  }
+  return null;
+}
 
 export default function StockPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = use(params);
@@ -86,6 +115,21 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
     fetcher,
     { revalidateOnFocus: false }
   );
+  const { data: creditRatings } = useSWR(
+    core ? `/api/stocks/${symbol}/credit-ratings` : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const { data: annualReports } = useSWR(
+    core ? `/api/stocks/${symbol}/annual-reports` : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const { data: logoData } = useSWR(
+    core ? `/api/stocks/${symbol}/logo` : null,
+    fetcher,
+    { revalidateOnFocus: false, shouldRetryOnError: false }
+  );
 
   // Real-time price feed — WS → SSE → REST polling with auto-reconnect
   const { tick: liveTick, status: streamStatus } = useRealtimePrice(symbol);
@@ -126,6 +170,7 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
+            <HeaderLogo website={q.website} logo={logoData?.logo} name={q.company_name} />
             <h1 className="font-display text-xl sm:text-2xl md:text-3xl font-bold leading-tight">{q.company_name}</h1>
             <Badge className="bg-raised text-muted ring-1 ring-border text-xs">{q.exchange}</Badge>
           </div>
@@ -497,12 +542,18 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
       {/* ── Concall Summary ── */}
       <ConcallCard ticker={symbol} />
 
-      {/* ── Announcements + Corporate Actions ── */}
-      {(announcements?.length > 0 || corpActions?.length > 0) && (
-        <div className="grid gap-4 lg:grid-cols-2">
+      {/* ── Credit Ratings + Annual Reports + Announcements ── */}
+      {(creditRatings?.length > 0 || annualReports?.length > 0 || announcements?.length > 0) && (
+        <div className="grid gap-4 lg:grid-cols-3">
+          <CreditRatingsCard items={creditRatings ?? []} />
+          <AnnualReportsCard items={annualReports ?? []} />
           <AnnouncementsCard items={announcements ?? []} />
-          <CorporateActionsCard items={corpActions ?? []} />
         </div>
+      )}
+
+      {/* ── Corporate Actions ── */}
+      {corpActions?.length > 0 && (
+        <CorporateActionsCard items={corpActions ?? []} />
       )}
 
       {/* ── News + Sentiment ── */}
@@ -1051,16 +1102,85 @@ function AnalystForecastCard({ forecasts }: { forecasts: any }) {
   );
 }
 
+function CreditRatingsCard({ items }: { items: any[] }) {
+  if (!items.length) return null;
+  return (
+    <Card className="p-5 space-y-3">
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="h-4 w-4 text-saffron" />
+        <h3 className="font-semibold text-sm">Credit Ratings</h3>
+        <span className="text-xs text-muted ml-auto">{items.length} recent</span>
+      </div>
+      <div className="space-y-2">
+        {items.slice(0, 6).map((r: any, i: number) => (
+          <a
+            key={i}
+            href={r.url}
+            target="_blank"
+            rel="noopener"
+            className="flex items-center gap-2.5 py-1.5 border-b border-border/50 last:border-0 group"
+          >
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-fg/90 leading-snug group-hover:text-saffron transition-colors">{r.title ?? "Rating update"}</p>
+              {r.date && (
+                <div className="flex items-center gap-1 mt-1">
+                  <Calendar className="h-3 w-3 text-muted" />
+                  <span className="text-[10px] text-muted">{r.date}</span>
+                </div>
+              )}
+            </div>
+            {r.url && <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted group-hover:text-saffron transition-colors" />}
+          </a>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function AnnualReportsCard({ items }: { items: any[] }) {
+  if (!items.length) return null;
+  return (
+    <Card className="p-5 space-y-3">
+      <div className="flex items-center gap-2">
+        <FileText className="h-4 w-4 text-saffron" />
+        <h3 className="font-semibold text-sm">Annual Reports</h3>
+        <span className="text-xs text-muted ml-auto">{items.length} years</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {items.slice(0, 8).map((r: any, i: number) => (
+          <a
+            key={i}
+            href={r.url}
+            target="_blank"
+            rel="noopener"
+            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted hover:text-saffron hover:border-saffron/50 transition-colors"
+          >
+            <ExternalLink className="h-3 w-3" /> {r.year ?? "Report"}
+          </a>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+const ANNOUNCEMENT_TYPE_COLORS: Record<string, string> = {
+  "Board Meeting":    "bg-blue-500/10 text-blue-500 ring-blue-500/20",
+  "Result":          "bg-up/10 text-up ring-up/20",
+  "Dividend":        "bg-saffron/10 text-saffron ring-saffron/20",
+  "AGM":             "bg-purple-500/10 text-purple-500 ring-purple-500/20",
+  "Default":         "bg-raised text-muted ring-border",
+};
+
 function AnnouncementsCard({ items }: { items: any[] }) {
+  const ref = useRef<HTMLDivElement>(null);
   if (!items.length) return null;
 
-  const typeColors: Record<string, string> = {
-    "Board Meeting":    "bg-blue-500/10 text-blue-500 ring-blue-500/20",
-    "Result":          "bg-up/10 text-up ring-up/20",
-    "Dividend":        "bg-saffron/10 text-saffron ring-saffron/20",
-    "AGM":             "bg-purple-500/10 text-purple-500 ring-purple-500/20",
-    "Default":         "bg-raised text-muted ring-border",
-  };
+  const shown = items.slice(0, 20);
+
+  function scroll(dir: "up" | "down") {
+    if (!ref.current) return;
+    ref.current.scrollBy({ top: dir === "up" ? -110 : 110, behavior: "smooth" });
+  }
 
   return (
     <Card className="p-5 space-y-3">
@@ -1070,29 +1190,63 @@ function AnnouncementsCard({ items }: { items: any[] }) {
         <span className="text-xs text-muted ml-auto">{items.length} recent</span>
       </div>
 
-      <div className="space-y-2">
-        {items.slice(0, 6).map((a: any, i: number) => {
-          const subject  = a.subject ?? a.headline ?? a.description ?? a.title ?? "—";
-          const date     = a.date ?? a.timestamp ?? a.announcement_date ?? "";
-          const type     = a.type ?? a.category ?? a.announcement_type ?? "";
-          const typeStyle = typeColors[type] ?? typeColors["Default"];
-          return (
-            <div key={i} className="flex gap-2.5 items-start py-1.5 border-b border-border/50 last:border-0">
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-fg/90 leading-snug line-clamp-2">{subject}</p>
-                {date && (
-                  <div className="flex items-center gap-1 mt-1">
-                    <Calendar className="h-3 w-3 text-muted" />
-                    <span className="text-[10px] text-muted">{date}</span>
-                  </div>
+      <div className="relative">
+        {/* Up arrow */}
+        <button
+          onClick={() => scroll("up")}
+          className="absolute -top-1 left-1/2 z-10 -translate-x-1/2 grid h-5 w-8 place-items-center rounded-full bg-surface border border-border shadow-sm text-muted hover:text-fg transition"
+          aria-label="Scroll up"
+        >
+          <ChevronUp className="h-3.5 w-3.5" />
+        </button>
+
+        {/* Slider track */}
+        <div
+          ref={ref}
+          className="flex flex-col gap-2 overflow-y-auto scroll-smooth"
+          style={{ maxHeight: "340px", scrollbarWidth: "none", msOverflowStyle: "none" }}
+        >
+          {shown.map((a: any, i: number) => {
+            const subject  = a.subject ?? a.headline ?? a.description ?? a.title ?? "—";
+            const date     = a.date ?? a.timestamp ?? a.announcement_date ?? "";
+            const type     = a.type ?? a.category ?? a.announcement_type ?? "";
+            const link     = a.link ?? a.url ?? a.document_url ?? null;
+            const typeStyle = ANNOUNCEMENT_TYPE_COLORS[type] ?? ANNOUNCEMENT_TYPE_COLORS["Default"];
+            const Item = link ? "a" : "div";
+            return (
+              <Item
+                key={i}
+                {...(link ? { href: link, target: "_blank", rel: "noopener" } : {})}
+                className={clsx(
+                  "flex flex-col gap-2 rounded-xl border border-border bg-raised p-3 shrink-0",
+                  link && "transition hover:border-saffron/50 hover:bg-raised/70 cursor-pointer"
                 )}
-              </div>
-              {type && (
-                <Badge className={clsx("ring-1 text-[10px] shrink-0 mt-0.5", typeStyle)}>{type}</Badge>
-              )}
-            </div>
-          );
-        })}
+              >
+                <p className="text-xs text-fg/90 leading-snug line-clamp-2">{subject}</p>
+                <div className="flex items-center justify-between gap-2">
+                  {date && (
+                    <div className="flex items-center gap-1 min-w-0">
+                      <Calendar className="h-3 w-3 shrink-0 text-muted" />
+                      <span className="truncate text-[10px] text-muted">{date}</span>
+                    </div>
+                  )}
+                  {type && (
+                    <Badge className={clsx("ring-1 text-[10px] shrink-0", typeStyle)}>{type}</Badge>
+                  )}
+                </div>
+              </Item>
+            );
+          })}
+        </div>
+
+        {/* Down arrow */}
+        <button
+          onClick={() => scroll("down")}
+          className="absolute -bottom-1 left-1/2 z-10 -translate-x-1/2 grid h-5 w-8 place-items-center rounded-full bg-surface border border-border shadow-sm text-muted hover:text-fg transition"
+          aria-label="Scroll down"
+        >
+          <ChevronDown className="h-3.5 w-3.5" />
+        </button>
       </div>
     </Card>
   );
