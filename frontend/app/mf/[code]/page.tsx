@@ -3,7 +3,7 @@
 import { use, useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import {
-  ChevronLeft, TrendingUp, TrendingDown, Building2,
+  ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Building2,
   Layers, BarChart3, AlertTriangle, Loader2,
 } from "lucide-react";
 import { inrCompact } from "@/lib/api";
@@ -216,6 +216,8 @@ function MFDetailView({ code }: { code: number }) {
       .catch(() => setLoading(false));
   }, [code]);
 
+  const holdings = useFundHoldings(code);
+
   if (loading) return (
     <div className="flex flex-col items-center gap-3 py-20">
       <Loader2 className="h-8 w-8 animate-spin text-saffron" />
@@ -277,17 +279,131 @@ function MFDetailView({ code }: { code: number }) {
         </div>
       </div>
 
-      {/* Comparison chart */}
-      {fundPts.length > 0 && (
-        <CompareChart
-          fundPts={fundPts}
-          niftyPts={niftyPts}
-          fundLabel={data.name.split("-")[0].trim()}
-          period={period}
-          setPeriod={setPeriod}
-        />
+      {/* Comparison chart + Fund holdings, side by side on larger screens
+          (holdings are best-effort — only ~251 funds match IndianAPI's
+          internal list — so the chart takes full width when absent) */}
+      {holdings && holdings.length > 0 ? (
+        <div className="grid gap-4 lg:grid-cols-5">
+          {fundPts.length > 0 && (
+            <div className="lg:col-span-3">
+              <CompareChart
+                fundPts={fundPts}
+                niftyPts={niftyPts}
+                fundLabel={data.name.split("-")[0].trim()}
+                period={period}
+                setPeriod={setPeriod}
+              />
+            </div>
+          )}
+          <div className={fundPts.length > 0 ? "lg:col-span-2" : "lg:col-span-5"}>
+            <FundHoldingsCard holdings={holdings} />
+          </div>
+        </div>
+      ) : (
+        fundPts.length > 0 && (
+          <CompareChart
+            fundPts={fundPts}
+            niftyPts={niftyPts}
+            fundLabel={data.name.split("-")[0].trim()}
+            period={period}
+            setPeriod={setPeriod}
+          />
+        )
       )}
+
+      {/* Similar funds — same scheme category, deduped by core fund name */}
+      <SimilarFundsCard category={data.scheme_category} excludeCode={code} />
     </div>
+  );
+}
+
+type Holding = { name: string; allocation: string };
+
+function useFundHoldings(code: number): Holding[] | null {
+  const [holdings, setHoldings] = useState<Holding[] | null>(null);
+
+  useEffect(() => {
+    setHoldings(null);
+    fetch(`/api/mf/${code}/holdings`)
+      .then(r => r.json())
+      .then((d: Holding[]) => setHoldings(Array.isArray(d) ? d : []))
+      .catch(() => setHoldings([]));
+  }, [code]);
+
+  return holdings;
+}
+
+function FundHoldingsCard({ holdings }: { holdings: Holding[] }) {
+  return (
+    <Card className="p-5">
+      <h2 className="mb-3 flex items-center gap-2 font-semibold"><Layers className="h-4 w-4 text-saffron" /> Fund Holdings</h2>
+      <div className="divide-y divide-border">
+        {holdings.slice(0, 15).map((h, i) => (
+          <div key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
+            <span className="truncate text-fg/90">{h.name}</span>
+            <span className="nums shrink-0 font-semibold text-fg">{h.allocation}%</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+type SimilarFund = { scheme_code: number; name: string };
+
+// IndianAPI's scheme_category comes as "Equity Scheme - Flexi Cap Fund" —
+// extract just "Flexi Cap" since that's what actually matches AMFI scheme
+// names for the category filter (the full label never matches anything).
+function extractCategoryKeyword(category: string): string {
+  const match = category.match(/Scheme\s*-\s*(.+?)\s*Fund\s*$/i);
+  return match ? match[1].trim() : category;
+}
+
+function SimilarFundsCard({ category, excludeCode }: { category: string; excludeCode: number }) {
+  const [funds, setFunds] = useState<SimilarFund[] | null>(null);
+  const keyword = category ? extractCategoryKeyword(category) : "";
+
+  useEffect(() => {
+    if (!keyword) { setFunds([]); return; }
+    setFunds(null);
+    fetch(`/api/mf?category=${encodeURIComponent(keyword)}&limit=40`)
+      .then(r => r.json())
+      .then((d: { funds?: SimilarFund[] }) => {
+        const seen = new Set<string>();
+        const result: SimilarFund[] = [];
+        for (const f of d.funds ?? []) {
+          if (f.scheme_code === excludeCode) continue;
+          // Dedup Direct/Regular/Growth/Dividend variants of the same core fund
+          const key = f.name.toLowerCase().split("-")[0].trim();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          result.push(f);
+          if (result.length >= 6) break;
+        }
+        setFunds(result);
+      })
+      .catch(() => setFunds([]));
+  }, [keyword, excludeCode]);
+
+  if (!funds || funds.length === 0) return null;
+
+  return (
+    <Card className="p-5">
+      <h2 className="mb-3 flex items-center gap-2 font-semibold"><Layers className="h-4 w-4 text-saffron" /> Similar Funds</h2>
+      <p className="mb-3 text-xs text-muted">Other {keyword} funds</p>
+      <div className="divide-y divide-border">
+        {funds.map((f) => (
+          <Link
+            key={f.scheme_code}
+            href={`/mf/${f.scheme_code}`}
+            className="flex items-center justify-between gap-3 py-2.5 text-sm text-fg/90 hover:text-saffron transition-colors"
+          >
+            <span className="truncate">{f.name.split("-")[0].trim()}</span>
+            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted" />
+          </Link>
+        ))}
+      </div>
+    </Card>
   );
 }
 
