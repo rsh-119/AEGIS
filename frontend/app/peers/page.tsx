@@ -7,6 +7,7 @@ import { fetcher, inrCompact, num } from "@/lib/api";
 import { GitCompareArrows, ChevronRight, Search, TrendingUp, TrendingDown, Users } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
+import { StockLogo } from "@/components/StockLogo";
 
 /* ─── Types ──────────────────────────────────────── */
 type SectorMeta = { sector: string; count: number; tickers: string[] };
@@ -26,6 +27,7 @@ type PeerRow = {
   return_1y?: number | null;
   return_3y?: number | null;
   return_5y?: number | null;
+  website?: string | null;
 };
 
 /* ─── Sector colors ──────────────────────────────── */
@@ -46,16 +48,6 @@ function sectorColor(s: string) {
   return SECTOR_COLORS[s] ?? "bg-saffron/10 text-saffron ring-saffron/20";
 }
 
-/* ─── Avatar color ───────────────────────────────── */
-const AVATAR_COLORS = [
-  "bg-blue-500","bg-emerald-500","bg-violet-500","bg-rose-500",
-  "bg-amber-500","bg-cyan-500","bg-pink-500","bg-orange-500","bg-teal-500","bg-indigo-500",
-];
-function avatarColor(t: string) {
-  let h = 0;
-  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) & 0xff;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
-}
 
 /* ─── Build comparison rows: target + top 10 by mkt cap ── */
 function buildRows(allStocks: PeerRow[], targetTicker: string): PeerRow[] {
@@ -180,9 +172,7 @@ function StockPicker({
                     selected === s.ticker ? "bg-saffron/8 border-saffron" : "border-transparent hover:bg-raised/60"
                   )}
                 >
-                  <div className={clsx("h-7 w-7 shrink-0 rounded-lg flex items-center justify-center text-[10px] font-bold text-white", avatarColor(bare))}>
-                    {bare.slice(0, 2)}
-                  </div>
+                  <StockLogo ticker={s.ticker} website={s.website} size={7} />
                   <div className="min-w-0 flex-1">
                     <p className={clsx("text-xs font-bold", selected === s.ticker ? "text-saffron" : "text-fg")}>{bare}</p>
                     <p className="truncate text-[10px] text-muted">{s.name}</p>
@@ -292,12 +282,7 @@ function ComparisonTable({ rows, targetTicker, sector }: {
                   {/* Company name cell */}
                   <td className={clsx("sticky left-0 z-10 px-4 py-3 whitespace-nowrap", isTarget ? "bg-saffron/5" : "bg-surface")}>
                     <div className="flex items-center gap-2.5">
-                      <div className={clsx(
-                        "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold text-white",
-                        avatarColor(bare)
-                      )}>
-                        {bare.slice(0, 2)}
-                      </div>
+                      <StockLogo ticker={row.ticker} website={row.website} size={7} />
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <Link

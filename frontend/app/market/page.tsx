@@ -14,13 +14,15 @@ import {
 import clsx from "clsx";
 import { ChartCard } from "@/components/ui/animated-card-chart";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { StockLogo } from "@/components/StockLogo";
 
 /* ─── Types ──────────────────────────────────────── */
 type Candle = { date: string; close: number; ma20: number | null; ma50: number | null };
 type SectorStock = {
   ticker: string; name: string; price?: number; change_pct?: number;
   market_cap?: number; pe_ratio?: number; roe?: number;
-  revenue_growth?: number; net_margin?: number;
+  revenue_growth?: number; net_margin?: number; website?: string | null;
 };
 
 /* ─── Period selector ────────────────────────────── */
@@ -55,17 +57,6 @@ const SECTORS: SectorCfg[] = [
   { name: "Real Estate",          slug: "Real Estate",          indexSlug: "niftyrealty",  icon: HomeIcon,    color: "bg-teal-500/10 text-teal-500",       accent: "border-teal-500/30 ring-teal-500/20" },
   { name: "Communication",        slug: "Communication Services",indexSlug: "niftymedia",  icon: Radio,       color: "bg-indigo-500/10 text-indigo-500",   accent: "border-indigo-500/30 ring-indigo-500/20" },
 ];
-
-/* ─── Avatar ─────────────────────────────────────── */
-const AVATAR_COLORS = [
-  "bg-blue-500","bg-emerald-500","bg-violet-500","bg-rose-500",
-  "bg-amber-500","bg-cyan-500","bg-pink-500","bg-orange-500","bg-teal-500","bg-indigo-500",
-];
-function avatarColor(t: string) {
-  let h = 0;
-  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) & 0xff;
-  return AVATAR_COLORS[h % AVATAR_COLORS.length];
-}
 
 /* ─── Index chart card ───────────────────────────── */
 function IndexCard({ slug, name, period, onPeriodChange }: {
@@ -206,12 +197,7 @@ function StockRow({ stock, rank }: { stock: SectorStock; rank: number }) {
       className="group flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-raised/50"
     >
       <span className="w-5 shrink-0 text-center text-[11px] font-bold text-muted">{rank}</span>
-      <div className={clsx(
-        "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white",
-        avatarColor(bare)
-      )}>
-        {bare.slice(0, 2)}
-      </div>
+      <StockLogo ticker={stock.ticker} website={stock.website} size={8} />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-fg group-hover:text-saffron transition-colors truncate">
           {stock.name || bare}
@@ -439,6 +425,83 @@ function SectorDetail({ cfg }: { cfg: SectorCfg }) {
 }
 
 /* ─── Page ──────────────────────────────────────── */
+/* ─── 52-Week Highs & Lows section ───────────────── */
+function FiftyTwoWeekSection() {
+  const { data, isLoading } = useSWR<{ highs: SectorStock[]; lows: SectorStock[] }>(
+    "/api/market/52week", fetcher, { revalidateOnFocus: false }
+  );
+  const highs = data?.highs ?? [];
+  const lows = data?.lows ?? [];
+
+  return (
+    <section id="52-week" className="space-y-4">
+      <h2 className="font-semibold text-fg">52-Week Highs &amp; Lows</h2>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-border bg-raised/40 px-4 py-3">
+            <TrendingUp className="h-4 w-4 text-up" />
+            <h3 className="text-sm font-semibold">New Highs</h3>
+            <Badge className="ml-auto bg-up/10 text-up text-[10px]">{highs.length}</Badge>
+          </div>
+          {isLoading ? (
+            <RowSkeleton />
+          ) : highs.length === 0 ? (
+            <p className="p-8 text-center text-sm text-muted">No new highs today</p>
+          ) : (
+            <div className="divide-y divide-border overflow-y-auto" style={{ maxHeight: "420px" }}>
+              {highs.slice(0, 10).map((s, i) => <StockRow key={s.ticker} stock={s} rank={i + 1} />)}
+            </div>
+          )}
+        </Card>
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-border bg-raised/40 px-4 py-3">
+            <TrendingDown className="h-4 w-4 text-down" />
+            <h3 className="text-sm font-semibold">New Lows</h3>
+            <Badge className="ml-auto bg-down/10 text-down text-[10px]">{lows.length}</Badge>
+          </div>
+          {isLoading ? (
+            <RowSkeleton />
+          ) : lows.length === 0 ? (
+            <p className="p-8 text-center text-sm text-muted">No new lows today</p>
+          ) : (
+            <div className="divide-y divide-border overflow-y-auto" style={{ maxHeight: "420px" }}>
+              {lows.slice(0, 10).map((s, i) => <StockRow key={s.ticker} stock={s} rank={i + 1} />)}
+            </div>
+          )}
+        </Card>
+      </div>
+    </section>
+  );
+}
+
+/* ─── Price Shockers section ─────────────────────── */
+function PriceShockersSection() {
+  const { data, isLoading } = useSWR<SectorStock[]>("/api/market/price-shockers", fetcher, { revalidateOnFocus: false });
+  const stocks = data ?? [];
+
+  return (
+    <section id="price-shockers" className="space-y-4">
+      <h2 className="font-semibold text-fg">Price Shockers</h2>
+      <Card className="overflow-hidden">
+        <div className="flex items-center gap-2 border-b border-border bg-raised/40 px-4 py-3">
+          <Zap className="h-4 w-4 text-saffron" />
+          <h3 className="text-sm font-semibold">Unusual Price Movements</h3>
+          <Badge className="ml-auto bg-raised text-muted text-[10px]">{stocks.length}</Badge>
+        </div>
+        {isLoading ? (
+          <RowSkeleton />
+        ) : stocks.length === 0 ? (
+          <p className="p-8 text-center text-sm text-muted">No price shockers right now</p>
+        ) : (
+          <div className="divide-y divide-border overflow-y-auto" style={{ maxHeight: "560px" }}>
+            {stocks.slice(0, 15).map((s, i) => <StockRow key={s.ticker} stock={s} rank={i + 1} />)}
+          </div>
+        )}
+      </Card>
+    </section>
+  );
+}
+
 export default function MarketPage() {
   const [niftyPeriod, setNiftyPeriod]   = useState("1y");
   const [sensexPeriod, setSensexPeriod] = useState("1y");
@@ -509,6 +572,12 @@ export default function MarketPage() {
           <SectorDetail cfg={activeSector} />
         </section>
       )}
+
+      {/* ── 52-Week Highs/Lows ── */}
+      <FiftyTwoWeekSection />
+
+      {/* ── Price Shockers ── */}
+      <PriceShockersSection />
 
     </div>
   );
