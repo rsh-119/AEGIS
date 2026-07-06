@@ -54,10 +54,20 @@ TTL: dict[str, int] = {
     # stream (useRealtimePrice), not this snapshot — so the company profile /
     # shareholding / peer data bundled in here doesn't need 10-min freshness.
     "prices":    3600,    # 1 h     — /stock + /get_stock_data bundle
-    "history":   21600,   # 6 h     — OHLCV candles are daily granularity anyway
+    #
+    # Everything below except "news" is per-ticker *detail* data on the stock
+    # page (chart candles, quarterly financials/shareholding, peer fundamentals,
+    # analyst targets/forecasts, credit ratings, annual reports, corporate
+    # actions, concalls, BSE/NSE filings) — none of it changes meaningfully
+    # within a week, so it's bumped to 1 week (604800s) to minimize repeat
+    # IndianAPI calls. Only current price is fetched fresh (via the separate
+    # WS/SSE stream, not this cache) — everything else rides along at low
+    # priority. "news" is deliberately excluded — a week-stale news feed would
+    # visibly break the one thing that feature is for.
+    "history":   604800,   # 1 week — OHLCV candles + historical_stats (concall/shareholding)
     "market":    1800,    # 30 min  — indices/movers, only refetched during NSE trading hours
     "sector":    21600,   # 6 h
-    "peers":     21600,   # 6 h     — peer fundamentals barely move intraday
+    "peers":     604800,   # 1 week — peer fundamentals + get_stock_data barely move
     "mf_nav":    86400,   # 24 h    — NAV is published once per day by AMFI, never changes intraday
     "mf_list":   86400,   # 24 h
     "etf":       3600,    # 1 h     — ETF prices now sourced from IndianAPI (metered)
@@ -65,9 +75,9 @@ TTL: dict[str, int] = {
     "ai":        86400,   # 24 h    — one AI analysis per day per ticker
     "forecast":  3600,    # 1 h     — ML forecast stable intraday
     "search":    900,     # 15 min  — autocomplete results
-    "analyst":   86400,   # 24 h    — analyst targets/forecasts update weekly at most
-    "corporate": 86400,   # 24 h    — dividends/splits announced once per event
-    "filing":    14400,   # 4 h     — BSE/NSE announcements during trading hours
+    "analyst":   604800,   # 1 week — analyst targets/forecasts/sector-page ratios
+    "corporate": 604800,   # 1 week — credit ratings, annual reports, corporate actions, concalls
+    "filing":    604800,   # 1 week — BSE/NSE recent announcements
     "news":      1800,    # 30 min  — company news, quota-metered on IndianAPI
     "overview":  1800,    # 30 min  — market overview, only refetched during NSE trading hours
     "market_snapshot": 432000,  # 5 days — last-known-good indices/movers, served as-is
