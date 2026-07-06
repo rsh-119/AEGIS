@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useRef, useState } from "react";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import { useRouter } from "next/navigation";
 import { fetcher, inr, inrCompact, pct, num, signCls, post } from "@/lib/api";
 import { useRealtimePrice } from "@/lib/useRealtimePrice";
@@ -24,6 +24,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/components/ui/toast";
 
 const PERIODS = [
   { label: "1M", value: "1mo" },
@@ -69,6 +70,7 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
   const symbol = decodeURIComponent(ticker);
   const { user } = useAuth();
   const router = useRouter();
+  const { toast } = useToast();
   const [period, setPeriod]           = useState("max");
   const [chartTab, setChartTab]       = useState<"price" | "volume">("price");
   const [valuationTab, setValuationTab] = useState<"pe" | "pb">("pe");
@@ -155,9 +157,10 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
     }
     try {
       await post("/api/watchlist", { ticker: symbol });
-      alert(`${symbol} added to watchlist`);
+      globalMutate("/api/watchlist");
+      toast({ variant: "success", title: "Added to watchlist", description: symbol });
     } catch (e) {
-      alert((e as Error).message);
+      toast({ variant: "error", title: "Couldn't add to watchlist", description: (e as Error).message });
     }
   }
 
@@ -833,13 +836,23 @@ function AIAnalysisCard({ ai }: { ai: Record<string, any> }) {
 function AboutParagraph({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
   const LIMIT = 280;
-  const short = text.length > LIMIT && !expanded;
+  const needsTruncation = text.length > LIMIT;
+  const short = needsTruncation && !expanded;
+
+  // Break at the last full word before the limit instead of a hard
+  // character-count slice, which could cut off mid-word ("...the compa…")
+  // and looked cropped/unpolished rather than a clean truncation.
+  let preview = text;
+  if (short) {
+    const cut = text.slice(0, LIMIT);
+    const lastSpace = cut.lastIndexOf(" ");
+    preview = (lastSpace > 0 ? cut.slice(0, lastSpace) : cut) + "…";
+  }
+
   return (
     <div>
-      <p className="text-sm leading-relaxed text-fg/85">
-        {short ? text.slice(0, LIMIT) + "…" : text}
-      </p>
-      {text.length > LIMIT && (
+      <p className="text-sm leading-relaxed text-fg/85">{preview}</p>
+      {needsTruncation && (
         <button
           onClick={() => setExpanded((e) => !e)}
           className="mt-1.5 text-xs font-medium text-saffron hover:underline"
