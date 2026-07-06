@@ -145,23 +145,34 @@ def _normalize(raw: dict, name_to_nse: dict[str, str] | None = None) -> dict | N
     used as one (it silently produced broken "S0003057.NS"-style tickers
     before this fix). Prefer real symbol fields; "ric" (e.g. "NTPC.NS")
     already carries the correct exchange suffix, so it's kept as-is rather
-    than always forcing ".NS". Only fall back to a company-name lookup
-    against the free static stock list, and drop the row entirely (return
-    None) if no real ticker can be resolved — a missing row beats a broken link.
+    than always forcing ".NS".
+
+    The company-name lookup against the free static stock list is preferred
+    over the raw symbol field whenever a match exists — IndianAPI's own
+    per-row symbol field has been observed truncated/wrong for some names
+    (e.g. price_shockers returned "LODH" instead of "LODHA" for "Lodha
+    Developers", which the static list resolves correctly). Only fall back
+    to the raw symbol field if no name match is found, and drop the row
+    entirely (return None) if no real ticker can be resolved at all — a
+    missing row beats a broken link.
     """
-    exchange_suffix = ".BO" if str(raw.get("exchange_type", "")).upper() in ("BSE", "BO") else ".NS"
+    exchange_type = str(raw.get("exchangeType") or raw.get("exchange_type") or "").upper()
+    exchange_suffix = ".BO" if exchange_type in ("BSE", "BO") else ".NS"
+
+    company = (raw.get("company_name") or raw.get("company") or raw.get("displayName") or "").strip()
+    nse_code = (name_to_nse or {}).get(company.lower())
 
     real_symbol = (
         raw.get("stock_name") or raw.get("ticker") or raw.get("symbol") or
         raw.get("nse_code") or raw.get("ric") or ""
     ).strip().upper()
 
-    if real_symbol:
+    if nse_code:
+        ticker = f"{nse_code}{exchange_suffix}"
+    elif real_symbol:
         ticker = real_symbol if "." in real_symbol else f"{real_symbol}{exchange_suffix}"
     else:
-        company = (raw.get("company_name") or raw.get("company") or raw.get("displayName") or "").strip()
-        nse_code = (name_to_nse or {}).get(company.lower())
-        ticker = f"{nse_code}.NS" if nse_code else None
+        ticker = None
 
     if not ticker:
         return None
