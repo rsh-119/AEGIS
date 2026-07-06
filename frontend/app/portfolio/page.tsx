@@ -7,13 +7,24 @@ import { fetcher, inr, pct, signCls, post, del } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
 import { LoginPrompt } from "@/components/LoginPrompt";
 import { useAuth } from "@/lib/auth";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+
+type SortKey = "ticker" | "shares" | "avg_price" | "current_price" | "current_value" | "pnl_pct";
+type SortDir = "asc" | "desc";
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return <ArrowUpDown className="h-3 w-3 text-muted/40 shrink-0" />;
+  return dir === "asc"
+    ? <ArrowUp className="h-3 w-3 text-saffron shrink-0" />
+    : <ArrowDown className="h-3 w-3 text-saffron shrink-0" />;
+}
 
 export default function PortfolioPage() {
   const { user, isLoading: authLoading } = useAuth();
@@ -24,8 +35,24 @@ export default function PortfolioPage() {
   const [form, setForm] = useState({ ticker: "", shares: "", avg_price: "", buy_date: "" });
   const [busy, setBusy] = useState(false);
 
+  const [sortKey, setSortKey] = useState<SortKey>("ticker");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir(key === "ticker" ? "asc" : "desc"); }
+  }
+
   const summary = data?.summary;
   const holdings = data?.holdings || [];
+  const sortedHoldings = [...holdings].sort((a: any, b: any) => {
+    if (sortKey === "ticker") {
+      return sortDir === "asc" ? a.ticker.localeCompare(b.ticker) : b.ticker.localeCompare(a.ticker);
+    }
+    const av = a[sortKey] ?? -Infinity;
+    const bv = b[sortKey] ?? -Infinity;
+    return sortDir === "asc" ? av - bv : bv - av;
+  });
 
   async function add() {
     if (!user) {
@@ -124,19 +151,43 @@ export default function PortfolioPage() {
         <table className="w-full text-sm">
           <thead className="border-b border-border text-muted">
             <tr className="[&>th]:px-5 [&>th]:py-3 [&>th]:text-left [&>th]:text-[10px] [&>th]:font-normal [&>th]:uppercase [&>th]:tracking-[0.1px]">
-              <th>Asset</th>
-              <th className="!text-right">Shares</th>
-              <th className="!text-right">Avg</th>
-              <th className="!text-right">LTP</th>
-              <th className="!text-right">Value</th>
-              <th className="!text-right">P&L</th>
+              <th>
+                <button onClick={() => handleSort("ticker")} className={clsx("flex items-center gap-1 hover:text-fg", sortKey === "ticker" && "text-saffron")}>
+                  Asset <SortIcon active={sortKey === "ticker"} dir={sortDir} />
+                </button>
+              </th>
+              <th className="!text-right">
+                <button onClick={() => handleSort("shares")} className={clsx("ml-auto flex items-center gap-1 hover:text-fg", sortKey === "shares" && "text-saffron")}>
+                  Shares <SortIcon active={sortKey === "shares"} dir={sortDir} />
+                </button>
+              </th>
+              <th className="!text-right">
+                <button onClick={() => handleSort("avg_price")} className={clsx("ml-auto flex items-center gap-1 hover:text-fg", sortKey === "avg_price" && "text-saffron")}>
+                  Avg <SortIcon active={sortKey === "avg_price"} dir={sortDir} />
+                </button>
+              </th>
+              <th className="!text-right">
+                <button onClick={() => handleSort("current_price")} className={clsx("ml-auto flex items-center gap-1 hover:text-fg", sortKey === "current_price" && "text-saffron")}>
+                  LTP <SortIcon active={sortKey === "current_price"} dir={sortDir} />
+                </button>
+              </th>
+              <th className="!text-right">
+                <button onClick={() => handleSort("current_value")} className={clsx("ml-auto flex items-center gap-1 hover:text-fg", sortKey === "current_value" && "text-saffron")}>
+                  Value <SortIcon active={sortKey === "current_value"} dir={sortDir} />
+                </button>
+              </th>
+              <th className="!text-right">
+                <button onClick={() => handleSort("pnl_pct")} className={clsx("ml-auto flex items-center gap-1 hover:text-fg", sortKey === "pnl_pct" && "text-saffron")}>
+                  P&L <SortIcon active={sortKey === "pnl_pct"} dir={sortDir} />
+                </button>
+              </th>
               <th></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {holdings.length === 0 ? (
+            {sortedHoldings.length === 0 ? (
               <tr><td colSpan={7} className="px-5 py-10 text-center text-muted">No holdings yet.</td></tr>
-            ) : holdings.map((h: any) => (
+            ) : sortedHoldings.map((h: any) => (
               <tr key={h.id} className="[&>td]:px-5 [&>td]:py-3 hover:bg-raised/40">
                 <td>
                   <a href={`/stock/${h.ticker}`} className="font-medium hover:text-saffron">{h.ticker.replace(".NS", "")}</a>

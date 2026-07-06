@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/api";
-import { Flame } from "lucide-react";
+import { Flame, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,8 +33,26 @@ const OI_RESULT_STYLE: Record<string, string> = {
   "Call Unwinding": "bg-muted/10 text-muted",
 };
 
+type SortKey = "product" | "last_traded_price" | "per_change" | "open_interest";
+type SortDir = "asc" | "desc";
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return <ArrowUpDown className="h-3 w-3 text-muted/40 shrink-0" />;
+  return dir === "asc"
+    ? <ArrowUp className="h-3 w-3 text-saffron shrink-0" />
+    : <ArrowDown className="h-3 w-3 text-saffron shrink-0" />;
+}
+
 export default function CommoditiesPage() {
   const { data, isLoading } = useSWR<Commodity[]>("/api/market/commodities", fetcher, { revalidateOnFocus: false });
+
+  const [sortKey, setSortKey] = useState<SortKey>("product");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir(key === "product" ? "asc" : "desc"); }
+  }
 
   const rows = useMemo(() => {
     const byProduct = new Map<string, Commodity>();
@@ -44,8 +62,15 @@ export default function CommoditiesPage() {
       const existingVol = existing ? parseFloat(existing.total_quantity_traded) || 0 : -1;
       if (!existing || vol > existingVol) byProduct.set(c.product, c);
     }
-    return [...byProduct.values()].sort((a, b) => a.product.localeCompare(b.product));
-  }, [data]);
+    return [...byProduct.values()].sort((a, b) => {
+      if (sortKey === "product") {
+        return sortDir === "asc" ? a.product.localeCompare(b.product) : b.product.localeCompare(a.product);
+      }
+      const av = sortKey === "per_change" ? a.per_change : parseFloat(a[sortKey]) || 0;
+      const bv = sortKey === "per_change" ? b.per_change : parseFloat(b[sortKey]) || 0;
+      return sortDir === "asc" ? av - bv : bv - av;
+    });
+  }, [data, sortKey, sortDir]);
 
   return (
     <div className="space-y-6 animate-fade-up">
@@ -65,11 +90,27 @@ export default function CommoditiesPage() {
             <table className="w-full text-sm">
               <thead className="border-b border-border text-muted">
                 <tr className="[&>th]:px-5 [&>th]:py-3 [&>th]:text-left [&>th]:text-[10px] [&>th]:font-normal [&>th]:uppercase [&>th]:tracking-[0.1px]">
-                  <th>Product</th>
+                  <th>
+                    <button onClick={() => handleSort("product")} className={clsx("flex items-center gap-1 hover:text-fg", sortKey === "product" && "text-saffron")}>
+                      Product <SortIcon active={sortKey === "product"} dir={sortDir} />
+                    </button>
+                  </th>
                   <th className="hidden sm:table-cell">Expiry</th>
-                  <th className="!text-right">LTP</th>
-                  <th className="!text-right">Change</th>
-                  <th className="hidden sm:table-cell !text-right">OI</th>
+                  <th className="!text-right">
+                    <button onClick={() => handleSort("last_traded_price")} className={clsx("ml-auto flex items-center gap-1 hover:text-fg", sortKey === "last_traded_price" && "text-saffron")}>
+                      LTP <SortIcon active={sortKey === "last_traded_price"} dir={sortDir} />
+                    </button>
+                  </th>
+                  <th className="!text-right">
+                    <button onClick={() => handleSort("per_change")} className={clsx("ml-auto flex items-center gap-1 hover:text-fg", sortKey === "per_change" && "text-saffron")}>
+                      Change <SortIcon active={sortKey === "per_change"} dir={sortDir} />
+                    </button>
+                  </th>
+                  <th className="hidden sm:table-cell !text-right">
+                    <button onClick={() => handleSort("open_interest")} className={clsx("ml-auto flex items-center gap-1 hover:text-fg", sortKey === "open_interest" && "text-saffron")}>
+                      OI <SortIcon active={sortKey === "open_interest"} dir={sortDir} />
+                    </button>
+                  </th>
                   <th className="hidden md:table-cell">Signal</th>
                 </tr>
               </thead>
