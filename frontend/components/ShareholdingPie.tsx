@@ -143,9 +143,9 @@ export function ShareholdingPie({ promoterPct, institutionPct, ticker }: StaticP
         .map((c) => ({ ...c, pct: Number(selected[c.key]) || 0 }))
         .filter((s) => s.pct > 0)
     : ([
-        { key: "promoter" as keyof Quarter, label: "Promoters",    color: "#F5A524", pct: (promoterPct ?? 0) * 100 },
-        { key: "fii"      as keyof Quarter, label: "Institutions", color: "#3B82F6", pct: (institutionPct ?? 0) * 100 },
-        { key: "public"   as keyof Quarter, label: "Public",       color: "#1FC77D", pct: Math.max(0, 100 - (promoterPct ?? 0) * 100 - (institutionPct ?? 0) * 100) },
+        { key: "promoter" as keyof Quarter, label: "Promoters",    color: "#F5A524", pct: promoterPct ?? 0 },
+        { key: "fii"      as keyof Quarter, label: "Institutions", color: "#3B82F6", pct: institutionPct ?? 0 },
+        { key: "public"   as keyof Quarter, label: "Public",       color: "#1FC77D", pct: Math.max(0, 100 - (promoterPct ?? 0) - (institutionPct ?? 0)) },
       ] as (Segment & { key: keyof Quarter })[]).filter((s) => s.pct > 0);
 
   let angle = 0;

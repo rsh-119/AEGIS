@@ -381,8 +381,8 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
                 { label: "RSI (14)",        value: num(hist?.latest_rsi, 0) },
                 { label: "Beta",            value: q.beta != null ? num(q.beta) : "—" },
                 { label: "Volatility",      value: hist?.volatility_pct != null ? `${hist.volatility_pct}%` : "—" },
-                { label: "Promoter %",      value: q.held_by_insiders_pct != null ? `${(q.held_by_insiders_pct * 100).toFixed(1)}%` : "—" },
-                { label: "FII / Inst %",    value: q.held_by_institutions_pct != null ? `${(q.held_by_institutions_pct * 100).toFixed(1)}%` : "—" },
+                { label: "Promoter %",      value: q.held_by_insiders_pct != null ? `${q.held_by_insiders_pct.toFixed(1)}%` : "—" },
+                { label: "FII / Inst %",    value: q.held_by_institutions_pct != null ? `${q.held_by_institutions_pct.toFixed(1)}%` : "—" },
                 { label: "Float Shares",    value: q.float_shares != null ? inrCompact(q.float_shares) : "—" },
                 { label: "Short Ratio",     value: q.short_ratio != null ? num(q.short_ratio) : "—" },
               ].map((m, idx) => (
