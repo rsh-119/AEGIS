@@ -38,7 +38,7 @@ export function HoverEffect({
             {hoveredIndex === idx && (
               <motion.span
                 layoutId="feature-hover-bg"
-                className="absolute inset-0 block rounded-2xl bg-raised"
+                className="absolute inset-0 block rounded-2xl bg-saffron/10 ring-1 ring-saffron/25"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1, transition: { duration: 0.15 } }}
                 exit={{ opacity: 0, transition: { duration: 0.15, delay: 0.1 } }}

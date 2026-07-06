@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { createPortal } from "react-dom";
 import useSWR from "swr";
 
 /* ─── Lazy-load hook: fires when element enters viewport OR after 2s max ── */
@@ -694,119 +693,34 @@ function ViewAllLink({ href, label }: { href: string; label: string }) {
   );
 }
 
-/** Hover to preview an expanded version of the card centered on screen, with
- * the rest of the page dimmed + blurred behind it so it captures focus.
- *
- * The hoverable anchor stays put in the grid (so the mouse position is never
- * invalidated by the card itself moving), while a separate `fixed`, centered
- * overlay fades/scales in showing the `zoomed` render of `children`. Hover
- * state is shared by both the anchor AND the overlay (entering one keeps it
- * open while moving toward the other), so it's possible to reach into the
- * overlay to click "View all" etc. without it closing mid-move. */
-function HoverZoomTile({ children }: { children: (zoomed: boolean) => React.ReactNode }) {
-  const [zoomed, setZoomed] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Portal target must be resolved client-side only (no `document` on the server).
-  useEffect(() => { setMounted(true); }, []);
-
-  // Hover-intent: the anchor tile and the centered overlay usually aren't
-  // adjacent on screen, so the mouse crosses "dead space" between them where
-  // neither element is under the cursor. A short grace period before actually
-  // closing means moving from the tile toward the overlay doesn't cancel
-  // itself out mid-move — otherwise the overlay closes/shrinks just as you
-  // try to reach a link inside it.
-  const enter = () => {
-    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
-    setZoomed(true);
-  };
-  const leave = () => {
-    closeTimer.current = setTimeout(() => setZoomed(false), 200);
-  };
-
-  return (
-    <div className="relative" onMouseEnter={enter} onMouseLeave={leave}>
-      {/* Resting compact card — stays in normal grid flow */}
-      <div className={clsx("transition-opacity duration-200", zoomed && "opacity-30")}>
-        {children(false)}
-      </div>
-
-      {/* Backdrop + expanded overlay are portaled straight to <body> — any
-          transformed ancestor (e.g. sections using the .animate-fade-up
-          entrance animation) creates a new containing block for `fixed`
-          descendants, which would confine "fixed" to that ancestor's box
-          instead of the true viewport and only blur that section. Portaling
-          escapes that entirely so the whole page blurs, not just this area. */}
-      {mounted && createPortal(
-        <>
-          <div
-            aria-hidden
-            className={clsx(
-              "fixed inset-0 z-40 bg-black/50 backdrop-blur-[3px] transition-opacity duration-300 pointer-events-none",
-              zoomed ? "opacity-100" : "opacity-0"
-            )}
-          />
-          <div
-            onMouseEnter={enter}
-            onMouseLeave={leave}
-            className={clsx(
-              "fixed left-1/2 top-1/2 z-50 w-[70vw] max-w-4xl rounded-[12px] transition-all duration-300 ease-out",
-              zoomed
-                ? "-translate-x-1/2 -translate-y-1/2 scale-100 opacity-100 pointer-events-auto shadow-[0_25px_70px_-12px_rgba(0,0,0,0.55)]"
-                : "-translate-x-1/2 -translate-y-1/2 scale-90 opacity-0 pointer-events-none shadow-none"
-            )}
-          >
-            {children(true)}
-          </div>
-        </>,
-        document.body
-      )}
-    </div>
-  );
-}
-
 type IpoPreview = { symbol: string; name: string; status: string; document_url?: string | null };
 
 function IpoWidget() {
   const { data, isLoading } = useSWR<IpoPreview[]>("/api/market/ipo", fetcher, { revalidateOnFocus: false });
-  const all = (data ?? []).filter((i) => i.status !== "listed");
+  const items = (data ?? []).filter((i) => i.status !== "listed").slice(0, 4);
 
   return (
-    <HoverZoomTile>
-      {(zoomed) => {
-        const items = all.slice(0, zoomed ? 10 : 4);
-        return (
-          <SectionCard title="IPO Watch" icon={<Rocket className="h-4 w-4" />}>
-            <div className="p-4">
-              {isLoading ? (
-                <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
-              ) : items.length === 0 ? (
-                <p className="text-xs text-muted">No upcoming or open IPOs right now.</p>
-              ) : (
-                <ul className={clsx(zoomed ? "space-y-3" : "space-y-2")}>
-                  {items.map((ipo) => (
-                    <li key={ipo.symbol}>
-                      <Link
-                        href="/ipo"
-                        className={clsx(
-                          "flex items-center justify-between gap-2 rounded-lg transition-colors",
-                          zoomed ? "text-sm hover:bg-raised/60 -mx-2 px-2 py-1" : "text-xs"
-                        )}
-                      >
-                        <span className="truncate font-medium text-fg">{ipo.name.trim()}</span>
-                        <span className="shrink-0 capitalize text-muted">{ipo.status}</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <ViewAllLink href="/ipo" label="View all IPOs" />
-            </div>
-          </SectionCard>
-        );
-      }}
-    </HoverZoomTile>
+    <SectionCard title="IPO Watch" icon={<Rocket className="h-4 w-4" />}>
+      <div className="p-4">
+        {isLoading ? (
+          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
+        ) : items.length === 0 ? (
+          <p className="text-xs text-muted">No upcoming or open IPOs right now.</p>
+        ) : (
+          <ul className="space-y-2">
+            {items.map((ipo) => (
+              <li key={ipo.symbol}>
+                <Link href="/ipo" className="flex items-center justify-between gap-2 rounded-lg text-xs transition-colors hover:bg-raised/60 -mx-2 px-2 py-1">
+                  <span className="truncate font-medium text-fg">{ipo.name.trim()}</span>
+                  <span className="shrink-0 capitalize text-muted">{ipo.status}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        <ViewAllLink href="/ipo" label="View all IPOs" />
+      </div>
+    </SectionCard>
   );
 }
 
@@ -814,53 +728,40 @@ type CommodityPreview = { product: string; last_traded_price: string; per_change
 
 function CommoditiesWidget() {
   const { data, isLoading } = useSWR<CommodityPreview[]>("/api/market/commodities", fetcher, { revalidateOnFocus: false });
-  const all = useMemo(() => {
+  const items = useMemo(() => {
     const byProduct = new Map<string, CommodityPreview>();
     for (const c of data ?? []) if (!byProduct.has(c.product)) byProduct.set(c.product, c);
-    return [...byProduct.values()];
+    return [...byProduct.values()].slice(0, 4);
   }, [data]);
 
   return (
-    <HoverZoomTile>
-      {(zoomed) => {
-        const items = all.slice(0, zoomed ? 10 : 4);
-        return (
-          <SectionCard title="Commodities" icon={<Flame className="h-4 w-4" />}>
-            <div className="p-4">
-              {isLoading ? (
-                <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
-              ) : items.length === 0 ? (
-                <p className="text-xs text-muted">Commodities data unavailable.</p>
-              ) : (
-                <ul className={clsx(zoomed ? "space-y-3" : "space-y-2")}>
-                  {items.map((c) => {
-                    const up = c.per_change >= 0;
-                    return (
-                      <li key={c.product}>
-                        <Link
-                          href="/commodities"
-                          className={clsx(
-                            "flex items-center justify-between gap-2 rounded-lg transition-colors",
-                            zoomed ? "text-sm hover:bg-raised/60 -mx-2 px-2 py-1" : "text-xs"
-                          )}
-                        >
-                          <span className="truncate font-medium text-fg">{c.product}</span>
-                          <span className="nums shrink-0">
-                            ₹{c.last_traded_price}{" "}
-                            <span className={up ? "text-up" : "text-down"}>{up ? "+" : ""}{c.per_change?.toFixed(1)}%</span>
-                          </span>
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              <ViewAllLink href="/commodities" label="View all" />
-            </div>
-          </SectionCard>
-        );
-      }}
-    </HoverZoomTile>
+    <SectionCard title="Commodities" icon={<Flame className="h-4 w-4" />}>
+      <div className="p-4">
+        {isLoading ? (
+          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
+        ) : items.length === 0 ? (
+          <p className="text-xs text-muted">Commodities data unavailable.</p>
+        ) : (
+          <ul className="space-y-2">
+            {items.map((c) => {
+              const up = c.per_change >= 0;
+              return (
+                <li key={c.product}>
+                  <Link href="/commodities" className="flex items-center justify-between gap-2 rounded-lg text-xs transition-colors hover:bg-raised/60 -mx-2 px-2 py-1">
+                    <span className="truncate font-medium text-fg">{c.product}</span>
+                    <span className="nums shrink-0">
+                      ₹{c.last_traded_price}{" "}
+                      <span className={up ? "text-up" : "text-down"}>{up ? "+" : ""}{c.per_change?.toFixed(1)}%</span>
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <ViewAllLink href="/commodities" label="View all" />
+      </div>
+    </SectionCard>
   );
 }
 
@@ -870,107 +771,57 @@ function FiftyTwoWeekWidget() {
   const lows = data?.lows ?? [];
 
   return (
-    <HoverZoomTile>
-      {(zoomed) => (
-        <SectionCard title="52-Week High/Low" icon={<BarChart3 className="h-4 w-4" />}>
-          <div className="p-4">
-            {isLoading ? (
-              <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
-            ) : !zoomed ? (
-              <div className="space-y-1.5 text-xs">
-                <p><span className="font-semibold text-up">{highs.length}</span> <span className="text-muted">new highs today</span></p>
-                <p><span className="font-semibold text-down">{lows.length}</span> <span className="text-muted">new lows today</span></p>
-                {highs[0] && <p className="truncate text-muted">Top high: {highs[0].name || highs[0].ticker}</p>}
-                {lows[0] && <p className="truncate text-muted">Top low: {lows[0].name || lows[0].ticker}</p>}
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="mb-2 font-semibold text-up">New Highs</p>
-                  <ul className="space-y-1">
-                    {highs.slice(0, 5).map((s) => (
-                      <li key={s.ticker}>
-                        <Link
-                          href={`/stock/${encodeURIComponent(s.ticker)}`}
-                          className="block truncate rounded-lg -mx-2 px-2 py-1 text-fg hover:bg-raised/60 transition-colors"
-                        >
-                          {s.name || s.ticker}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <div>
-                  <p className="mb-2 font-semibold text-down">New Lows</p>
-                  <ul className="space-y-1">
-                    {lows.slice(0, 5).map((s) => (
-                      <li key={s.ticker}>
-                        <Link
-                          href={`/stock/${encodeURIComponent(s.ticker)}`}
-                          className="block truncate rounded-lg -mx-2 px-2 py-1 text-fg hover:bg-raised/60 transition-colors"
-                        >
-                          {s.name || s.ticker}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-            <ViewAllLink href="/market#52-week" label="View all" />
+    <SectionCard title="52-Week High/Low" icon={<BarChart3 className="h-4 w-4" />}>
+      <div className="p-4">
+        {isLoading ? (
+          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
+        ) : (
+          <div className="space-y-1.5 text-xs">
+            <p><span className="font-semibold text-up">{highs.length}</span> <span className="text-muted">new highs today</span></p>
+            <p><span className="font-semibold text-down">{lows.length}</span> <span className="text-muted">new lows today</span></p>
+            {highs[0] && <p className="truncate text-muted">Top high: {highs[0].name || highs[0].ticker}</p>}
+            {lows[0] && <p className="truncate text-muted">Top low: {lows[0].name || lows[0].ticker}</p>}
           </div>
-        </SectionCard>
-      )}
-    </HoverZoomTile>
+        )}
+        <ViewAllLink href="/market#52-week" label="View all" />
+      </div>
+    </SectionCard>
   );
 }
 
 function PriceShockersWidget() {
   const { data, isLoading } = useSWR<Stock[]>("/api/market/price-shockers", fetcher, { revalidateOnFocus: false });
-  const all = data ?? [];
+  const items = (data ?? []).slice(0, 4);
 
   return (
-    <HoverZoomTile>
-      {(zoomed) => {
-        const items = all.slice(0, zoomed ? 10 : 4);
-        return (
-          <SectionCard title="Price Shockers" icon={<Zap className="h-4 w-4" />}>
-            <div className="p-4">
-              {isLoading ? (
-                <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
-              ) : items.length === 0 ? (
-                <p className="text-xs text-muted">No price shockers right now.</p>
-              ) : (
-                <ul className={clsx(zoomed ? "space-y-3" : "space-y-2")}>
-                  {items.map((s) => {
-                    const up = (s.change_pct ?? 0) >= 0;
-                    return (
-                      <li key={s.ticker}>
-                        <Link
-                          href={`/stock/${encodeURIComponent(s.ticker)}`}
-                          className={clsx(
-                            "flex items-center justify-between gap-2 rounded-lg transition-colors",
-                            zoomed ? "text-sm hover:bg-raised/60 -mx-2 px-2 py-1" : "text-xs"
-                          )}
-                        >
-                          <span className="truncate font-medium text-fg">{s.name || s.ticker}</span>
-                          {s.change_pct != null && (
-                            <span className={clsx("nums shrink-0", up ? "text-up" : "text-down")}>
-                              {up ? "+" : ""}{s.change_pct.toFixed(1)}%
-                            </span>
-                          )}
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              <ViewAllLink href="/market#price-shockers" label="View all" />
-            </div>
-          </SectionCard>
-        );
-      }}
-    </HoverZoomTile>
+    <SectionCard title="Price Shockers" icon={<Zap className="h-4 w-4" />}>
+      <div className="p-4">
+        {isLoading ? (
+          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
+        ) : items.length === 0 ? (
+          <p className="text-xs text-muted">No price shockers right now.</p>
+        ) : (
+          <ul className="space-y-2">
+            {items.map((s) => {
+              const up = (s.change_pct ?? 0) >= 0;
+              return (
+                <li key={s.ticker}>
+                  <Link href={`/stock/${encodeURIComponent(s.ticker)}`} className="flex items-center justify-between gap-2 rounded-lg text-xs transition-colors hover:bg-raised/60 -mx-2 px-2 py-1">
+                    <span className="truncate font-medium text-fg">{s.name || s.ticker}</span>
+                    {s.change_pct != null && (
+                      <span className={clsx("nums shrink-0", up ? "text-up" : "text-down")}>
+                        {up ? "+" : ""}{s.change_pct.toFixed(1)}%
+                      </span>
+                    )}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <ViewAllLink href="/market#price-shockers" label="View all" />
+      </div>
+    </SectionCard>
   );
 }
 
