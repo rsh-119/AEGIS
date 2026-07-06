@@ -12,10 +12,14 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export default function PortfolioPage() {
   const { user, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  const { toast } = useToast();
+  const confirm = useConfirm();
   const { data } = useSWR(user ? "/api/portfolio" : null, fetcher, { revalidateOnFocus: false });
   const [form, setForm] = useState({ ticker: "", shares: "", avg_price: "", buy_date: "" });
   const [busy, setBusy] = useState(false);
@@ -39,17 +43,34 @@ export default function PortfolioPage() {
       });
       setForm({ ticker: "", shares: "", avg_price: "", buy_date: "" });
       mutate("/api/portfolio");
+      toast({ variant: "success", title: "Added to portfolio", description: form.ticker });
     } catch (e) {
-      alert((e as Error).message);
+      toast({ variant: "error", title: "Couldn't add holding", description: (e as Error).message });
     } finally {
       setBusy(false);
     }
   }
 
   async function remove(id: number) {
-    if (!confirm("Remove this holding?")) return;
-    await del(`/api/portfolio/${id}`);
+    const ok = await confirm({
+      title: "Remove this holding?",
+      description: "This will remove it from your portfolio permanently.",
+      confirmLabel: "Remove",
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await del(`/api/portfolio/${id}`);
+    } catch (e) {
+      // 404 = already gone (stale list, double-click, etc.) — the desired
+      // end state is already true, so just refresh instead of erroring out.
+      if (!(e instanceof Error) || !e.message.includes("404")) {
+        toast({ variant: "error", title: "Couldn't remove holding", description: (e as Error).message });
+        return;
+      }
+    }
     mutate("/api/portfolio");
+    toast({ variant: "success", title: "Holding removed" });
   }
 
   if (authLoading) return null;

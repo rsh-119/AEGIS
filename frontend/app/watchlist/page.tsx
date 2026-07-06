@@ -7,16 +7,35 @@ import { LoginPrompt } from "@/components/LoginPrompt";
 import { useAuth } from "@/lib/auth";
 import { Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import { useToast } from "@/components/ui/toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export default function WatchlistPage() {
   const { user, isLoading: authLoading } = useAuth();
+  const { toast } = useToast();
+  const confirm = useConfirm();
   const { data } = useSWR(user ? "/api/watchlist" : null, fetcher, { revalidateOnFocus: false });
   const items = data?.items || [];
 
   async function remove(id: number) {
-    if (!confirm("Remove from watchlist?")) return;
-    await del(`/api/watchlist/${id}`);
+    const ok = await confirm({
+      title: "Remove from watchlist?",
+      confirmLabel: "Remove",
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await del(`/api/watchlist/${id}`);
+    } catch (e) {
+      // 404 = already gone (stale list, double-click, etc.) — the desired
+      // end state is already true, so just refresh instead of erroring out.
+      if (!(e instanceof Error) || !e.message.includes("404")) {
+        toast({ variant: "error", title: "Couldn't remove item", description: (e as Error).message });
+        return;
+      }
+    }
     mutate("/api/watchlist");
+    toast({ variant: "success", title: "Removed from watchlist" });
   }
 
   if (authLoading) return null;

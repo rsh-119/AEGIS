@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 interface Alert {
   id: number;
@@ -27,6 +29,8 @@ interface Alert {
 const ALERTS_URL = "/api/alerts";
 
 export default function AlertsPage() {
+  const { toast } = useToast();
+  const confirm = useConfirm();
   const { data, isLoading } = useSWR<{ alerts: Alert[] }>(ALERTS_URL, fetcher, {
     revalidateOnFocus: false,
     refreshInterval: 30_000,   // poll every 30s so triggered alerts appear
@@ -52,14 +56,32 @@ export default function AlertsPage() {
       await post(ALERTS_URL, { ticker, alert_type: type, target_price: parseFloat(price) });
       setTicker(""); setPrice("");
       mutate(ALERTS_URL);
-    } catch (err) { alert((err as Error).message); }
+      toast({ variant: "success", title: "Alert set", description: `${ticker} ${type} ₹${price}` });
+    } catch (err) {
+      toast({ variant: "error", title: "Couldn't set alert", description: (err as Error).message });
+    }
     finally { setBusy(false); }
   }
 
   async function remove(id: number) {
-    if (!confirm("Delete this alert?")) return;
-    await del(`${ALERTS_URL}/${id}`);
+    const ok = await confirm({
+      title: "Delete this alert?",
+      confirmLabel: "Delete",
+      destructive: true,
+    });
+    if (!ok) return;
+    try {
+      await del(`${ALERTS_URL}/${id}`);
+    } catch (e) {
+      // 404 = already gone (stale list, double-click, etc.) — the desired
+      // end state is already true, so just refresh instead of erroring out.
+      if (!(e instanceof Error) || !e.message.includes("404")) {
+        toast({ variant: "error", title: "Couldn't delete alert", description: (e as Error).message });
+        return;
+      }
+    }
     mutate(ALERTS_URL);
+    toast({ variant: "success", title: "Alert deleted" });
   }
 
   async function dismiss(id: number) {

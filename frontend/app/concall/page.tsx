@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
+import { useToast } from "@/components/ui/toast";
 
 // ─── Quarter types ────────────────────────────────────────────────────────────
 type Quarter = {
@@ -233,9 +234,16 @@ function QuarterCard({ q, company, isFirst, symbol }: { q: Quarter; company: str
 
 // ─── Upload zone ──────────────────────────────────────────────────────────────
 function UploadZone({ onFile }: { onFile: (f: File) => void }) {
+  const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
-  const handleFile = (f: File) => { if (f.type !== "application/pdf") { alert("Please upload a PDF."); return; } onFile(f); };
+  const handleFile = (f: File) => {
+    if (f.type !== "application/pdf") {
+      toast({ variant: "warning", title: "Unsupported file", description: "Please upload a PDF." });
+      return;
+    }
+    onFile(f);
+  };
   return (
     <div
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}

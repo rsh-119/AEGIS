@@ -7,6 +7,8 @@ import { Footer } from "@/components/Footer";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { SWRCacheProvider } from "@/lib/swr-config";
 import { AuthProvider } from "@/lib/auth";
+import { ToastProvider } from "@/components/ui/toast";
+import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 
 // Inter at 300 + 400 — closest open-source analogue to Sohne thin
 const inter = Inter({
@@ -44,11 +46,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
         <AuthProvider>
           <SWRCacheProvider>
-            <ScrollToTop />
-            <Nav />
-            <MarketBar />
-            <main className="px-4 py-5 sm:px-6 md:px-10 lg:px-14" style={{ overflowAnchor: "none" }}>{children}</main>
-            <Footer />
+            <ToastProvider>
+              <ConfirmProvider>
+                <ScrollToTop />
+                <Nav />
+                <MarketBar />
+                <main className="px-4 py-5 sm:px-6 md:px-10 lg:px-14" style={{ overflowAnchor: "none" }}>{children}</main>
+                <Footer />
+              </ConfirmProvider>
+            </ToastProvider>
           </SWRCacheProvider>
         </AuthProvider>
       </body>

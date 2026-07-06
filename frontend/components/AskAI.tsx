@@ -6,6 +6,7 @@ import { Send, Sparkles, AlertCircle, Plus, FileText, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 
 type Msg = { role: "user" | "ai"; text: string; confidence?: string; source?: string; error?: boolean };
 
@@ -30,6 +31,7 @@ const SUGGESTED_DOC = [
 ];
 
 export function AskAI({ ticker }: { ticker: string }) {
+  const { toast } = useToast();
   const [q, setQ] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [busy, setBusy] = useState(false);
@@ -85,7 +87,7 @@ export function AskAI({ ticker }: { ticker: string }) {
 
   async function handleFile(file: File) {
     if (file.type !== "application/pdf" && !file.type.startsWith("text/")) {
-      alert("Please upload a PDF or text file.");
+      toast({ variant: "warning", title: "Unsupported file", description: "Please upload a PDF or text file." });
       return;
     }
     setDocLoading(true);

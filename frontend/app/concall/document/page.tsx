@@ -11,6 +11,7 @@ import {
 import Link from "next/link";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
+import { useToast } from "@/components/ui/toast";
 
 // ── types ──────────────────────────────────────────────────────────────────────
 type Promise = { commitment: string; timeline: string; metric: string };
@@ -90,11 +91,15 @@ function Section({
 
 // ── Upload zone ────────────────────────────────────────────────────────────────
 function UploadZone({ onFile }: { onFile: (f: File) => void }) {
+  const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
   const handleFile = (file: File) => {
-    if (file.type !== "application/pdf") { alert("Please upload a PDF file."); return; }
+    if (file.type !== "application/pdf") {
+      toast({ variant: "warning", title: "Unsupported file", description: "Please upload a PDF file." });
+      return;
+    }
     onFile(file);
   };
 
