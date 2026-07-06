@@ -47,7 +47,13 @@ TTL: dict[str, int] = {
     # NOTE: quote/history/sector/peers/etf TTLs are intentionally generous —
     # IndianAPI is the sole live-data source with a metered monthly quota
     # (~10k requests/month), so every cache hit avoided is quota saved.
-    "prices":    600,     # 10 min  — live tick / quote data
+    #
+    # "prices" bumped from 10min to 1h: it caches the /stock + /get_stock_data
+    # bundle (get_stock, get_quote_bundle, stock_service.get_quote), but the
+    # stock page's *displayed* live price actually comes from a separate WS/SSE
+    # stream (useRealtimePrice), not this snapshot — so the company profile /
+    # shareholding / peer data bundled in here doesn't need 10-min freshness.
+    "prices":    3600,    # 1 h     — /stock + /get_stock_data bundle
     "history":   21600,   # 6 h     — OHLCV candles are daily granularity anyway
     "market":    1800,    # 30 min  — indices/movers, only refetched during NSE trading hours
     "sector":    21600,   # 6 h
