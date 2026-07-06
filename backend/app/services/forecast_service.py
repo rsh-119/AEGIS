@@ -3,7 +3,7 @@ forecast_service.py — multi-algorithm short-horizon price projection.
 
 Three models exposed via `forecast(candles, horizon_days, model)`:
 
-  "holt"    — Holt Double Exponential Smoothing + EWMA vol + momentum blend
+  "holt"    — Holt Double Exponential Smoothing + EWMA vol confidence band
                Best baseline; fully explainable; no feature engineering needed.
 
   "xgboost" — XGBoost regression on 20+ engineered lag/rolling features.
@@ -200,13 +200,13 @@ def forecast(
         if model in ("xgboost", "lgbm"):
             proj_log = _tree_forecast(y, horizon_days, model)
         else:
-            # Holt DES + momentum blend
+            # Holt DES already fits its own additive trend component from the
+            # same log-price series — a separate hand-crafted momentum drift
+            # used to be added on top of that, double-counting the trend and
+            # making Holt's forecasts diverge sharply (~2x more extreme) from
+            # XGBoost/LightGBM, which get no such extra push. Removed so all
+            # three models are driven purely by their own native fit.
             proj_log = _holt_forecast(log_y, horizon_days)
-            r20  = float(np.mean(log_ret[-20:])) if len(log_ret) >= 20 else float(np.mean(log_ret))
-            r60  = float(np.mean(log_ret[-60:])) if len(log_ret) >= 60 else r20
-            mom  = 0.65 * r20 + 0.35 * r60
-            drift = np.array([mom * 0.25 * (i + 1) for i in range(horizon_days)])
-            proj_log = proj_log + drift
     except Exception as e:
         return {"available": False, "reason": f"Model error: {e}"}
 
@@ -249,7 +249,7 @@ def forecast(
     ann_trend = (float(np.exp(np.mean(log_ret) * 252)) - 1) * 100
 
     model_labels = {
-        "holt":    "Holt DES + EWMA Vol + Momentum",
+        "holt":    "Holt DES + EWMA Vol",
         "xgboost": "XGBoost (lag/RSI/MACD features)",
         "lgbm":    "LightGBM (lag/RSI/MACD features)",
     }
