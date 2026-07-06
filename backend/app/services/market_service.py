@@ -426,6 +426,38 @@ async def _batch_returns(tickers: list[str]) -> dict[str, dict]:
     return out
 
 
+# IndianAPI returns granular sub-industry labels (e.g. "Software & Programming",
+# "Private Banks", "Refineries & Marketing") on individual stock quotes, but
+# _SECTOR_PEERS is keyed by broad NSE-style sectors ("Technology", "Financial
+# Services", ...). An exact-match lookup never resolves for any real stock —
+# clicking a stock's sector badge always 404'd. Fuzzy keyword matching bridges
+# the two vocabularies, same idea as mf_service.py's _CAT_KEYS.
+_SECTOR_KEYWORDS: dict[str, list[str]] = {
+    "Technology":             ["software", "programming", "it services", "information technology", "internet"],
+    "Financial Services":     ["bank", "financial", "finance", "insurance", "nbfc", "asset management", "broking", "investment"],
+    "Energy":                 ["oil", "gas exploration", "refineries", "petroleum", "energy"],
+    "Consumer Defensive":     ["fmcg", "food", "beverage", "personal care", "household", "tobacco", "agri"],
+    "Consumer Cyclical":      ["auto", "retail", "textile", "apparel", "hotel", "leisure", "consumer durable", "jewellery"],
+    "Healthcare":             ["pharma", "healthcare", "hospital", "drug", "biotech", "diagnostic"],
+    "Industrials":            ["engineering", "capital goods", "construction", "infrastructure", "defence", "aerospace", "logistics", "transport", "industrial"],
+    "Basic Materials":        ["cement", "steel", "metal", "mining", "chemical", "paper"],
+    "Real Estate":            ["real estate", "realty"],
+    "Communication Services": ["telecom", "media", "broadcasting", "entertainment"],
+    "Utilities":              ["power", "electricity", "utilit", "gas distribution"],
+}
+
+
+def _resolve_sector_key(sector: str, known_keys: list[str]) -> str | None:
+    exact = next((k for k in known_keys if k.lower() == sector.lower()), None)
+    if exact:
+        return exact
+    sector_lo = sector.lower()
+    for key, keywords in _SECTOR_KEYWORDS.items():
+        if key in known_keys and any(kw in sector_lo for kw in keywords):
+            return key
+    return None
+
+
 async def get_sector_stocks(sector: str) -> dict:
     """Return all tracked stocks for a given sector with live quotes + price returns."""
     from app.services.peer_service import _SECTOR_PEERS
@@ -440,7 +472,7 @@ async def get_sector_stocks(sector: str) -> dict:
         _cache.set(key, cached)
         return cached
 
-    matched_key = next((k for k in _SECTOR_PEERS if k.lower() == sector.lower()), None)
+    matched_key = _resolve_sector_key(sector, list(_SECTOR_PEERS.keys()))
     tickers = _SECTOR_PEERS.get(matched_key or sector, [])
 
     if not tickers:
