@@ -844,7 +844,7 @@ export default function Home() {
     <div className="space-y-10">
 
       {/* ── Hero ── */}
-      <section className="relative -mx-4 overflow-hidden px-4 pb-24 pt-20 sm:-mx-6 sm:px-6 md:-mx-10 md:px-10 lg:-mx-14 lg:px-14 lg:pb-36 lg:pt-32">
+      <section className="relative -mx-4 px-4 pb-24 pt-20 sm:-mx-6 sm:px-6 md:-mx-10 md:px-10 lg:-mx-14 lg:px-14 lg:pb-36 lg:pt-32">
 
         {/* Gradient mesh backdrop — Stripi signature; replaces animated blobs */}
         <div className="absolute inset-0 gradient-mesh" />
