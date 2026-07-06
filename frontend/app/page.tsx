@@ -35,7 +35,7 @@ import {
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { StockLogo } from "@/components/StockLogo";
-import { HoverEffect } from "@/components/ui/card-hover-effect";
+import { HoverEffect, HoverEffectGroup } from "@/components/ui/card-hover-effect";
 
 /* ─── Types ──────────────────────────────────────── */
 type Stock = {
@@ -735,7 +735,7 @@ function CommoditiesWidget() {
   }, [data]);
 
   return (
-    <SectionCard title="Commodities" icon={<Flame className="h-4 w-4" />}>
+    <SectionCard title="Commodities" icon={<Flame className="h-4 w-4" />} topBorder="warn">
       <div className="p-4">
         {isLoading ? (
           <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
@@ -771,7 +771,7 @@ function FiftyTwoWeekWidget() {
   const lows = data?.lows ?? [];
 
   return (
-    <SectionCard title="52-Week High/Low" icon={<BarChart3 className="h-4 w-4" />}>
+    <SectionCard title="52-Week High/Low" icon={<BarChart3 className="h-4 w-4" />} topBorder="up">
       <div className="p-4">
         {isLoading ? (
           <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
@@ -794,7 +794,7 @@ function PriceShockersWidget() {
   const items = (data ?? []).slice(0, 4);
 
   return (
-    <SectionCard title="Price Shockers" icon={<Zap className="h-4 w-4" />}>
+    <SectionCard title="Price Shockers" icon={<Zap className="h-4 w-4" />} topBorder="down">
       <div className="p-4">
         {isLoading ? (
           <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
@@ -941,12 +941,18 @@ export default function Home() {
       {/* ── More Markets ── */}
       <section className="space-y-4 animate-fade-up">
         <h2 className="font-display text-xl font-semibold">More Markets</h2>
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-          <IpoWidget />
-          <CommoditiesWidget />
-          <FiftyTwoWeekWidget />
-          <PriceShockersWidget />
-        </div>
+        <HoverEffectGroup
+          count={4}
+          layoutId="more-markets-hover-bg"
+          className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
+        >
+          {(idx) => [
+            <IpoWidget key="ipo" />,
+            <CommoditiesWidget key="commodities" />,
+            <FiftyTwoWeekWidget key="52week" />,
+            <PriceShockersWidget key="shockers" />,
+          ][idx]}
+        </HoverEffectGroup>
       </section>
 
       {/* ── Features ── */}
