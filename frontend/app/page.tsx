@@ -36,6 +36,7 @@ import {
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { StockLogo } from "@/components/StockLogo";
+import { HoverEffect } from "@/components/ui/card-hover-effect";
 
 /* ─── Types ──────────────────────────────────────── */
 type Stock = {
@@ -973,39 +974,6 @@ function PriceShockersWidget() {
   );
 }
 
-/* ─── Feature cards ──────────────────────────────── */
-function FeatureCard({
-  icon, title, body, href, color, accentColor,
-}: {
-  icon: React.ReactNode; title: string; body: string; href: string; color: string; accentColor: string;
-}) {
-  return (
-    <Card
-      asChild
-      className="group relative flex flex-col gap-4 overflow-hidden p-5 transition-all duration-200 hover:-translate-y-px hover:border-[rgba(21,128,61,0.22)] hover:shadow-[var(--shadow-md),0_0_0_1px_rgba(21,128,61,0.07)] dark:hover:border-[rgba(74,222,128,0.22)] dark:hover:shadow-[var(--shadow-md),0_0_0_1px_rgba(74,222,128,0.08),inset_0_1px_0_rgba(255,255,255,0.05)]"
-    >
-    <Link href={href}>
-      {/* Top gradient line */}
-      <div className={clsx("absolute inset-x-0 top-0 h-[2px] opacity-0 transition-opacity duration-300 group-hover:opacity-100", accentColor)} />
-
-      <span className={clsx(
-        "flex h-11 w-11 items-center justify-center rounded-xl ring-1 transition-all duration-200",
-        color
-      )}>
-        {icon}
-      </span>
-      <div className="flex-1">
-        <h3 className="font-semibold text-fg">{title}</h3>
-        <p className="mt-1.5 text-sm text-muted leading-relaxed">{body}</p>
-      </div>
-      <div className="flex items-center gap-1 text-xs font-semibold text-saffron">
-        Explore <ChevronRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
-      </div>
-    </Link>
-    </Card>
-  );
-}
-
 /* ─── Page ──────────────────────────────────────── */
 export default function Home() {
   const { data, isLoading } = useSWR<OverviewData>("/api/market/overview", fetcher, {
@@ -1133,32 +1101,34 @@ export default function Home() {
       {/* ── Features ── */}
       <section className="space-y-4 animate-fade-up">
         <h2 className="font-display text-xl font-semibold">Platform Features</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <FeatureCard
-            icon={<Sparkles className="h-5 w-5 text-saffron" />}
-            title="AI Concall Analysis"
-            body="Quarter-wise earnings call summaries with real news context — highlights, management commentary, guidance."
-            href="/concall"
-            color="bg-saffron/10 ring-saffron/20 group-hover:bg-saffron group-hover:text-white group-hover:ring-saffron"
-            accentColor="bg-gradient-to-r from-saffron/60 via-saffron to-saffron/60"
-          />
-          <FeatureCard
-            icon={<ArrowUpRight className="h-5 w-5 text-blue-400" />}
-            title="Peer Comparison"
-            body="Compare any stock against sector peers on P/E, ROE, revenue growth — with sector median benchmarking."
-            href="/peers"
-            color="bg-blue-500/10 ring-blue-500/20 group-hover:bg-blue-500 group-hover:text-white group-hover:ring-blue-500"
-            accentColor="bg-gradient-to-r from-blue-500/60 via-blue-500 to-blue-500/60"
-          />
-          <FeatureCard
-            icon={<Activity className="h-5 w-5 text-accent" />}
-            title="Ask AI Anything"
-            body="Chat with an Indian market expert AI — taxation, sector outlook, stock analysis, FII flows and more."
-            href="/ask"
-            color="bg-accent/10 ring-accent/20 group-hover:bg-accent group-hover:text-white group-hover:ring-accent"
-            accentColor="bg-gradient-to-r from-accent/60 via-accent to-accent/60"
-          />
-        </div>
+        <HoverEffect
+          items={[
+            {
+              icon: <Sparkles className="h-5 w-5 text-saffron" />,
+              title: "AI Concall Analysis",
+              description: "Quarter-wise earnings call summaries with real news context — highlights, management commentary, guidance.",
+              link: "/concall",
+              color: "bg-saffron/10 ring-saffron/20 group-hover:bg-saffron group-hover:text-white group-hover:ring-saffron",
+              accentColor: "bg-gradient-to-r from-saffron/60 via-saffron to-saffron/60",
+            },
+            {
+              icon: <ArrowUpRight className="h-5 w-5 text-blue-400" />,
+              title: "Peer Comparison",
+              description: "Compare any stock against sector peers on P/E, ROE, revenue growth — with sector median benchmarking.",
+              link: "/peers",
+              color: "bg-blue-500/10 ring-blue-500/20 group-hover:bg-blue-500 group-hover:text-white group-hover:ring-blue-500",
+              accentColor: "bg-gradient-to-r from-blue-500/60 via-blue-500 to-blue-500/60",
+            },
+            {
+              icon: <Activity className="h-5 w-5 text-accent" />,
+              title: "Ask AI Anything",
+              description: "Chat with an Indian market expert AI — taxation, sector outlook, stock analysis, FII flows and more.",
+              link: "/ask",
+              color: "bg-accent/10 ring-accent/20 group-hover:bg-accent group-hover:text-white group-hover:ring-accent",
+              accentColor: "bg-gradient-to-r from-accent/60 via-accent to-accent/60",
+            },
+          ]}
+        />
       </section>
 
     </div>
