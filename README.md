@@ -35,6 +35,9 @@
 | **Market Overview** | Top gainers, losers, and most-active stocks updated continuously |
 | **Bulk & Block Deals** | NSE bulk/block deal slider for the last 2 trading days, sorted by value |
 | **Sector Analysis** | Sector-level heatmaps and constituent breakdowns |
+| **IPO Tracker** | Upcoming, active, and recently listed IPOs |
+| **Commodities** | Live commodity prices alongside equities and indices |
+| **52-Week & Price Shockers** | Stocks hitting 52-week highs/lows and biggest single-day movers |
 
 ### AI-Powered Analysis
 | Feature | Description |
@@ -54,7 +57,9 @@
 | **Shareholding Pattern** | Promoter, FII, DII, retail breakdown with interactive pie chart |
 | **Peer Benchmarking** | Compare any stock across its sector on key financial ratios side-by-side |
 | **News + Sentiment** | Latest headlines scored with VADER sentiment analysis (no NewsAPI key required) |
-| **Mutual Funds** | Popular, top-gaining, and top-losing funds across 1Y/3Y/5Y horizons via AMFI data |
+| **Credit Ratings & Annual Reports** | Latest credit rating actions and direct links to filed annual reports |
+| **Company Logos & Corporate Actions** | Auto-resolved stock logos plus dividends/splits/bonus history |
+| **Mutual Funds & ETFs** | Popular, top-gaining, and top-losing funds/ETFs across 1Y/3Y/5Y horizons via AMFI data, with holdings breakdown and similar-fund suggestions |
 
 ### Portfolio & Alerts
 | Feature | Description |
@@ -62,7 +67,8 @@
 | **Portfolio Tracker** | Add holdings with buy price and quantity; see live P&L and XIRR |
 | **Watchlist** | Track stocks with custom target prices and alerts |
 | **Price Alerts** | Set high/low price triggers with notification support |
-| **Real-time WebSocket Stream** | Sub-5s tick feed for 20+ tickers simultaneously; HTTP polling fallback included |
+| **Live Price Polling** | 30s cached-quote polling per stock page — tuned to stay within IndianAPI's metered quota |
+| **Sortable Tables** | Bidirectional column sorting on watchlist, portfolio, and commodities tables |
 
 ### Platform
 | Feature | Description |
@@ -83,8 +89,8 @@
 | **Backend** | FastAPI, Python 3.12, Pydantic v2, SQLAlchemy 2.0 (async) |
 | **Database** | PostgreSQL 17 with asyncpg driver |
 | **Cache** | Redis 7 with in-memory fallback |
-| **AI / LLM** | Groq (Llama 3.3 70B), NVIDIA NIM, OpenRouter — waterfall routing |
-| **Market Data** | yfinance, IndianAPI, NSE direct, AMFI |
+| **AI / LLM** | Groq (Llama 3.3 70B + fallback models), NVIDIA NIM (DeepSeek, MiniMax), OpenRouter — multi-step waterfall routing |
+| **Market Data** | IndianAPI, NSE direct, AMFI, Alpha Vantage (no yfinance) |
 | **Auth** | JWT (python-jose) + bcrypt |
 | **Observability** | Prometheus, Alertmanager, structured logging |
 | **Deployment** | Docker Compose (dev), Kubernetes with HPA (prod) |
@@ -106,9 +112,10 @@ aegis/
 │   │   ├── core/                   # Config, database, Redis cache, auth, metrics
 │   │   ├── middleware/             # Request ID, rate limiter, HTTP cache, security headers
 │   │   ├── routers/                # stocks, market, ai, mf, portfolio, watchlist,
-│   │   │                           # watchlist, chat, documents, alerts, stream, auth
+│   │   │                           # chat, documents, alerts, auth, health
 │   │   └── services/               # stock, market, ai, concall, forecast, peer,
-│   │                               # bulk_deals, news, mf, stream, indianapi, ...
+│   │                               # bulk_deals, news, mf, indianapi, alphavantage,
+│   │                               # home_refresh, shareholding, cache, ...
 │   ├── requirements.txt
 │   ├── Dockerfile
 │   └── .env.example
@@ -116,10 +123,12 @@ aegis/
 ├── frontend/                       # Next.js 15 application
 │   ├── app/                        # Pages: /, /stock/[ticker], /market, /mf,
 │   │                               # /portfolio, /watchlist, /peers, /concall,
-│   │                               # /ask, /alerts, /sector/[name], /index/[slug]
+│   │                               # /ask, /alerts, /sector/[name], /index/[slug],
+│   │                               # /ipo, /commodities, /login, /register
 │   ├── components/                 # Nav, SearchBox, PriceChart, HealthCard,
 │   │                               # ForecastCard, TechnicalsCard, PeerComparison,
-│   │                               # ConcallCard, AskAI, MarketBar, ...
+│   │                               # ConcallCard, AskAI, MarketBar, StockLogo,
+│   │                               # MFHighlights, LoginPrompt, ui/ (shadcn), ...
 │   ├── lib/                        # api.ts, auth.tsx, SWR config, IndexedDB utils
 │   ├── Dockerfile
 │   └── .env.local.example
@@ -226,17 +235,28 @@ docker compose -f docker-compose.monitoring.yml up -d
 | Variable | Required | Description |
 |---|---|---|
 | `DATABASE_URL` | Yes | PostgreSQL async connection string |
-| `GROQ_API_KEY` | Yes | Free at [console.groq.com](https://console.groq.com) |
+| `GROQ_API_KEY` | Yes | Free at [console.groq.com](https://console.groq.com) — primary AI provider |
+| `GROQ_API_KEY_2` / `GROQ_API_KEY_3` | No | Extra Groq keys to widen the token budget |
 | `GROQ_MODEL` | No | Default: `llama-3.3-70b-versatile` |
-| `NVIDIA_API_KEY` | No | NVIDIA NIM key (AI fallback) |
-| `OPENROUTER_API_KEY` | No | OpenRouter key (AI fallback) |
-| `INDIANAPI_KEY` | No | IndianAPI key for trending/movers data |
+| `NVIDIA_API_KEY` | No | NVIDIA NIM key — DeepSeek fallback |
+| `NVIDIA_MODEL` | No | Default: `deepseek-ai/deepseek-v4-flash` |
+| `NVIDIA_MINIMAX_API_KEY` | No | Separate NVIDIA NIM key — MiniMax fallback |
+| `NVIDIA_MINIMAX_MODEL` | No | Default: `minimaxai/minimax-m2.7` |
+| `OPENROUTER_API_KEY` | No | OpenRouter key (final AI fallback) |
+| `OPENROUTER_MODEL` | No | Default: `openai/gpt-oss-120b:free` |
+| `INDIANAPI_KEY` | No | IndianAPI key for market/stock data |
+| `INDIANAPI_ENABLED` | No | Set `false` to disable if the monthly quota is exhausted |
 | `JWT_SECRET_KEY` | Yes | Random 32-byte string for JWT signing |
+| `JWT_ACCESS_EXPIRE_MINUTES` | No | Default: `60` |
+| `JWT_REFRESH_EXPIRE_DAYS` | No | Default: `30` |
 | `REDIS_URL` | No | Falls back to in-memory cache if absent |
 | `CORS_ORIGINS` | No | Default: `http://localhost:3000` |
 | `APP_ENV` | No | `development` or `production` |
 | `AI_TIMEOUT_SECONDS` | No | Default: `60` |
 | `NEWS_API_KEY` | No | Falls back to free RSS feeds if absent |
+| `READONLY_MODE` | No | Blocks all write operations when `true` |
+| `RATE_LIMIT_ENABLED` | No | Toggle slowapi rate limiting (default `true`) |
+| `LOG_LEVEL` | No | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` |
 
 ### Frontend (`frontend/.env.local`)
 
@@ -258,7 +278,12 @@ docker compose -f docker-compose.monitoring.yml up -d
 | `GET` | `/api/stocks/{ticker}/history?period=1y` | OHLCV candlestick data |
 | `GET` | `/api/stocks/{ticker}/technicals` | RSI, MA, support/resistance |
 | `GET` | `/api/stocks/{ticker}/peers` | Peer comparison ratios |
-| `GET` | `/api/stocks/{ticker}/shareholding` | Promoter/FII/DII/retail breakdown |
+| `GET` | `/api/stocks/{ticker}/shareholding-history` | Promoter/FII/DII/retail breakdown over time |
+| `GET` | `/api/stocks/{ticker}/credit-ratings` | Latest credit rating actions |
+| `GET` | `/api/stocks/{ticker}/annual-reports` | Links to filed annual reports |
+| `GET` | `/api/stocks/{ticker}/logo` | Resolved company logo |
+| `GET` | `/api/stocks/{ticker}/corporate-actions` | Dividends, splits, bonus history |
+| `GET` | `/api/stocks/{ticker}/announcements` | Exchange announcements |
 
 ### Market
 
@@ -267,22 +292,32 @@ docker compose -f docker-compose.monitoring.yml up -d
 | `GET` | `/api/market/overview` | Top gainers, losers, most-active |
 | `GET` | `/api/market/bulk-deals` | NSE bulk & block deals |
 | `GET` | `/api/market/indices` | Nifty 50, Sensex, Bank Nifty, etc. |
+| `GET` | `/api/market/ipo` | Upcoming, active, and recently listed IPOs |
+| `GET` | `/api/market/commodities` | Live commodity prices |
+| `GET` | `/api/market/52week` | 52-week high/low movers |
+| `GET` | `/api/market/price-shockers` | Biggest single-day movers |
+| `GET` | `/api/market/sector/{sector}` | Constituents of a sector |
 
 ### AI
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/ai/analyse/{ticker}` | Full stock analysis (valuation, risks, outlook) |
-| `POST` | `/api/ai/health/{ticker}` | Company health diagnosis |
+| `GET` | `/api/stocks/{ticker}/insights` | AI valuation/risk analysis, health diagnosis, and forecasts (parallel) |
+| `GET` | `/api/stocks/{ticker}/concall-summary` | AI-generated earnings call summary |
 | `POST` | `/api/ai/ask` | Grounded Q&A with live data context |
-| `POST` | `/api/ai/concall` | Earnings call document analysis |
+| `POST` | `/api/documents/upload-pdf` | Upload a concall/annual-report PDF for analysis |
+| `POST` | `/api/documents/analyze` | Analyze an uploaded document |
+| `POST` | `/api/documents/ask` | Ask questions grounded in an uploaded document |
 
-### Mutual Funds
+### Mutual Funds & ETFs
 
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/mf/highlights` | Top funds by performance |
 | `GET` | `/api/mf/{code}` | Fund detail and NAV history |
+| `GET` | `/api/mf/{code}/holdings` | Fund's underlying holdings |
+| `GET` | `/api/etf/highlights` | Top ETFs by performance |
+| `GET` | `/api/etf/{ticker}` | ETF detail and NAV history |
 
 ### Portfolio & Watchlist
 
@@ -292,13 +327,6 @@ docker compose -f docker-compose.monitoring.yml up -d
 | `GET/POST/DELETE` | `/api/watchlist` | Watchlist with target prices |
 | `GET/POST/DELETE` | `/api/alerts` | Price alert rules |
 
-### Streaming
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `WS` | `/ws/stocks` | Real-time price stream (sub-5s ticks) |
-| `GET` | `/api/stream/price/{ticker}` | HTTP polling fallback |
-
 ### Auth
 
 | Method | Endpoint | Description |
@@ -306,6 +334,8 @@ docker compose -f docker-compose.monitoring.yml up -d
 | `POST` | `/api/auth/register` | Create account |
 | `POST` | `/api/auth/login` | Get access + refresh tokens |
 | `POST` | `/api/auth/refresh` | Rotate refresh token |
+| `GET` | `/api/auth/me` | Current user profile |
+| `POST` | `/api/auth/logout` | Invalidate session |
 
 Full interactive documentation: **http://localhost:8000/docs**
 
@@ -348,7 +378,7 @@ The HPA scales between 2 and 10 backend replicas based on CPU utilization.
 
 - Tickers default to `.NS` (NSE); append `.BO` for BSE (e.g., `RELIANCE.BO`)
 - The 30-day price projection is a statistical model — clearly labelled in the UI. Not a prediction
-- The AI waterfall tries Groq first, then NVIDIA NIM, then OpenRouter — any one key is sufficient
+- The AI waterfall tries Groq first, then NVIDIA NIM (DeepSeek, then MiniMax), then OpenRouter — any one key is sufficient
 - Redis is optional; the backend falls back to an in-memory LRU cache automatically
 
 ---
