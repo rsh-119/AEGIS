@@ -266,6 +266,15 @@ def parse_stock(raw: dict) -> dict:
     }
 
 
+def _latest_yearly(block: dict) -> float | None:
+    """Most recent value from a financials entry's {"yearly": {"2024": ..., ...}} map."""
+    yearly = block.get("yearly") or {}
+    if not yearly:
+        return None
+    latest_year = max(yearly, key=lambda y: int(y))
+    return _f(yearly.get(latest_year))
+
+
 def parse_stock_data(raw: dict) -> dict:
     """Flatten /get_stock_data's response into clean ratio/growth fields."""
     stats = raw.get("stats") or {}
@@ -295,6 +304,7 @@ def parse_stock_data(raw: dict) -> dict:
         "sector_dividend_yield": _pct_to_fraction(stats.get("sectorDivYield")),
         "revenue_growth":   _f((revenue.get("cagr") or {}).get("oneYearTtm")),
         "earnings_growth":  _f((profit.get("cagr") or {}).get("oneYearTtm")),
+        "net_income":       _cr_to_inr(_latest_yearly(profit)),
         "company_summary":  raw.get("company_summary"),
         "nse_scrip_code":   raw.get("nse_scrip_code"),
         "bse_scrip_code":   raw.get("bse_scrip_code"),

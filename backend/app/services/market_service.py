@@ -400,6 +400,7 @@ async def _fetch_sector_quote(ticker: str) -> dict | None:
         "roe":            parsed.get("roe"),
         "revenue_growth": parsed.get("revenue_growth"),
         "profit_margin":  parsed.get("profit_margin"),
+        "net_income":     parsed.get("net_income"),
         "debt_to_equity": parsed.get("debt_to_equity"),
         "dividend_yield": parsed.get("dividend_yield"),
         "cap_type": (
@@ -411,7 +412,20 @@ async def _fetch_sector_quote(ticker: str) -> dict | None:
 
 
 async def _batch_returns(tickers: list[str]) -> dict[str, dict]:
-    """1Y/3Y/5Y price returns per ticker via IndianAPI historical_data."""
+    """1Y/3Y/5Y price returns per ticker via IndianAPI historical_data.
+
+    NOTE: the "5y" fetch uses filter="price" (see get_historical_data's
+    docstring), which IndianAPI only returns at WEEKLY granularity beyond
+    1yr — ~262 points over 5 years, not ~1260 daily closes. Offsetting by a
+    fixed trading-day COUNT (252/756/1260) silently assumed daily data: for
+    1Y it read a point from ~5 years back mislabeled as "1Y return", and for
+    3Y/5Y the length guard always tripped (262 < 756*0.6), returning None
+    every time — exactly the all-"—" 3Y/5Y columns seen in Peer Comparison.
+    Anchoring on the actual date per point fixes this regardless of the
+    API's granularity.
+    """
+    from datetime import datetime, timedelta
+
     out: dict[str, dict] = {}
 
     async def _one(t: str) -> None:
@@ -422,21 +436,29 @@ async def _batch_returns(tickers: list[str]) -> dict[str, dict]:
         price_ds = next((d for d in (raw.get("datasets") or []) if d.get("metric") == "Price"), None)
         if not price_ds or not price_ds.get("values"):
             return
-        values = price_ds["values"]
-        closes = [float(v[1]) for v in values]
-        n = len(closes)
-        curr = closes[-1]
+        points: list[tuple[datetime, float]] = []
+        for d, p in price_ds["values"]:
+            try:
+                points.append((datetime.strptime(d, "%Y-%m-%d"), float(p)))
+            except (ValueError, TypeError):
+                continue
+        if not points:
+            return
+        points.sort(key=lambda pt: pt[0])
+        latest_date, curr = points[-1]
+        earliest_date = points[0][0]
 
-        def _ret(days: int) -> float | None:
-            if n < days * 0.6:
-                return None
-            base = closes[max(0, n - days)]
+        def _ret(years: int) -> float | None:
+            target = latest_date - timedelta(days=365 * years)
+            if target < earliest_date - timedelta(days=30):
+                return None   # not enough history for this lookback
+            base = min(points, key=lambda pt: abs((pt[0] - target).days))[1]
             return round((curr / base - 1) * 100, 2) if base else None
 
         out[t] = {
-            "return_1y": _ret(252),
-            "return_3y": _ret(756),
-            "return_5y": _ret(1260),
+            "return_1y": _ret(1),
+            "return_3y": _ret(3),
+            "return_5y": _ret(5),
         }
 
     await asyncio.gather(*[_one(t) for t in tickers], return_exceptions=True)
