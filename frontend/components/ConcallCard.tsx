@@ -420,19 +420,19 @@ export function ConcallCard({ ticker }: { ticker: string }) {
             </p>
 
             {/* ── Document Analyzer CTA ── */}
-            <div className="mt-2 flex items-center justify-between gap-4 rounded-2xl border border-saffron/20 bg-gradient-to-r from-saffron/8 via-saffron/5 to-transparent px-5 py-4">
-              <div className="flex items-center gap-3">
+            <div className="mt-2 flex flex-col items-stretch gap-4 rounded-2xl border border-saffron/20 bg-gradient-to-r from-saffron/8 via-saffron/5 to-transparent px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-saffron/15 ring-1 ring-saffron/25">
                   <FileText className="h-5 w-5 text-saffron" />
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-fg">Have the actual concall transcript or annual report?</p>
                   <p className="text-xs text-muted">Upload a PDF or paste text — get deep AI analysis, management promises &amp; Q&amp;A</p>
                 </div>
               </div>
               <Link
                 href="/concall/document"
-                className="flex shrink-0 items-center gap-1.5 rounded-xl bg-saffron px-4 py-2 text-sm font-semibold text-white shadow-md shadow-saffron/20 transition-all hover:bg-amber-400 hover:shadow-saffron/30"
+                className="flex w-full shrink-0 grow-0 items-center justify-center gap-1.5 rounded-xl bg-saffron px-4 py-2 text-sm font-semibold text-white shadow-md shadow-saffron/20 transition-all hover:bg-amber-400 hover:shadow-saffron/30 sm:w-auto"
               >
                 <Sparkles className="h-4 w-4" /> Analyze Document
               </Link>

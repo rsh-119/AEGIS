@@ -68,7 +68,7 @@ export function Nav() {
       {scrolled && <div className="glow-line absolute top-0 inset-x-0" />}
 
       {/* ── Main bar ── */}
-      <div className="flex h-14 items-center gap-3 px-4 sm:px-6 md:px-10 lg:px-14">
+      <div className="flex h-14 items-center gap-3 px-4 sm:px-6 md:px-10 xl:px-14">
 
         {/* Logo */}
         <Link href="/" className="group flex shrink-0 items-center gap-2">
@@ -87,18 +87,20 @@ export function Nav() {
           </div>
         </Link>
 
-        {/* Desktop search — centered */}
-        {path !== "/" && (
-          <div className="absolute left-1/2 hidden -translate-x-1/2 w-full max-w-sm md:block lg:max-w-[400px]">
-            <SearchBox />
-          </div>
-        )}
+        {/* Desktop search — centered in the space actually left between logo and right side */}
+        <div className="hidden min-w-0 flex-1 justify-center xl:flex">
+          {path !== "/" && (
+            <div className="w-full max-w-sm xl:max-w-[400px]">
+              <SearchBox />
+            </div>
+          )}
+        </div>
 
         {/* Right side */}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1 xl:ml-0">
 
           {/* Desktop nav links */}
-          <nav className="hidden md:flex items-center gap-0.5 text-sm">
+          <nav className="hidden xl:flex items-center gap-0.5 text-sm">
             {links.map((l) => {
               const active = l.href === "/" ? path === "/" : path.startsWith(l.href);
               return (
@@ -117,8 +119,8 @@ export function Nav() {
           </nav>
 
           {/* Live indicator — desktop only */}
-          <div className="mx-2 hidden h-4 w-px bg-border/60 md:block" />
-          <div className="hidden items-center gap-1.5 rounded-full border border-up/20 bg-up/8 px-2.5 py-1 md:flex">
+          <div className="mx-2 hidden h-4 w-px bg-border/60 xl:block" />
+          <div className="hidden items-center gap-1.5 rounded-full border border-up/20 bg-up/8 px-2.5 py-1 xl:flex">
             <span className="relative flex h-1.5 w-1.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-up opacity-60" />
               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-up" />
@@ -135,7 +137,7 @@ export function Nav() {
 
           {/* Auth — desktop */}
           {!authLoading && (
-            <div className="hidden md:block relative">
+            <div className="hidden xl:block relative">
               {user ? (
                 <>
                   <button
@@ -174,7 +176,7 @@ export function Nav() {
           <button
             onClick={() => setMobileOpen((o) => !o)}
             aria-label="Toggle menu"
-            className="grid h-8 w-8 place-items-center rounded-lg text-muted transition-all duration-150 hover:bg-raised hover:text-fg md:hidden"
+            className="grid h-8 w-8 place-items-center rounded-lg text-muted transition-all duration-150 hover:bg-raised hover:text-fg xl:hidden"
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -183,14 +185,14 @@ export function Nav() {
 
       {/* Mobile search (non-home pages) */}
       {path !== "/" && (
-        <div className="px-4 pb-2.5 md:hidden">
+        <div className="px-4 pb-2.5 xl:hidden">
           <SearchBox />
         </div>
       )}
 
       {/* ── Mobile nav drawer ── */}
       {mobileOpen && (
-        <div className="border-t border-border bg-surface md:hidden">
+        <div className="border-t border-border bg-surface xl:hidden">
           <nav className="flex flex-col py-2">
             {links.map((l) => {
               const active = l.href === "/" ? path === "/" : path.startsWith(l.href);

@@ -342,6 +342,11 @@
 }
 .animate-ripple { animation: ripple 0.5s ease-out forwards; }
 
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.animate-marquee { animation: marquee linear infinite; }
+.animate-marquee:hover,
+.animate-marquee:focus-within { animation-play-state: paused; }
+
 @keyframes chart-fade-in {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }

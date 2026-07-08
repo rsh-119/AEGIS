@@ -950,8 +950,8 @@ function SplitNewsCard({ articles, sentiment }: { articles: any[]; sentiment: an
   return (
     <Card className="overflow-hidden">
       {/* Header with sentiment inline */}
-      <div className="flex items-center justify-between border-b border-border bg-raised/40 px-5 py-3">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-raised/40 px-5 py-3">
+        <div className="flex flex-wrap items-center gap-2">
           <Newspaper className="h-4 w-4 text-muted" />
           <h3 className="font-semibold text-sm">News · last 1 year</h3>
           <span className="text-xs text-muted">
@@ -959,7 +959,7 @@ function SplitNewsCard({ articles, sentiment }: { articles: any[]; sentiment: an
           </span>
         </div>
         {sentiment?.label && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-[10px] text-muted">Sentiment</span>
             <span className={clsx("text-sm font-bold", sentColor)}>{sentiment.label}</span>
             <span className="flex gap-2 text-[10px]">
@@ -1184,11 +1184,44 @@ const ANNOUNCEMENT_TYPE_COLORS: Record<string, string> = {
   "Default":         "bg-raised text-muted ring-border",
 };
 
+function AnnouncementItem({ a }: { a: any }) {
+  const subject  = a.subject ?? a.headline ?? a.description ?? a.title ?? "—";
+  const date     = a.date ?? a.timestamp ?? a.announcement_date ?? "";
+  const type     = a.type ?? a.category ?? a.announcement_type ?? "";
+  const link     = a.link ?? a.url ?? a.document_url ?? null;
+  const typeStyle = ANNOUNCEMENT_TYPE_COLORS[type] ?? ANNOUNCEMENT_TYPE_COLORS["Default"];
+  const Item = link ? "a" : "div";
+  return (
+    <Item
+      {...(link ? { href: link, target: "_blank", rel: "noopener" } : {})}
+      className={clsx(
+        "flex h-full flex-col gap-2 rounded-xl border border-border bg-raised p-3 shrink-0 min-w-0",
+        link && "transition hover:border-saffron/50 hover:bg-raised/70 cursor-pointer"
+      )}
+    >
+      <p className="text-xs text-fg/90 leading-snug line-clamp-2">{subject}</p>
+      <div className="mt-auto flex items-center justify-between gap-2">
+        {date && (
+          <div className="flex items-center gap-1 min-w-0">
+            <Calendar className="h-3 w-3 shrink-0 text-muted" />
+            <span className="truncate text-[10px] text-muted">{date}</span>
+          </div>
+        )}
+        {type && (
+          <Badge className={clsx("ring-1 text-[10px] shrink-0", typeStyle)}>{type}</Badge>
+        )}
+      </div>
+    </Item>
+  );
+}
+
 function AnnouncementsCard({ items }: { items: any[] }) {
   const ref = useRef<HTMLDivElement>(null);
   if (!items.length) return null;
 
   const shown = items.slice(0, 20);
+  const mobileTop5  = shown.slice(0, 5);
+  const mobileRest  = shown.slice(5);
 
   function scroll(dir: "up" | "down") {
     if (!ref.current) return;
@@ -1203,7 +1236,25 @@ function AnnouncementsCard({ items }: { items: any[] }) {
         <span className="text-xs text-muted ml-auto">{items.length} recent</span>
       </div>
 
-      <div className="relative">
+      {/* Mobile — top 5 stacked, remainder (if any) in a horizontal slider */}
+      <div className="space-y-2 sm:hidden">
+        {mobileTop5.map((a: any, i: number) => <AnnouncementItem key={i} a={a} />)}
+        {mobileRest.length > 0 && (
+          <div
+            className="flex gap-2.5 overflow-x-auto scroll-smooth pb-1"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
+            {mobileRest.map((a: any, i: number) => (
+              <div key={i} className="w-52 shrink-0">
+                <AnnouncementItem a={a} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* sm+ — full vertical list with scroll arrows, unchanged */}
+      <div className="relative hidden sm:block">
         {/* Up arrow */}
         <button
           onClick={() => scroll("up")}
@@ -1219,37 +1270,7 @@ function AnnouncementsCard({ items }: { items: any[] }) {
           className="flex flex-col gap-2 overflow-y-auto scroll-smooth"
           style={{ maxHeight: "340px", scrollbarWidth: "none", msOverflowStyle: "none" }}
         >
-          {shown.map((a: any, i: number) => {
-            const subject  = a.subject ?? a.headline ?? a.description ?? a.title ?? "—";
-            const date     = a.date ?? a.timestamp ?? a.announcement_date ?? "";
-            const type     = a.type ?? a.category ?? a.announcement_type ?? "";
-            const link     = a.link ?? a.url ?? a.document_url ?? null;
-            const typeStyle = ANNOUNCEMENT_TYPE_COLORS[type] ?? ANNOUNCEMENT_TYPE_COLORS["Default"];
-            const Item = link ? "a" : "div";
-            return (
-              <Item
-                key={i}
-                {...(link ? { href: link, target: "_blank", rel: "noopener" } : {})}
-                className={clsx(
-                  "flex flex-col gap-2 rounded-xl border border-border bg-raised p-3 shrink-0 min-w-0",
-                  link && "transition hover:border-saffron/50 hover:bg-raised/70 cursor-pointer"
-                )}
-              >
-                <p className="text-xs text-fg/90 leading-snug line-clamp-2">{subject}</p>
-                <div className="flex items-center justify-between gap-2">
-                  {date && (
-                    <div className="flex items-center gap-1 min-w-0">
-                      <Calendar className="h-3 w-3 shrink-0 text-muted" />
-                      <span className="truncate text-[10px] text-muted">{date}</span>
-                    </div>
-                  )}
-                  {type && (
-                    <Badge className={clsx("ring-1 text-[10px] shrink-0", typeStyle)}>{type}</Badge>
-                  )}
-                </div>
-              </Item>
-            );
-          })}
+          {shown.map((a: any, i: number) => <AnnouncementItem key={i} a={a} />)}
         </div>
 
         {/* Down arrow */}
