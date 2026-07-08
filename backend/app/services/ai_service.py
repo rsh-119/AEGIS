@@ -717,6 +717,33 @@ async def answer(
             except Exception:
                 pass
 
+            # Real NSE bulk/block deals for this ticker specifically — the
+            # "top_institutional_holders"/"insider_transactions" fields below
+            # are yfinance-era leftovers that IndianAPI never populates for
+            # Indian stocks, so bulk-deal questions always fell through to
+            # "not available" even though this exact data already powers
+            # /api/market/bulk-deals elsewhere in the app.
+            try:
+                from app.services.bulk_deals_service import get_bulk_deals
+                bare = ticker.replace(".NS", "").replace(".BO", "")
+                all_deals = await get_bulk_deals(limit=75)
+                deals = [d for d in all_deals if d.get("symbol") == bare][:10]
+                if deals:
+                    grounding["recent_bulk_deals"] = [
+                        {
+                            "date": d.get("date"),
+                            "entity": d.get("entity"),
+                            "deal_type": d.get("deal_type"),
+                            "quantity": d.get("quantity"),
+                            "price_inr": d.get("price"),
+                            "value_cr": d.get("value_cr"),
+                            "exchange": d.get("exchange"),
+                        }
+                        for d in deals
+                    ]
+            except Exception:
+                pass
+
     system = """You are Aegis AI — a sharp, knowledgeable financial analyst assistant for Indian stock markets (NSE/BSE).
 
 CONTEXT BLOCK: Live data fetched right now for this stock. Includes "live_market_data" — a real-time IndianAPI snapshot with live price, change, and market cap. Always prefer this over training memory for prices, ratios, ownership, and leadership.
@@ -724,7 +751,7 @@ TRAINING KNOWLEDGE: Background facts, sector context, historical events, general
 
 HOW TO ANSWER:
 1. PRICES / RATIOS / LEADERSHIP → Use CONTEXT only, cite exact numbers (e.g. "trading at ₹1,313 with a P/E of 22x").
-2. BULK DEALS / INSTITUTIONAL ACTIVITY → Check "top_institutional_holders", "top_mutualfund_holders", "recent_insider_transactions" in CONTEXT. Report what you see (holder names, % stakes, transaction dates). If these fields are absent, explain that Yahoo Finance doesn't always report Indian bulk deals and direct the user to NSE's bulk deal page (www.nseindia.com > Market Data > Bulk Deals) or BSE's equivalent.
+2. BULK DEALS / INSTITUTIONAL ACTIVITY → Check "recent_bulk_deals" in CONTEXT first (real NSE/BSE bulk & block deals for this exact stock — entity, buy/sell, quantity, price, value in ₹Cr, date). Report them directly, e.g. "On {date}, {entity} {bought/sold} {quantity} shares at ₹{price} ({value_cr} Cr)." Also check "top_institutional_holders", "top_mutualfund_holders", "recent_insider_transactions" for additional ownership context. Only if "recent_bulk_deals" is absent or empty, say no bulk deals were reported in the recent window and direct the user to NSE's bulk deal page (www.nseindia.com > Market Data > Bulk Deals) or BSE's equivalent.
 3. RECENT EVENTS (investments, acquisitions, partnerships) → Scan "recent_news" headlines first. If a headline matches, cite it with the publisher. Then add relevant training context.
 4. QUESTIONS OUTSIDE THE DATA → Never say just "not available." Instead: (a) share everything relevant from the context, (b) use training knowledge for background, (c) tell the user exactly where to find the missing data (NSE/BSE website, company filings, SEBI disclosures, screener.in, etc.).
 5. VOLUME ANALYSIS → Compare "volume_today" vs "avg_volume_3mo". If today's volume is >1.5x average, flag it as unusual activity.

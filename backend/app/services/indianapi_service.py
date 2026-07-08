@@ -260,7 +260,11 @@ def parse_stock(raw: dict) -> dict:
         "debt_to_equity": _ratio_to_pct(reuse.get("totalDebtPerTotalEquityMostRecentQuarter")),
         "held_by_insiders_pct":     promoter_pct,
         "held_by_institutions_pct": (fii_pct or 0) + (dii_pct or 0) if (fii_pct or dii_pct) else None,
-        "summary":       ((raw.get("companyProfile") or {}).get("companyDescription") or "")[:600],
+        # Full text — the frontend's AboutParagraph already truncates cleanly
+        # at a word boundary with a "Read more" expander, so cutting it here
+        # too (previously [:600], mid-word) just baked in a broken preview
+        # that "Read more" couldn't fix since the rest was never sent.
+        "summary":       (raw.get("companyProfile") or {}).get("companyDescription") or "",
         "website":       None,
         **dma,
     }
@@ -326,12 +330,20 @@ def _resolve_symbol(name_or_symbol: str) -> str:
 async def get_stock(name_or_symbol: str) -> dict | None:
     """/stock — live price, technicals, shareholding, peers, corp actions, news.
     Cached — shared by get_quote_bundle() and peer_service so both don't
-    double-hit the API for the same ticker within the TTL window."""
+    double-hit the API for the same ticker within the TTL window.
+
+    Retries once on a soft failure (HTTP 200 with no companyName) — IndianAPI
+    intermittently returns a transient error payload for otherwise-fine
+    tickers, and without a retry that blip gets baked into the 1h quote
+    cache, blanking the stock page for the rest of the hour."""
     ck = f"indianapi:stock:{name_or_symbol}"
     hit = cache.get(ck)
     if hit is not None:
         return hit or None
-    data = await _get("/stock", {"symbol": _resolve_symbol(name_or_symbol)})
+    resolved = _resolve_symbol(name_or_symbol)
+    data = await _get("/stock", {"symbol": resolved})
+    if not (isinstance(data, dict) and "companyName" in data):
+        data = await _get("/stock", {"symbol": resolved})   # one retry
     result = data if isinstance(data, dict) and "companyName" in data else None
     if result:
         cache.set(ck, result, "prices")
@@ -339,12 +351,19 @@ async def get_stock(name_or_symbol: str) -> dict | None:
 
 
 async def get_stock_data(name_or_symbol: str) -> dict | None:
-    """/get_stock_data — clean ratios, margins, growth, sector comparisons. Cached."""
+    """/get_stock_data — clean ratios, margins, growth, sector comparisons. Cached.
+
+    Retries once on a soft failure — same transient-error rationale as
+    get_stock() above (seen empirically on HDFCBANK: one call returned
+    {"error": "An error has occurred"}, the very next call succeeded)."""
     ck = f"indianapi:stock_data:{name_or_symbol}"
     hit = cache.get(ck)
     if hit is not None:
         return hit or None
-    data = await _get("/get_stock_data", {"stock_name": _resolve_symbol(name_or_symbol)})
+    resolved = _resolve_symbol(name_or_symbol)
+    data = await _get("/get_stock_data", {"stock_name": resolved})
+    if not (isinstance(data, dict) and "stats" in data):
+        data = await _get("/get_stock_data", {"stock_name": resolved})   # one retry
     result = data if isinstance(data, dict) and "stats" in data else None
     if result:
         cache.set(ck, result, "peers")   # fundamentals-only, changes slowly
