@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -329,6 +330,59 @@ async def get_quote(ticker: str) -> dict:
     })
     res["fetched_at"] = int(time.time())
     cache.set(ck, res, "prices")
+    return res
+
+
+def _parse_quarter_label(label: str) -> tuple[int, int] | None:
+    """'Mar 2024' -> (2024, 3)."""
+    try:
+        dt = datetime.strptime(label.strip(), "%b %Y")
+        return (dt.year, dt.month)
+    except Exception:
+        return None
+
+
+async def get_quarterly_headline(ticker: str) -> dict:
+    """Latest-quarter Sales/Net Profit + YoY variance, for watchlist-style
+    fundamentals tables. Values already arrive from IndianAPI in ₹ Crore —
+    same `quarter_results` shape concall_service._fetch_quarterly() parses."""
+    t = normalise_ticker(ticker)
+    bare = t.replace(".NS", "").replace(".BO", "")
+    ck = f"quarterly_headline:{bare}"
+    if (c := cache.get(ck)) is not None:
+        return c
+
+    empty = {"revenue_cr": None, "net_profit_cr": None, "revenue_yoy_pct": None, "net_profit_yoy_pct": None}
+    stats = await indianapi_service.get_historical_stats(bare, "all")
+    qr = (stats or {}).get("quarter_results") or {}
+    sales, profit = qr.get("Sales") or {}, qr.get("Net Profit") or {}
+    all_labels = list(sales.keys())
+    if not all_labels:
+        cache.set(ck, empty, "history")
+        return empty
+
+    latest = all_labels[-1]
+    rev, net = sales.get(latest), profit.get(latest)
+
+    res = dict(empty)
+    res["revenue_cr"] = rev
+    res["net_profit_cr"] = net
+
+    parsed = [(_parse_quarter_label(lbl), lbl) for lbl in all_labels]
+    parsed = [(p, lbl) for p, lbl in parsed if p is not None]
+    target = _parse_quarter_label(latest)
+    if target and len(all_labels) >= 5:
+        prev_year_target = (target[0] - 1, target[1])
+        match = next((lbl for p, lbl in parsed if p == prev_year_target), None)
+        if match:
+            prev_rev, prev_net = sales.get(match), profit.get(match)
+            if prev_rev and rev is not None:
+                res["revenue_yoy_pct"] = round((rev - prev_rev) / abs(prev_rev) * 100, 1)
+            if prev_net and net is not None:
+                res["net_profit_yoy_pct"] = round((net - prev_net) / abs(prev_net) * 100, 1)
+
+    res = _clean(res)
+    cache.set(ck, res, "history")
     return res
 
 

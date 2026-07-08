@@ -28,14 +28,24 @@ async def list_watch(
     ).scalars().all()
     if not rows:
         return {"items": []}
-    quotes = await asyncio.gather(*[stock_service.get_quote(r.ticker) for r in rows])
+    quotes, headlines = await asyncio.gather(
+        asyncio.gather(*[stock_service.get_quote(r.ticker) for r in rows]),
+        asyncio.gather(*[stock_service.get_quarterly_headline(r.ticker) for r in rows]),
+    )
     items = []
-    for r, q in zip(rows, quotes):
+    for r, q, h in zip(rows, quotes, headlines):
         items.append({
             **r.to_dict(),
             "current_price": q.get("current_price") if "error" not in q else None,
             "company_name":  q.get("company_name") or r.company_name or r.ticker,
             "pct_change":    _intraday_pct(q),
+            "pe_ratio":       q.get("pe_ratio"),
+            "market_cap":     q.get("market_cap"),
+            "dividend_yield": q.get("dividend_yield"),
+            "roe":            q.get("roe"),
+            "roce":           q.get("roce"),
+            "industry":       q.get("industry"),
+            **h,
         })
     return {"items": items}
 

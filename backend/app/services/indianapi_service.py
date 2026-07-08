@@ -290,6 +290,7 @@ def parse_stock_data(raw: dict) -> dict:
         "sector_pe":        _f(stats.get("sectorPe")),
         "sector_pb":        _f(stats.get("sectorPb")),
         "sector_roe":       _pct_to_fraction(stats.get("sectorRoe")),
+        "roce":             _pct_to_fraction(stats.get("roce")),
         "sector_roce":      _pct_to_fraction(stats.get("sectorRoce")),
         "sector_dividend_yield": _pct_to_fraction(stats.get("sectorDivYield")),
         "revenue_growth":   _f((revenue.get("cagr") or {}).get("oneYearTtm")),
