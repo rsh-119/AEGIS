@@ -350,21 +350,44 @@ async def get_stock(name_or_symbol: str) -> dict | None:
     return result
 
 
-async def get_stock_data(name_or_symbol: str) -> dict | None:
+def _valid_stock_data(data) -> bool:
+    # Must have a genuinely populated stats dict — IndianAPI sometimes returns
+    # an HTTP-200 "success" shape with "stats": {} (empty), which silently
+    # blanks PB/EPS/ROE/margins for whatever symbol hits it. Confirmed live:
+    # HAL/NESTLEIND/KOTAKBANK/ULTRACEMCO all had a real 30-36 field stats
+    # object on retry, so this is IndianAPI-side flakiness, not a real gap —
+    # but treating {} as "valid" cached it for a full week ("peers" TTL).
+    return isinstance(data, dict) and bool(data.get("stats"))
+
+
+async def get_stock_data(name_or_symbol: str, alt_name: str | None = None) -> dict | None:
     """/get_stock_data — clean ratios, margins, growth, sector comparisons. Cached.
 
-    Retries once on a soft failure — same transient-error rationale as
-    get_stock() above (seen empirically on HDFCBANK: one call returned
-    {"error": "An error has occurred"}, the very next call succeeded)."""
+    IndianAPI's fuzzy matching for this endpoint is inconsistent about symbol
+    vs. full company name — confirmed empirically: "HINDUNILVR" returns empty
+    stats but "Hindustan Unilever" works; conversely "UltraTech Cement" fails
+    but "ULTRACEMCO" works. Neither is reliably right, so when the caller
+    supplies both (get_quote_bundle passes the companyName it already fetched
+    via get_stock()), try the ticker first, then the company name, before
+    finally retrying the ticker once more for genuine transient blips."""
     ck = f"indianapi:stock_data:{name_or_symbol}"
     hit = cache.get(ck)
     if hit is not None:
         return hit or None
     resolved = _resolve_symbol(name_or_symbol)
-    data = await _get("/get_stock_data", {"stock_name": resolved})
-    if not (isinstance(data, dict) and "stats" in data):
-        data = await _get("/get_stock_data", {"stock_name": resolved})   # one retry
-    result = data if isinstance(data, dict) and "stats" in data else None
+    candidates = [resolved]
+    if alt_name and alt_name.strip().lower() != resolved.strip().lower():
+        candidates.append(alt_name)
+
+    data = None
+    for c in candidates:
+        data = await _get("/get_stock_data", {"stock_name": c})
+        if _valid_stock_data(data):
+            break
+    if not _valid_stock_data(data):
+        data = await _get("/get_stock_data", {"stock_name": resolved})   # one last retry
+
+    result = data if _valid_stock_data(data) else None
     if result:
         cache.set(ck, result, "peers")   # fundamentals-only, changes slowly
     return result
@@ -416,7 +439,7 @@ async def get_quote_bundle(ticker: str) -> dict:
         return {}
     data = parse_stock(stock_raw)
 
-    stock_data_raw = await get_stock_data(bare)
+    stock_data_raw = await get_stock_data(bare, alt_name=stock_raw.get("companyName"))
     if stock_data_raw:
         extra = parse_stock_data(stock_data_raw)
         for k, v in extra.items():

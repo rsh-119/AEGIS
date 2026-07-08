@@ -140,7 +140,7 @@ _NSE_INDEX: dict[str, str] = {
     "NMDC": "NMDC",
     "GAIL": "GAIL India",
     "IOC": "Indian Oil Corporation",
-    "HPCL": "Hindustan Petroleum Corporation",
+    "HINDPETRO": "Hindustan Petroleum Corporation",
     "MRF": "MRF",
     "APOLLOTYRE": "Apollo Tyres",
     "BALKRISIND": "Balkrishna Industries",

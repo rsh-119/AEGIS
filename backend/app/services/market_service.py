@@ -373,10 +373,9 @@ async def _fetch_sector_quote(ticker: str) -> dict | None:
     """Extended quote for sector/peer pages — IndianAPI /get_stock_data gives
     ratios + margins + YoY growth (via financials cagr) in a single call."""
     bare = ticker.replace(".NS", "").replace(".BO", "")
-    raw = await indianapi_service.get_stock_data(bare)
-    if not raw:
-        return None
-    parsed = indianapi_service.parse_stock_data(raw)
+    # Fetch price first so its companyName can be tried as a fallback lookup
+    # for get_stock_data — IndianAPI's fuzzy matching there is inconsistent
+    # about ticker vs. full company name per-stock (see get_stock_data docstring).
     price_raw = await indianapi_service.get_stock(bare)
     price = None
     change_pct = None
@@ -388,6 +387,11 @@ async def _fetch_sector_quote(ticker: str) -> dict | None:
             change_pct = round((price - prev) / prev * 100, 2)
     if not price:
         return None
+    alt_name = price_raw.get("companyName") if price_raw else None
+    raw = await indianapi_service.get_stock_data(bare, alt_name=alt_name)
+    if not raw:
+        return None
+    parsed = indianapi_service.parse_stock_data(raw)
     mc = parsed.get("market_cap")
     return _clean({
         "ticker":         ticker,
