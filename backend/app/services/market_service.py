@@ -28,6 +28,23 @@ _pool = ThreadPoolExecutor(max_workers=32)
 _cache = _TTL(ttl=1800)   # 30-min TTL — matches trading-hours refetch cadence
 _idx_cache = _TTL(ttl=60)  # 60-second cache for indices-only endpoint
 
+# ── In-flight de-dup ──────────────────────────────────────────────────────────
+# On a cold cache (post-restart, or first request after a long idle gap on
+# Render's free tier), several concurrent requests can all miss the cache at
+# once and each independently re-run the same slow NSE/IndianAPI fetch —
+# multiplying both latency and quota cost for identical work. Collapse
+# concurrent callers for the same key onto a single in-flight fetch.
+_inflight: dict[str, asyncio.Task] = {}
+
+
+async def _dedup(key: str, factory):
+    task = _inflight.get(key)
+    if task is None:
+        task = asyncio.ensure_future(factory())
+        _inflight[key] = task
+        task.add_done_callback(lambda _t: _inflight.pop(key, None))
+    return await task
+
 # ── NSE trading-hours gate ────────────────────────────────────────────────────
 # Outside these hours, prices can't have changed, so indices/movers are served
 # straight from the long-lived snapshot cache with no live fetch attempted at
@@ -571,6 +588,10 @@ async def get_indices(_force: bool = False) -> list[dict]:
         if cached is not None:
             return cached
 
+    return await _dedup("indices", lambda: _fetch_and_cache_indices())
+
+
+async def _fetch_and_cache_indices() -> list[dict]:
     loop = asyncio.get_event_loop()
     try:
         indices = await asyncio.wait_for(
@@ -613,6 +634,10 @@ async def get_market_overview(_force: bool = False) -> dict:
             _cache.set("market_overview", cached)  # warm L1
             return cached
 
+    return await _dedup("overview", lambda: _fetch_and_cache_overview())
+
+
+async def _fetch_and_cache_overview() -> dict:
     loop = asyncio.get_event_loop()
 
     # ── Run indices + movers in parallel (both NSE-direct, no quota cost) ────

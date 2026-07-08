@@ -1118,7 +1118,7 @@ function AnalystForecastCard({ forecasts }: { forecasts: any }) {
 function CreditRatingsCard({ items }: { items: any[] }) {
   if (!items.length) return null;
   return (
-    <Card className="p-5 space-y-3">
+    <Card className="p-5 space-y-3 min-w-0">
       <div className="flex items-center gap-2">
         <ShieldCheck className="h-4 w-4 text-saffron" />
         <h3 className="font-semibold text-sm">Credit Ratings</h3>
@@ -1153,7 +1153,7 @@ function CreditRatingsCard({ items }: { items: any[] }) {
 function AnnualReportsCard({ items }: { items: any[] }) {
   if (!items.length) return null;
   return (
-    <Card className="p-5 space-y-3">
+    <Card className="p-5 space-y-3 min-w-0">
       <div className="flex items-center gap-2">
         <FileText className="h-4 w-4 text-saffron" />
         <h3 className="font-semibold text-sm">Annual Reports</h3>
@@ -1196,7 +1196,7 @@ function AnnouncementsCard({ items }: { items: any[] }) {
   }
 
   return (
-    <Card className="p-5 space-y-3">
+    <Card className="p-5 space-y-3 min-w-0">
       <div className="flex items-center gap-2">
         <Bell className="h-4 w-4 text-saffron" />
         <h3 className="font-semibold text-sm">Announcements</h3>
@@ -1231,7 +1231,7 @@ function AnnouncementsCard({ items }: { items: any[] }) {
                 key={i}
                 {...(link ? { href: link, target: "_blank", rel: "noopener" } : {})}
                 className={clsx(
-                  "flex flex-col gap-2 rounded-xl border border-border bg-raised p-3 shrink-0",
+                  "flex flex-col gap-2 rounded-xl border border-border bg-raised p-3 shrink-0 min-w-0",
                   link && "transition hover:border-saffron/50 hover:bg-raised/70 cursor-pointer"
                 )}
               >

@@ -55,6 +55,14 @@ async def init_db() -> None:
             "ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE",
             # Remove old single-user unique constraint if it exists
             "ALTER TABLE watchlist DROP CONSTRAINT IF EXISTS watchlist_ticker_key",
+            # The above never actually matched — the old unique constraint was
+            # materialized as a plain unique INDEX (ix_watchlist_ticker), not a
+            # named table CONSTRAINT, from an earlier `unique=True, index=True`
+            # column definition. DROP CONSTRAINT silently no-ops on an index,
+            # so this stale unique-on-ticker-alone index survived, blocking any
+            # second user from ever watching a stock someone else already had.
+            "DROP INDEX IF EXISTS ix_watchlist_ticker",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_watchlist_user_ticker ON watchlist (user_id, ticker)",
         ]
         from sqlalchemy import text
         for sql in migrations:

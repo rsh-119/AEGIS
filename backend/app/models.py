@@ -2,7 +2,7 @@
 
 from datetime import datetime, date
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Float, Date, DateTime, Text, func
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Float, Date, DateTime, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -59,10 +59,11 @@ class Holding(Base):
 
 class WatchItem(Base):
     __tablename__ = "watchlist"
+    __table_args__ = (UniqueConstraint("user_id", "ticker", name="uq_watchlist_user_ticker"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
-    ticker: Mapped[str] = mapped_column(String(20), index=True)
+    ticker: Mapped[str] = mapped_column(String(20))
     company_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

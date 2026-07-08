@@ -273,13 +273,13 @@ function StockListRow({ s, rank }: { s: Stock; rank?: number }) {
       >
         <StockLogo ticker={s.ticker} website={s.website} />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-fg group-hover:text-saffron transition-colors leading-tight">
+          <p className="truncate text-sm font-semibold text-fg group-hover:text-saffron transition-colors leading-tight">
             {name}
           </p>
-          <div className="mt-0.5 flex items-center gap-2">
-            <span className="font-mono text-[10px] text-muted">{bare}</span>
+          <div className="mt-0.5 flex items-center gap-2 min-w-0">
+            <span className="shrink-0 font-mono text-[10px] text-muted">{bare}</span>
             {s.market_cap && (
-              <span className="text-[10px] text-muted">· {inrCompact(s.market_cap)}</span>
+              <span className="truncate text-[10px] text-muted">· {inrCompact(s.market_cap)}</span>
             )}
           </div>
         </div>
@@ -413,7 +413,7 @@ function MarketMovers({ data, loading }: { data?: OverviewData; loading: boolean
       subtitle={ageMin != null ? `Nifty 50 · as of ${ageMin} min ago` : "Nifty 50"}
       icon={<Activity className="h-4 w-4" />}
     >
-      <div className="flex divide-x divide-border">
+      <div className="flex flex-col divide-y divide-border sm:flex-row sm:divide-y-0 sm:divide-x">
         <MoverColumn title="Top Gainers" stocks={gainers} loading={loading} color="up"   />
         <MoverColumn title="Top Losers"  stocks={losers}  loading={loading} color="down" />
       </div>
