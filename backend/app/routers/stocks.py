@@ -177,13 +177,18 @@ async def full_analysis(ticker: str, period: str = "6mo"):
 async def peers(ticker: str):
     """Peer comparison + sector averages."""
     q = await stock_service.get_quote(ticker)
-    # When the quote lookup fails (e.g. IndianAPI quota exhausted), return an
-    # empty peers shell rather than a 503
-    if "error" in q and "current_price" not in q:
-        return {"peers": [], "sector_avg": {}, "partial": True, "error": q["error"]}
-    result = await peer_service.get_peer_comparison(
-        ticker, q.get("sector", ""), q.get("industry")
-    )
+    quote_failed = "error" in q and "current_price" not in q
+    sector = q.get("sector", "")
+    if quote_failed:
+        # Live quote unavailable for this ticker (e.g. IndianAPI quota exhausted,
+        # or a gap in their coverage) — fall back to the static sector map so
+        # peer comparison can still render instead of an empty shell.
+        sector = peer_service.static_sector_for_ticker(ticker) or ""
+        if not sector:
+            return {"peers": [], "sector_avg": {}, "partial": True, "error": q["error"]}
+    result = await peer_service.get_peer_comparison(ticker, sector, q.get("industry"))
+    if quote_failed:
+        result["partial"] = True
     return result
 
 

@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # ── Sector → peer ticker list (NSE) ───────────────────────────────────────────
 _SECTOR_PEERS: dict[str, list[str]] = {
     "Technology": [
-        "TCS.NS", "INFY.NS", "WIPRO.NS", "HCLTECH.NS", "TECHM.NS",
+        "TCS.NS", "INFY.NS", "WIPRO.NS", "HCLTECH.NS", "TECHM.NS", "LTIMINDTREE.NS",
         "MPHASIS.NS", "PERSISTENT.NS", "COFORGE.NS", "KPITTECH.NS",
         "OFSS.NS", "TATAELXSI.NS", "LTTS.NS", "HEXAWARE.NS", "ZENSARTECH.NS",
         "MASTEK.NS", "CYIENT.NS", "BSOFT.NS", "SASKEN.NS",
@@ -46,7 +46,7 @@ _SECTOR_PEERS: dict[str, list[str]] = {
     ],
     "Consumer Cyclical": [
         "MARUTI.NS", "TVSMOTORS.NS", "HEROMOTOCO.NS", "BAJAJ-AUTO.NS", "EICHERMOT.NS",
-        "M&M.NS", "TRENT.NS", "PVRINOX.NS", "TITAN.NS", "JUBLFOOD.NS",
+        "TATAMOTORS.NS", "M&M.NS", "TRENT.NS", "PVRINOX.NS", "TITAN.NS", "JUBLFOOD.NS",
         "VEDANT.NS", "BATAINDIA.NS", "METROBRAND.NS", "RELAXO.NS", "VIPIND.NS",
         "SHOPERSTOP.NS", "NYKAA.NS", "MANYAVAR.NS", "CROMPTON.NS", "HAVELLS.NS",
         "VOLTAS.NS", "BLUESTARCO.NS", "WHIRLPOOL.NS", "SYMPHONY.NS", "AMBER.NS",
@@ -127,6 +127,18 @@ def _peer_tickers(sector: str, industry: str | None, self_ticker: str) -> list[s
     peers = _SECTOR_PEERS.get(key, [])
     self_norm = normalise_ticker(self_ticker)
     return [p for p in peers if p.upper() != self_norm.upper()][:9]
+
+
+# Reverse index (ticker -> sector) built from the bucket above — lets callers
+# find a stock's sector even when its own live quote is unavailable (e.g. a
+# ticker IndianAPI's /stock endpoint simply doesn't carry, like LTIMindtree).
+_TICKER_TO_SECTOR: dict[str, str] = {
+    t.upper(): sector for sector, tickers in _SECTOR_PEERS.items() for t in tickers
+}
+
+
+def static_sector_for_ticker(ticker: str) -> str | None:
+    return _TICKER_TO_SECTOR.get(normalise_ticker(ticker).upper())
 
 
 async def _fetch_peer(ticker: str) -> dict | None:

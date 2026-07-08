@@ -869,7 +869,11 @@ export default function Home() {
           </p>
 
           {/* Search bar */}
-          <div className="hero-el mx-auto mt-8 max-w-2xl">
+          {/* relative z-20: .hero-el's fade-up animation gives this its own
+              stacking context, so without an explicit z-index it paints
+              behind the later hero-el siblings (Trending row, stat chips)
+              in DOM order — burying the dropdown under them. */}
+          <div className="hero-el relative z-20 mx-auto mt-8 max-w-2xl">
             <SearchBox
               size="hero"
               autoFocus

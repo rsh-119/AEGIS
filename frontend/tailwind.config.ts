@@ -101,6 +101,14 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    require("@tailwindcss/typography"),
+    // strategy: "class" — opt-in via `.form-input`/`.form-select`/etc. rather
+    // than the default global reset, since every input in this app already
+    // has hand-styled classes (Input component, SearchBox, ...) that a
+    // blanket base-style reset would visually clash with.
+    require("@tailwindcss/forms")({ strategy: "class" }),
+    require("@tailwindcss/container-queries"),
+  ],
 };
 export default config;

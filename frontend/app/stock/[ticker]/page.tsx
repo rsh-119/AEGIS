@@ -71,7 +71,7 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
   const { user } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
-  const [period, setPeriod]           = useState("max");
+  const [period, setPeriod]           = useState("6mo");
   const [chartTab, setChartTab]       = useState<"price" | "volume">("price");
   const [valuationTab, setValuationTab] = useState<"pe" | "pb">("pe");
 

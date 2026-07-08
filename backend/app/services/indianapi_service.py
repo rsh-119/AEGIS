@@ -301,6 +301,18 @@ def parse_stock_data(raw: dict) -> dict:
     }
 
 
+# Legacy tickers IndianAPI no longer resolves under their old symbol, mapped
+# to the successor symbol it does recognize (e.g. Tata Motors' Oct-2025
+# demerger into TMCV/TMPV — TMCV kept the original "Tata Motors" identity).
+_SYMBOL_ALIASES: dict[str, str] = {
+    "TATAMOTORS": "TMCV",
+}
+
+
+def _resolve_symbol(name_or_symbol: str) -> str:
+    return _SYMBOL_ALIASES.get(name_or_symbol.strip().upper(), name_or_symbol)
+
+
 async def get_stock(name_or_symbol: str) -> dict | None:
     """/stock — live price, technicals, shareholding, peers, corp actions, news.
     Cached — shared by get_quote_bundle() and peer_service so both don't
@@ -309,7 +321,7 @@ async def get_stock(name_or_symbol: str) -> dict | None:
     hit = cache.get(ck)
     if hit is not None:
         return hit or None
-    data = await _get("/stock", {"symbol": name_or_symbol})
+    data = await _get("/stock", {"symbol": _resolve_symbol(name_or_symbol)})
     result = data if isinstance(data, dict) and "companyName" in data else None
     if result:
         cache.set(ck, result, "prices")
@@ -322,7 +334,7 @@ async def get_stock_data(name_or_symbol: str) -> dict | None:
     hit = cache.get(ck)
     if hit is not None:
         return hit or None
-    data = await _get("/get_stock_data", {"stock_name": name_or_symbol})
+    data = await _get("/get_stock_data", {"stock_name": _resolve_symbol(name_or_symbol)})
     result = data if isinstance(data, dict) and "stats" in data else None
     if result:
         cache.set(ck, result, "peers")   # fundamentals-only, changes slowly

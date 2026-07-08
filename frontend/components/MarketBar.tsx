@@ -79,11 +79,7 @@ export function MarketBar() {
         <span className="ml-1 h-4 w-px bg-border/60 shrink-0" />
       </Link>
     );
-  }).concat(
-    <span key={`${copy}-note`} className="mr-4 shrink-0 text-[10px] text-muted whitespace-nowrap pl-2">
-      ~1 min delay · click to open exchange
-    </span>
-  );
+  });
 
   return (
     <div className="border-b border-border bg-surface/70 backdrop-blur-sm">
