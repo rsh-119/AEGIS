@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SearchBox } from "./SearchBox";
-import { Shield, Sun, Moon, Menu, X, Bell, LogIn, LogOut, UserCircle } from "lucide-react";
+import { Sun, Moon, Menu, X, Bell, LogIn, LogOut, UserCircle } from "lucide-react";
 import clsx from "clsx";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -73,11 +74,10 @@ export function Nav() {
         {/* Logo */}
         <Link href="/" className="group flex shrink-0 items-center gap-2">
           <span className={clsx(
-            "grid h-8 w-8 place-items-center rounded-xl transition-all duration-200",
-            "bg-gradient-to-br from-saffron to-saffron/70 text-white",
-            "shadow-[0_0_16px_rgb(var(--color-saffron)/0.4)] group-hover:shadow-[0_0_24px_rgb(var(--color-saffron)/0.6)]"
+            "grid h-8 w-8 place-items-center transition-all duration-200",
+            "drop-shadow-[0_0_10px_rgb(var(--color-saffron)/0.35)] group-hover:drop-shadow-[0_0_16px_rgb(var(--color-saffron)/0.55)]"
           )}>
-            <Shield className="h-4 w-4" />
+            <Image src="/aegis-logo.png" alt="AEGIS logo" width={32} height={32} priority className="h-8 w-8 object-contain" />
           </span>
           <div className="flex flex-col leading-none">
             <span className="font-display text-base font-bold tracking-tight text-fg">AEGIS</span>
