@@ -112,7 +112,7 @@ export function Footer() {
                 Advanced Equity Guidance and Intelligent System
               </p>
               <p className="text-sm text-muted">
-                Data via Yahoo Finance &middot; For information only, not investment advice.
+                Data via IndianAPI &middot; For information only, not investment advice.
               </p>
             </div>
 

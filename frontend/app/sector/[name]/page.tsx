@@ -338,7 +338,7 @@ export default function SectorPage({ params }: { params: Promise<{ name: string 
           <div className="border-t border-border bg-raised/20 px-5 py-2.5">
             <p className="text-[10px] text-muted">
               P/E &lt; sector median highlighted green · ROE &gt; 15% highlighted green ·
-              Returns are price-only · Click any column header to sort ↑↓ · Data via Yahoo Finance
+              Returns are price-only · Click any column header to sort ↑↓ · Data via IndianAPI
             </p>
           </div>
         </ChartCard>

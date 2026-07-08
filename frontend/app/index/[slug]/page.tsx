@@ -146,7 +146,7 @@ export default function IndexPage({ params }: { params: Promise<{ slug: string }
         <h2 className="mb-2 font-semibold">About {meta.name}</h2>
         <p className="text-sm leading-relaxed text-muted">{meta.desc}</p>
         <p className="mt-3 text-xs text-muted/60">
-          Index data from Yahoo Finance · {meta.exchange} · For reference only, not investment advice.
+          Index data from IndianAPI · {meta.exchange} · For reference only, not investment advice.
         </p>
       </Card>
     </div>

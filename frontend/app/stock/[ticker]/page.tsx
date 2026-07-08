@@ -1357,7 +1357,7 @@ function ErrorState({ symbol }: { symbol: string }) {
     <Card className="p-8 text-center">
       <h2 className="font-display text-xl">Couldn't load {symbol}</h2>
       <p className="mt-2 text-sm text-muted">
-        Yahoo Finance may be rate-limited, or this isn't a valid NSE/BSE symbol. Try again shortly.
+        IndianAPI may be rate-limited, or this isn't a valid NSE/BSE symbol. Try again shortly.
       </p>
     </Card>
   );

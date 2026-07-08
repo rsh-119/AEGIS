@@ -515,7 +515,7 @@ export default function MFPage() {
         <p className="mt-1 text-sm text-muted">
           {tab === "mf"
             ? "8,000+ Indian mutual funds · NAV data from AMFI"
-            : "NSE-listed ETFs · Live prices via Yahoo Finance"}
+            : "NSE-listed ETFs · Live prices via IndianAPI"}
         </p>
       </div>
 

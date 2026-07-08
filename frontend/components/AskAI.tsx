@@ -21,6 +21,10 @@ const SUGGESTED = [
   "Is the debt level high?",
   "Any bulk deals recently?",
   "How is revenue growth?",
+  "How does the valuation compare to peers?",
+  "What are the biggest risks right now?",
+  "Any recent news I should know about?",
+  "Is this a good entry point?",
 ];
 
 const SUGGESTED_DOC = [
@@ -134,6 +138,15 @@ export function AskAI({ ticker }: { ticker: string }) {
   const bare = ticker.replace(/\.(NS|BO)$/, "");
   const suggested = docText ? SUGGESTED_DOC : SUGGESTED;
 
+  // Follow-up suggestions after the AI's last answer — questions not yet
+  // asked this session, so the chips stay useful past the first exchange
+  // instead of only ever showing on the empty state.
+  const askedSet = new Set(msgs.filter((m) => m.role === "user").map((m) => m.text));
+  const lastMsg = msgs[msgs.length - 1];
+  const followUps = suggested.filter((s) => !askedSet.has(s)).slice(0, 4);
+  const showFollowUps =
+    msgs.length > 0 && !busy && !docLoading && lastMsg?.role === "ai" && !lastMsg.error && followUps.length > 0;
+
   return (
     <Card className="flex flex-col p-5" style={{ minHeight: "360px" }}>
       <div className="mb-3 flex items-center justify-between">
@@ -176,22 +189,6 @@ export function AskAI({ ticker }: { ticker: string }) {
           </div>
         )}
 
-        {/* Show suggested questions even after loading doc */}
-        {msgs.length === 1 && docText && (
-          <div className="flex flex-wrap gap-1.5 mt-1">
-            {SUGGESTED_DOC.map((s) => (
-              <button
-                key={s}
-                onClick={() => send(s)}
-                disabled={busy}
-                className="rounded-full border border-saffron/25 bg-saffron/5 px-2.5 py-1 text-xs text-saffron/80 transition hover:border-saffron/50 hover:text-saffron"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        )}
-
         {msgs.map((m, i) => (
           <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
             {m.role === "ai" ? (
@@ -218,6 +215,21 @@ export function AskAI({ ticker }: { ticker: string }) {
             )}
           </div>
         ))}
+
+        {showFollowUps && (
+          <div className="flex flex-wrap gap-1.5">
+            {followUps.map((s) => (
+              <button
+                key={s}
+                onClick={() => send(s)}
+                disabled={busy}
+                className="rounded-full border border-saffron/25 bg-saffron/5 px-2.5 py-1 text-xs text-saffron/80 transition hover:border-saffron/50 hover:text-saffron"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
 
         {(busy || docLoading) && (
           <div className="flex justify-start">
