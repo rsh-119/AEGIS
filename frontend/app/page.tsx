@@ -349,7 +349,7 @@ function SectionCard({
       {/* Header */}
       <div className="relative flex items-center justify-between gap-3 border-b border-border/80 bg-raised/30 px-5 py-3.5 backdrop-blur-sm">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-surface text-saffron ring-1 ring-border shadow-[var(--shadow-sm)]">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-surface text-saffron ring-1 ring-border shadow-sm">
             {icon}
           </span>
           <div>
@@ -565,7 +565,7 @@ function TopMutualFunds() {
                 key={t.value}
                 onClick={() => setPeriod(t.value)}
                 className={clsx(
-                  "rounded-md px-2.5 py-1 text-[11px] font-semibold transition-all",
+                  "rounded-md px-2.5 py-1 text-micro font-semibold transition-all",
                   period === t.value
                     ? "bg-surface text-fg shadow-sm ring-1 ring-border"
                     : "text-muted hover:text-fg"
@@ -579,7 +579,7 @@ function TopMutualFunds() {
       </div>
 
       {/* Column header */}
-      <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-5 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted border-b border-border">
+      <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-5 py-2 text-micro-cap font-semibold uppercase tracking-wider text-muted border-b border-border">
         <span>Fund</span>
         <span className="text-right">NAV</span>
         <span className="text-right w-20">{view === "popular" ? "1Y Return" : `${period.toUpperCase()} Return`}</span>
@@ -623,7 +623,7 @@ function TopMutualFunds() {
                   </div>
                   <p className="text-sm font-semibold text-fg truncate leading-tight">{displayName}</p>
                   {fund.return_1d != null && (
-                    <span className={clsx("text-[10px] font-semibold", dayUp ? "text-up" : "text-down")}>
+                    <span className={clsx("text-micro-cap font-semibold", dayUp ? "text-up" : "text-down")}>
                       {dayUp ? "▲" : "▼"} {Math.abs(fund.return_1d).toFixed(2)}% today
                     </span>
                   )}
@@ -900,7 +900,7 @@ export default function Home() {
             {STAT_CHIPS.map((chip, i) => (
               <div
                 key={chip.label}
-                className="hero-chip flex items-center gap-2 rounded-xl border border-border/60 bg-surface/60 px-3.5 py-2 text-[11.5px] font-medium text-muted backdrop-blur-sm shadow-[var(--shadow-sm)] transition-all duration-200 hover:border-saffron/30 hover:text-fg"
+                className="hero-chip flex items-center gap-2 rounded-xl border border-border/60 bg-surface/60 px-3.5 py-2 text-[11.5px] font-medium text-muted backdrop-blur-sm shadow-sm transition-all duration-200 hover:border-saffron/30 hover:text-fg"
                 style={{ animationDelay: `${i * 0.45}s`, animationDuration: `${3.5 + i * 0.4}s` }}
               >
                 <span className="flex h-5 w-5 items-center justify-center rounded-md bg-saffron/12 text-saffron">

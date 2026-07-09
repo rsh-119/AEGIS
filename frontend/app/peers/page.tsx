@@ -182,7 +182,7 @@ function StockPicker({
                       {s.price != null ? `₹${s.price.toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "—"}
                     </p>
                     {s.change_pct != null && (
-                      <p className={clsx("flex items-center justify-end gap-0.5 text-[10px] font-semibold", up ? "text-up" : "text-down")}>
+                      <p className={clsx("flex items-center justify-end gap-0.5 text-micro-cap font-semibold", up ? "text-up" : "text-down")}>
                         {up ? <TrendingUp className="h-2.5 w-2.5" /> : <TrendingDown className="h-2.5 w-2.5" />}
                         {up ? "+" : ""}{s.change_pct.toFixed(2)}%
                       </p>
@@ -257,11 +257,11 @@ function ComparisonTable({ rows, targetTicker, sector }: {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-raised/30">
-              <th className="sticky left-0 z-10 bg-surface px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-muted whitespace-nowrap">
+              <th className="sticky left-0 z-10 bg-surface px-4 py-2.5 text-left text-micro-cap font-semibold uppercase tracking-wider text-muted whitespace-nowrap">
                 Company
               </th>
               {COLS.map((c) => (
-                <th key={c.key} className="px-3 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wider text-muted whitespace-nowrap">
+                <th key={c.key} className="px-3 py-2.5 text-right text-micro-cap font-semibold uppercase tracking-wider text-muted whitespace-nowrap">
                   {c.label}
                 </th>
               ))}
@@ -321,7 +321,7 @@ function ComparisonTable({ rows, targetTicker, sector }: {
                         {v != null ? (
                           isGrowth ? (
                             <span className={clsx(
-                              "inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-bold",
+                              "inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-micro font-bold",
                               cls.includes("text-up") || (!cls.includes("text-down") && isUp)
                                 ? "bg-up/10 text-up"
                                 : "bg-down/10 text-down"

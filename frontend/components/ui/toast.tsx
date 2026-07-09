@@ -51,7 +51,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               <div
                 key={t.id}
                 className={clsx(
-                  "animate-fade-up flex items-start gap-3 rounded-xl border border-l-4 bg-surface p-3.5 shadow-[var(--shadow-lg)]",
+                  "animate-fade-up flex items-start gap-3 rounded-xl border border-l-4 bg-surface p-3.5 shadow-lg",
                   style.accent
                 )}
               >

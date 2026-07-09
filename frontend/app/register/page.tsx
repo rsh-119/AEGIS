@@ -82,7 +82,7 @@ export default function RegisterPage() {
                 className="w-full"
                 placeholder="johndoe"
               />
-              <p className="text-[11px] text-muted">Letters, numbers and underscores only</p>
+              <p className="text-micro text-muted">Letters, numbers and underscores only</p>
             </div>
 
             <div className="space-y-1">

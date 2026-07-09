@@ -65,12 +65,12 @@ export function MarketBar() {
           {idx.price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
         </span>
         <span className={clsx(
-          "flex items-center gap-0.5 text-[11px] font-bold whitespace-nowrap",
+          "nums flex items-center gap-0.5 text-micro font-bold whitespace-nowrap",
           up ? "text-up" : "text-down"
         )}>
           {up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
           {up ? "+" : ""}{idx.change_pct.toFixed(2)}%
-          <span className="ml-0.5 text-[10px] font-normal opacity-70">
+          <span className="nums ml-0.5 text-micro-cap font-normal opacity-70">
             ({up ? "+" : ""}{idx.change_pts.toFixed(1)})
           </span>
         </span>

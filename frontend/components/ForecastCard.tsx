@@ -157,17 +157,17 @@ function AlgoView({ fc, algoKey, horizon, setHorizon }: {
       {/* Key metrics */}
       <div className="grid grid-cols-3 divide-x divide-border border-b border-border">
         <div className="px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Current</p>
+          <p className="text-micro-cap font-semibold uppercase tracking-wider text-muted">Current</p>
           <p className="nums mt-0.5 text-base font-bold text-fg">{inr(fc.last_price)}</p>
         </div>
         <div className="px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Target ({horizon})</p>
+          <p className="text-micro-cap font-semibold uppercase tracking-wider text-muted">Target ({horizon})</p>
           <p className={clsx("nums mt-0.5 text-base font-bold", up ? "text-up" : "text-down")}>
             {inr(sel?.price ?? fc.target_price)}
           </p>
         </div>
         <div className="px-4 py-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">Expected</p>
+          <p className="text-micro-cap font-semibold uppercase tracking-wider text-muted">Expected</p>
           <p className={clsx("nums mt-0.5 text-base font-bold", up ? "text-up" : "text-down")}>
             {sel?.return_pct != null
               ? `${sel.return_pct >= 0 ? "+" : ""}${sel.return_pct.toFixed(2)}%`
@@ -217,8 +217,8 @@ function AlgoView({ fc, algoKey, horizon, setHorizon }: {
                 isSel ? "bg-saffron/5" : "hover:bg-raised/40"
               )}
             >
-              <p className={clsx("text-[10px] font-bold", isSel ? "text-saffron" : "text-muted")}>{h.key}</p>
-              <p className={clsx("nums text-[11px] font-semibold mt-0.5", isUp ? "text-up" : "text-down")}>
+              <p className={clsx("text-micro-cap font-bold", isSel ? "text-saffron" : "text-muted")}>{h.key}</p>
+              <p className={clsx("nums text-micro font-semibold mt-0.5", isUp ? "text-up" : "text-down")}>
                 {m.return_pct >= 0 ? "+" : ""}{m.return_pct.toFixed(1)}%
               </p>
             </button>

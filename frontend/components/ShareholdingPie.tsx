@@ -97,12 +97,12 @@ function TrendBadge({ current, prev }: { current: number; prev: number }) {
   if (Math.abs(diff) < 0.01) return <Minus className="h-3 w-3 text-muted" />;
   if (diff > 0)
     return (
-      <span className="flex items-center gap-0.5 text-[10px] font-semibold text-up">
+      <span className="flex items-center gap-0.5 text-micro-cap font-semibold text-up">
         <TrendingUp className="h-3 w-3" />+{diff.toFixed(2)}%
       </span>
     );
   return (
-    <span className="flex items-center gap-0.5 text-[10px] font-semibold text-down">
+    <span className="flex items-center gap-0.5 text-micro-cap font-semibold text-down">
       <TrendingDown className="h-3 w-3" />{diff.toFixed(2)}%
     </span>
   );
@@ -176,7 +176,7 @@ export function ShareholdingPie({ promoterPct, institutionPct, ticker }: StaticP
               key={i}
               onClick={() => { setQIdx(i); setHovered(null); }}
               className={clsx(
-                "shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium transition-all",
+                "shrink-0 rounded-full px-2.5 py-0.5 text-micro font-medium transition-all",
                 i === qIdx
                   ? "bg-saffron text-white"
                   : "bg-raised text-muted hover:text-fg"

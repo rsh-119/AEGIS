@@ -32,7 +32,7 @@ function ContactModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-center justify-between border-b border-border bg-raised/40 px-5 py-4">
           <div>
             <h2 className="text-sm font-bold">Contact Us</h2>
-            <p className="text-[11px] text-muted mt-0.5">We&apos;ll get back to you via email</p>
+            <p className="text-micro text-muted mt-0.5">We&apos;ll get back to you via email</p>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-muted hover:bg-raised hover:text-fg transition-colors">
             <X className="h-4 w-4" />
@@ -53,7 +53,7 @@ function ContactModal({ onClose }: { onClose: () => void }) {
         ) : (
           <form onSubmit={handleSubmit} className="p-5 space-y-4">
             <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Name</label>
+              <label className="text-micro font-semibold uppercase tracking-wider text-muted">Name</label>
               <input
                 required value={name} onChange={(e) => setName(e.target.value)}
                 placeholder="Your name"
@@ -61,7 +61,7 @@ function ContactModal({ onClose }: { onClose: () => void }) {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Email</label>
+              <label className="text-micro font-semibold uppercase tracking-wider text-muted">Email</label>
               <input
                 type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
@@ -69,7 +69,7 @@ function ContactModal({ onClose }: { onClose: () => void }) {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Message</label>
+              <label className="text-micro font-semibold uppercase tracking-wider text-muted">Message</label>
               <textarea
                 required rows={4} value={message} onChange={(e) => setMessage(e.target.value)}
                 placeholder="Your message or feedback…"

@@ -28,9 +28,18 @@ export function ValuationChart({ candles, divisor, label, color = "#3b82f6" }: P
   useEffect(() => {
     if (!ref.current || !candles.length || !divisor || divisor <= 0) return;
 
-    const bg      = dark ? "#11151e" : "#ffffff";
+    // lightweight-charts draws on <canvas>, which can't resolve CSS custom
+    // properties itself (canvas fillStyle silently no-ops on "var(...)") — so
+    // read the token's computed value here and hand off a plain rgb() string.
+    // lightweight-charts parses colors itself before handing off to canvas,
+    // and its parser only accepts classic comma-separated rgb()/rgba() — the
+    // modern space-separated form (which canvas itself accepts fine) throws
+    // "Cannot parse color" here, so the values are joined with commas.
+    const cssVar = (name: string) =>
+      getComputedStyle(document.documentElement).getPropertyValue(name).trim().split(/\s+/).join(",");
+    const bg      = `rgb(${cssVar("--color-surface")})`;
     const gridCol = dark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)";
-    const textCol = dark ? "#7c8696" : "#6b7280";
+    const textCol = `rgb(${cssVar("--color-muted")})`;
     const fill    = color + (dark ? "28" : "22");   // hex alpha
 
     chart.current?.remove();

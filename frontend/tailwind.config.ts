@@ -30,7 +30,6 @@ const config: Config = {
         "ink-secondary": cv("--color-ink-secondary"),
         "ink-mute":   cv("--color-ink-mute"),
         "brand-dark": cv("--color-brand-dark"),      /* #1c1e54 dark tier    */
-        emerald: c("--color-up"),                    /* alias for gain green */
       },
 
       fontFamily: {
@@ -80,10 +79,10 @@ const config: Config = {
       },
 
       boxShadow: {
-        sm:   "0 1px 3px rgba(0,55,112,0.08), 0 1px 2px rgba(0,55,112,0.04)",
-        md:   "0 8px 24px rgba(0,55,112,0.08), 0 2px 6px rgba(0,55,112,0.04)",
-        lg:   "0 20px 48px rgba(0,55,112,0.10), 0 6px 16px rgba(0,55,112,0.06)",
-        glow: "0 0 0 3px rgba(21,128,61,0.14), 0 4px 16px rgba(21,128,61,0.10)",
+        sm:   "var(--shadow-sm)",
+        md:   "var(--shadow-md)",
+        lg:   "var(--shadow-lg)",
+        glow: "var(--shadow-glow)",
       },
 
       animation: {

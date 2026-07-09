@@ -37,7 +37,7 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
         {icon}
       </span>
       <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</p>
+        <p className="text-micro font-semibold uppercase tracking-wider text-muted">{label}</p>
         <p className="nums text-xl font-bold text-fg">{value}</p>
       </div>
     </Card>
@@ -132,7 +132,7 @@ export default function AdminPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border bg-raised/20 text-[11px] font-medium uppercase tracking-wider text-muted">
+                <tr className="border-b border-border bg-raised/20 text-micro font-medium uppercase tracking-wider text-muted">
                   <th className="px-4 py-3 text-left">User</th>
                   <th className="px-4 py-3 text-left">Email</th>
                   <th className="px-4 py-3 text-center">Status</th>

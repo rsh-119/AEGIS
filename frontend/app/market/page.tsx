@@ -159,7 +159,7 @@ function StockRow({ stock, rank }: { stock: SectorStock; rank: number }) {
       href={`/stock/${encodeURIComponent(stock.ticker)}`}
       className="group flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-raised/50"
     >
-      <span className="w-5 shrink-0 text-center text-[11px] font-bold text-muted">{rank}</span>
+      <span className="w-5 shrink-0 text-center text-micro font-bold text-muted">{rank}</span>
       <StockLogo ticker={stock.ticker} website={stock.website} size={8} />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold text-fg group-hover:text-saffron transition-colors truncate">

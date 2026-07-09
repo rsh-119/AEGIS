@@ -122,7 +122,7 @@ function GrowthCell({ value, multiply100 = false }: { value: number | null; mult
   return (
     <td className="px-4 py-3 text-right">
       <span className={clsx(
-        "inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-bold",
+        "inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-micro font-bold",
         up ? "bg-up/10 text-up" : "bg-down/10 text-down"
       )}>
         {up ? "▲" : "▼"} {Math.abs(pct).toFixed(1)}%
@@ -133,7 +133,7 @@ function GrowthCell({ value, multiply100 = false }: { value: number | null; mult
 
 function StatBox({ label, value, up }: { label: string; value: string; up?: boolean }) {
   return (
-    <Card className="p-4 cursor-default select-none text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-[rgba(21,128,61,0.22)] hover:shadow-[var(--shadow-md),var(--shadow-glow)]">
+    <Card className="p-4 cursor-default select-none text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-[rgb(var(--color-saffron)/0.22)] hover:shadow-[var(--shadow-md),var(--shadow-glow)]">
       <Label className="block">{label}</Label>
       <p className={clsx("nums mt-1.5 text-xl font-bold", up ? "text-up" : "text-fg")}>{value}</p>
     </Card>
@@ -306,7 +306,7 @@ export default function SectorPage({ params }: { params: Promise<{ name: string 
                       title={hint}
                       onClick={() => handleSort(key)}
                       className={clsx(
-                        "px-4 py-3 text-[11px] font-medium uppercase tracking-wider whitespace-nowrap",
+                        "px-4 py-3 text-micro font-medium uppercase tracking-wider whitespace-nowrap",
                         "cursor-pointer select-none transition-colors hover:bg-raised hover:text-fg",
                         sortKey === key ? "text-saffron" : "text-muted",
                         align === "left" ? "text-left" : "text-right"

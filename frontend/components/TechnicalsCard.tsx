@@ -81,7 +81,7 @@ function rsiSig(rsi: number): Signal {
 // ── Signal badge ─────────────────────────────────────────────
 
 const SIG_CLS: Record<Signal, string> = {
-  "Strong Buy":  "bg-emerald-500/15 text-emerald-500",
+  "Strong Buy":  "bg-up/15 text-up",
   "Buy":         "bg-up/15 text-up",
   "Neutral":     "bg-muted/15 text-muted",
   "Sell":        "bg-down/15 text-down",
@@ -90,7 +90,7 @@ const SIG_CLS: Record<Signal, string> = {
 
 function Badge({ signal }: { signal: Signal }) {
   return (
-    <span className={clsx("rounded-md px-2 py-0.5 text-[10px] font-bold", SIG_CLS[signal])}>
+    <span className={clsx("rounded-md px-2 py-0.5 text-micro-cap font-bold", SIG_CLS[signal])}>
       {signal}
     </span>
   );
@@ -274,7 +274,7 @@ export function TechnicalsCard({
 
       {/* Oscillators */}
       <div className="border-b border-border">
-        <p className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-muted bg-raised/40">
+        <p className="px-4 py-2 text-micro-cap font-bold uppercase tracking-wider text-muted bg-raised/40">
           Oscillators
         </p>
         <div className="divide-y divide-border/60">
@@ -295,7 +295,7 @@ export function TechnicalsCard({
 
       {/* Moving Averages */}
       <div>
-        <p className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-muted bg-raised/40">
+        <p className="px-4 py-2 text-micro-cap font-bold uppercase tracking-wider text-muted bg-raised/40">
           Moving Averages
         </p>
         <div className="divide-y divide-border/60">

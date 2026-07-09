@@ -121,8 +121,8 @@ function QuarterCard({ q, company, isFirst, symbol }: { q: Quarter; company: str
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-fg">{q.label}</span>
-              {isFirst && <span className="rounded-full bg-saffron px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">Latest</span>}
-              <span className={clsx("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+              {isFirst && <span className="rounded-full bg-saffron px-2 py-0.5 text-micro-cap font-bold uppercase tracking-wider text-white">Latest</span>}
+              <span className={clsx("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-micro-cap font-bold uppercase tracking-wider",
                 overallType === "positive" ? "bg-up/10 text-up" : overallType === "negative" ? "bg-down/10 text-down" : "bg-yellow-500/10 text-yellow-500")}>
                 {overallType === "positive" ? <TrendingUp className="h-2.5 w-2.5" /> : overallType === "negative" ? <TrendingDown className="h-2.5 w-2.5" /> : <AlertTriangle className="h-2.5 w-2.5" />}
                 {overallType}
@@ -135,12 +135,12 @@ function QuarterCard({ q, company, isFirst, symbol }: { q: Quarter; company: str
           <div className="text-right">
             <p className="text-[10px] text-muted">Revenue</p>
             <p className="nums text-sm font-bold">{inrCr(q.revenue)}</p>
-            {revChg != null && <p className={clsx("text-[10px] font-semibold", revChg >= 0 ? "text-up" : "text-down")}>{pctFmt(revChg)} YoY</p>}
+            {revChg != null && <p className={clsx("text-micro-cap font-semibold", revChg >= 0 ? "text-up" : "text-down")}>{pctFmt(revChg)} YoY</p>}
           </div>
           <div className="text-right">
             <p className="text-[10px] text-muted">Net {niPositive ? "Profit" : "Loss"}</p>
             <p className={clsx("nums text-sm font-bold", niPositive ? "text-up" : "text-down")}>{inrCr(Math.abs(q.net_income ?? 0))}</p>
-            {niChg != null && <p className={clsx("text-[10px] font-semibold", niChg >= 0 ? "text-up" : "text-down")}>{pctFmt(niChg)} YoY</p>}
+            {niChg != null && <p className={clsx("text-micro-cap font-semibold", niChg >= 0 ? "text-up" : "text-down")}>{pctFmt(niChg)} YoY</p>}
           </div>
           {open ? <ChevronUp className="h-4 w-4 text-muted" /> : <ChevronDown className="h-4 w-4 text-muted" />}
         </div>
@@ -173,7 +173,7 @@ function QuarterCard({ q, company, isFirst, symbol }: { q: Quarter; company: str
                 <div key={m.label} className="rounded-xl bg-raised/60 p-3 ring-1 ring-border/50">
                   <p className="text-[10px] text-muted mb-1">{m.label}</p>
                   <p className={clsx("nums text-base font-bold", m.flip ? "text-down" : "text-fg")}>{m.value}</p>
-                  {m.chg != null && <p className={clsx("text-[10px] font-semibold mt-0.5", m.chg >= 0 ? "text-up" : "text-down")}>{pctFmt(m.chg)} YoY</p>}
+                  {m.chg != null && <p className={clsx("text-micro-cap font-semibold mt-0.5", m.chg >= 0 ? "text-up" : "text-down")}>{pctFmt(m.chg)} YoY</p>}
                 </div>
               ))}
             </div>
@@ -214,8 +214,8 @@ function QuarterCard({ q, company, isFirst, symbol }: { q: Quarter; company: str
               </div>
             )}
             <div className="grid gap-3 sm:grid-cols-2">
-              {q.guidance_note && <div className="rounded-xl bg-saffron/5 p-4 ring-1 ring-saffron/15"><p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-saffron">Guidance</p><p className="text-xs leading-relaxed text-fg/80">{q.guidance_note}</p></div>}
-              {q.analyst_view && <div className="rounded-xl bg-raised/40 p-4 ring-1 ring-border/50"><p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted">Analyst View</p><p className="text-xs leading-relaxed text-fg/80">{q.analyst_view}</p></div>}
+              {q.guidance_note && <div className="rounded-xl bg-saffron/5 p-4 ring-1 ring-saffron/15"><p className="mb-1 text-micro-cap font-bold uppercase tracking-wider text-saffron">Guidance</p><p className="text-xs leading-relaxed text-fg/80">{q.guidance_note}</p></div>}
+              {q.analyst_view && <div className="rounded-xl bg-raised/40 p-4 ring-1 ring-border/50"><p className="mb-1 text-micro-cap font-bold uppercase tracking-wider text-muted">Analyst View</p><p className="text-xs leading-relaxed text-fg/80">{q.analyst_view}</p></div>}
             </div>
             {q.news_headlines?.length ? (
               <div>
@@ -342,7 +342,7 @@ function AnalysisPanel({ analysis, company, chat, chatLoading, chatInput, setCha
             <ul className="mt-3 space-y-3">
               {analysis.financial_highlights.map((h, i) => (
                 <li key={i} className="flex items-start gap-3">
-                  <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-up/10 text-[10px] font-bold text-up">{i + 1}</span>
+                  <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-up/10 text-micro-cap font-bold text-up">{i + 1}</span>
                   <span className="text-sm text-fg/85 leading-relaxed">{h}</span>
                 </li>
               ))}
@@ -471,8 +471,8 @@ function AnalysisPanel({ analysis, company, chat, chatLoading, chatInput, setCha
                 <div className={clsx("max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
                   msg.role === "user" ? "bg-saffron/15 text-fg/90 rounded-tr-sm" : "bg-raised border border-border text-fg/90 rounded-tl-sm")}>
                   {msg.text}
-                  {msg.role === "ai" && msg.confidence && <p className={`mt-1.5 text-[11px] font-medium ${CONF_STYLE[msg.confidence] ?? "text-muted"}`}>Confidence: {msg.confidence}</p>}
-                  {msg.role === "ai" && msg.source && <p className="mt-1.5 text-[11px] text-muted italic border-l-2 border-saffron/30 pl-2">{msg.source}</p>}
+                  {msg.role === "ai" && msg.confidence && <p className={`mt-1.5 text-micro font-medium ${CONF_STYLE[msg.confidence] ?? "text-muted"}`}>Confidence: {msg.confidence}</p>}
+                  {msg.role === "ai" && msg.source && <p className="mt-1.5 text-micro text-muted italic border-l-2 border-saffron/30 pl-2">{msg.source}</p>}
                 </div>
               </div>
             ))}
@@ -685,7 +685,7 @@ function UploadSection({ symbol, company: initialCompany }: { symbol?: string; c
               </div>
               <p className="text-xs font-semibold text-fg">{m.name}</p>
               <p className="text-[10px] text-muted leading-snug">{m.desc}</p>
-              <p className="text-[10px] font-medium text-saffron">{m.time}</p>
+              <p className="text-micro-cap font-medium text-saffron">{m.time}</p>
             </button>
           ))}
         </div>

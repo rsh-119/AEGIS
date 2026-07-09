@@ -207,7 +207,7 @@ export default function WatchlistPage() {
       <Card className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b border-border text-muted">
-            <tr className="[&>th]:px-4 [&>th]:py-3 [&>th]:text-left [&>th]:text-[10px] [&>th]:font-normal [&>th]:uppercase [&>th]:tracking-[0.1px] [&>th]:whitespace-nowrap">
+            <tr className="[&>th]:px-4 [&>th]:py-3 [&>th]:text-left [&>th]:text-micro-cap [&>th]:font-normal [&>th]:uppercase [&>th]:tracking-[0.1px] [&>th]:whitespace-nowrap">
               <th>S.No</th>
               <th>
                 <button onClick={() => handleSort("name")} className={clsx("flex items-center gap-1 hover:text-fg", sortKey === "name" && "text-saffron")}>

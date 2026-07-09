@@ -148,7 +148,7 @@ function ETFTable({ period }: { period: Period }) {
       title={hint}
       onClick={() => handleSort(k)}
       className={clsx(
-        "px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wide whitespace-nowrap cursor-pointer select-none transition-colors hover:bg-raised",
+        "px-4 py-3 text-right text-micro font-semibold uppercase tracking-wide whitespace-nowrap cursor-pointer select-none transition-colors hover:bg-raised",
         sortKey === k ? "text-saffron" : "text-muted",
       )}
     >
@@ -167,7 +167,7 @@ function ETFTable({ period }: { period: Period }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-raised/30">
-                <th className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide text-muted min-w-[220px]">
+                <th className="px-4 py-3 text-left text-micro font-semibold uppercase tracking-wide text-muted min-w-[220px]">
                   ETF
                 </th>
                 <TH k="price"          label="Price"     hint="Current market price" />
@@ -175,7 +175,7 @@ function ETFTable({ period }: { period: Period }) {
                 <TH k={retKey as keyof ETFItem} label={`${period.toUpperCase()} Ret`} hint={`${period.toUpperCase()} price return`} />
                 <TH k="aum"            label="AUM"       hint="Assets under management" />
                 <TH k="expense_ratio"  label="Exp %"     hint="Annual expense ratio" />
-                <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wide text-muted whitespace-nowrap">
+                <th className="px-4 py-3 text-right text-micro font-semibold uppercase tracking-wide text-muted whitespace-nowrap">
                   Type
                 </th>
               </tr>
@@ -199,7 +199,7 @@ function ETFTable({ period }: { period: Period }) {
                             <p className="font-semibold text-fg hover:text-saffron transition-colors text-sm">
                               {e.ticker.replace(".NS", "")}
                             </p>
-                            <p className="text-[11px] text-muted truncate max-w-[200px] leading-tight mt-0.5">
+                            <p className="text-micro text-muted truncate max-w-[200px] leading-tight mt-0.5">
                               {e.name}
                             </p>
                           </Link>
@@ -223,7 +223,7 @@ function ETFTable({ period }: { period: Period }) {
                           {e.expense_ratio ? `${(e.expense_ratio * 100).toFixed(2)}%` : "—"}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <span className="rounded-lg bg-raised px-2 py-0.5 text-[10px] font-medium text-muted ring-1 ring-border whitespace-nowrap">
+                          <span className="rounded-lg bg-raised px-2 py-0.5 text-micro-cap font-medium text-muted ring-1 ring-border whitespace-nowrap">
                             {e.sub_category}
                           </span>
                         </td>
@@ -331,7 +331,7 @@ function MFTable({ period }: { period: Period }) {
       title={hint}
       onClick={() => handleSort(k)}
       className={clsx(
-        "px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wide whitespace-nowrap cursor-pointer select-none transition-colors hover:bg-raised",
+        "px-4 py-3 text-right text-micro font-semibold uppercase tracking-wide whitespace-nowrap cursor-pointer select-none transition-colors hover:bg-raised",
         sortKey === k ? "text-saffron" : "text-muted",
       )}
     >
@@ -380,7 +380,7 @@ function MFTable({ period }: { period: Period }) {
                 <th
                   onClick={() => handleSort("name")}
                   className={clsx(
-                    "px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wide whitespace-nowrap cursor-pointer select-none min-w-[280px] transition-colors hover:bg-raised",
+                    "px-4 py-3 text-left text-micro font-semibold uppercase tracking-wide whitespace-nowrap cursor-pointer select-none min-w-[280px] transition-colors hover:bg-raised",
                     sortKey === "name" ? "text-saffron" : "text-muted",
                   )}
                 >
@@ -390,10 +390,10 @@ function MFTable({ period }: { period: Period }) {
                 </th>
                 <TH k="nav"    label="NAV"                         hint="Net Asset Value (latest)" />
                 <TH k="return" label={`${period.toUpperCase()} Ret`} hint={`${period.toUpperCase()} return from AMFI NAV`} />
-                <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wide text-muted whitespace-nowrap">
+                <th className="px-4 py-3 text-right text-micro font-semibold uppercase tracking-wide text-muted whitespace-nowrap">
                   Fund House
                 </th>
-                <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-wide text-muted whitespace-nowrap">
+                <th className="px-4 py-3 text-right text-micro font-semibold uppercase tracking-wide text-muted whitespace-nowrap">
                   Type
                 </th>
               </tr>
@@ -438,7 +438,7 @@ function MFTable({ period }: { period: Period }) {
                         </td>
                         <td className="px-4 py-3.5 text-right">
                           {f.scheme_type ? (
-                            <span className="rounded-lg bg-raised px-2 py-0.5 text-[10px] font-medium text-muted ring-1 ring-border whitespace-nowrap">
+                            <span className="rounded-lg bg-raised px-2 py-0.5 text-micro-cap font-medium text-muted ring-1 ring-border whitespace-nowrap">
                               {f.scheme_type}
                             </span>
                           ) : (

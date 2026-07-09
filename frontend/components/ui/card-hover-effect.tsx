@@ -28,7 +28,7 @@ export function HoverEffect({
         const item = items[idx];
         return (
           <Link href={item.link} className="group relative block h-full w-full p-1">
-            <div className="relative z-10 flex h-full flex-col gap-4 overflow-hidden rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-sm)] transition-colors duration-200">
+            <div className="relative z-10 flex h-full flex-col gap-4 overflow-hidden rounded-2xl border border-border bg-surface p-5 shadow-sm transition-colors duration-200">
               {/* Top gradient line */}
               <div className={clsx("absolute inset-x-0 top-0 h-[2px] opacity-0 transition-opacity duration-300 group-hover:opacity-100", item.accentColor)} />
 

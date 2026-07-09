@@ -136,7 +136,7 @@ function StockCard({ s }: { s: StockSnippet }) {
         {s.price != null ? (
           <>
             <p className="nums text-xs font-semibold text-fg">₹{s.price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</p>
-            <p className={clsx("text-[10px] font-medium", up ? "text-up" : "text-down")}>
+            <p className={clsx("text-micro-cap font-medium", up ? "text-up" : "text-down")}>
               {up ? "▲" : "▼"} {Math.abs(s.change_pct ?? 0).toFixed(2)}%
             </p>
           </>
@@ -191,7 +191,7 @@ function MessageBubble({ msg, onSuggest }: { msg: Message; onSuggest: (q: string
         {/* Stock cards */}
         {hasStocks && (
           <div className="w-full">
-            <p className="mb-1.5 text-[10px] font-medium text-muted uppercase tracking-wide">Mentioned stocks</p>
+            <p className="mb-1.5 text-micro-cap font-medium text-muted uppercase tracking-wide">Mentioned stocks</p>
             <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
               {msg.stocks!.map((s) => <StockCard key={s.ticker} s={s} />)}
             </div>
@@ -201,7 +201,7 @@ function MessageBubble({ msg, onSuggest }: { msg: Message; onSuggest: (q: string
         {/* Follow-up suggestions */}
         {hasSuggestions && (
           <div className="w-full">
-            <p className="mb-1.5 text-[10px] font-medium text-muted uppercase tracking-wide">You might also ask</p>
+            <p className="mb-1.5 text-micro-cap font-medium text-muted uppercase tracking-wide">You might also ask</p>
             <div className="flex flex-col gap-1.5">
               {msg.suggestions!.map((s, i) => (
                 <button

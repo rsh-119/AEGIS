@@ -212,7 +212,7 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
             <div className="nums text-2xl sm:text-3xl md:text-4xl font-bold">{inr(displayPrice)}</div>
             {/* Live / SSE / Polling status dot */}
             {streamStatus === "live" && (
-              <span className="flex items-center gap-1 text-[10px] font-bold text-up">
+              <span className="flex items-center gap-1 text-micro-cap font-bold text-up">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-up opacity-75" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-up" />
@@ -221,7 +221,7 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
               </span>
             )}
             {streamStatus === "sse" && (
-              <span className="text-[10px] font-bold text-saffron">SSE</span>
+              <span className="text-micro-cap font-bold text-saffron">SSE</span>
             )}
           </div>
           <div className={clsx("nums mt-1 text-sm sm:text-base font-semibold flex items-center justify-end gap-1", signCls(change))}>
@@ -393,7 +393,7 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
                     idx >= 2 && "border-t border-border"
                   )}
                 >
-                  <Label className="text-[10px]">{m.label}</Label>
+                  <Label className="text-micro-cap">{m.label}</Label>
                   <span className={clsx("nums text-xs sm:text-sm font-bold leading-tight", m.color ?? "text-fg")}>{m.value}</span>
                 </div>
               ))}
@@ -623,7 +623,7 @@ function SignalCard({ signal }: { signal: RatioSignal }) {
           {signal.metric}
         </Badge>
         {signal.severity === "high" && (
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted/60">HIGH</span>
+          <span className="text-micro-cap font-bold uppercase tracking-wider text-muted/60">HIGH</span>
         )}
       </div>
     </div>
@@ -632,7 +632,7 @@ function SignalCard({ signal }: { signal: RatioSignal }) {
 
 function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <Card className="p-4 cursor-default select-none transition-all duration-200 hover:-translate-y-0.5 hover:border-[rgba(21,128,61,0.22)] hover:shadow-[var(--shadow-md),var(--shadow-glow)]">
+    <Card className="p-4 cursor-default select-none transition-all duration-200 hover:-translate-y-0.5 hover:border-[rgb(var(--color-saffron)/0.22)] hover:shadow-[var(--shadow-md),var(--shadow-glow)]">
       <Label className="block">{label}</Label>
       <p className="nums mt-1.5 text-lg font-bold">{value}</p>
       {sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}
@@ -658,7 +658,7 @@ const SIGNAL_STYLE: Record<string, string> = {
 };
 const GRADE_COLOR: Record<string, string> = {
   A: "text-up bg-up/10 ring-up/30",
-  B: "text-emerald-400 bg-emerald-400/10 ring-emerald-400/30",
+  B: "text-up bg-up/10 ring-up/30",
   C: "text-saffron bg-saffron/10 ring-saffron/30",
   D: "text-orange-400 bg-orange-400/10 ring-orange-400/30",
   F: "text-down bg-down/10 ring-down/30",
@@ -731,10 +731,10 @@ function AIAnalysisCard({ ai }: { ai: Record<string, any> }) {
                 key={m.label}
                 className={`rounded-xl border px-3 py-2.5 ring-1 ${SIGNAL_STYLE[m.signal] ?? SIGNAL_STYLE.neutral}`}
               >
-                <p className="text-[10px] font-semibold uppercase tracking-wider opacity-70">{m.label}</p>
+                <p className="text-micro-cap font-semibold uppercase tracking-wider opacity-70">{m.label}</p>
                 <p className="nums mt-0.5 text-base font-bold">{m.value}</p>
                 <p className="mt-0.5 text-[10px] opacity-60">{m.context}</p>
-                <p className="mt-1.5 text-[11px] leading-snug opacity-80">{m.explanation}</p>
+                <p className="mt-1.5 text-micro leading-snug opacity-80">{m.explanation}</p>
               </div>
             ))}
           </div>

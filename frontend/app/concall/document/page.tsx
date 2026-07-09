@@ -256,7 +256,7 @@ function AnalysisPanel({
             <ul className="mt-3 space-y-3">
               {analysis.financial_highlights.map((h, i) => (
                 <li key={i} className="flex items-start gap-3">
-                  <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-up/10 text-[10px] font-bold text-up">{i + 1}</span>
+                  <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-up/10 text-micro-cap font-bold text-up">{i + 1}</span>
                   <span className="text-sm text-fg/85 leading-relaxed">{h}</span>
                 </li>
               ))}
@@ -410,12 +410,12 @@ function AnalysisPanel({
                 )}>
                   {msg.text}
                   {msg.role === "ai" && msg.confidence && (
-                    <p className={`mt-1.5 text-[11px] font-medium ${CONF_STYLE[msg.confidence] ?? "text-muted"}`}>
+                    <p className={`mt-1.5 text-micro font-medium ${CONF_STYLE[msg.confidence] ?? "text-muted"}`}>
                       Confidence: {msg.confidence}
                     </p>
                   )}
                   {msg.role === "ai" && msg.source && (
-                    <p className="mt-1.5 text-[11px] text-muted italic border-l-2 border-saffron/30 pl-2">{msg.source}</p>
+                    <p className="mt-1.5 text-micro text-muted italic border-l-2 border-saffron/30 pl-2">{msg.source}</p>
                   )}
                 </div>
               </div>

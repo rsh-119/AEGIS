@@ -78,7 +78,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                   </Button>
                   <Button
                     onClick={() => close(true)}
-                    className={state.destructive ? "!bg-down [&:hover]:!bg-red-700" : ""}
+                    className={state.destructive ? "!bg-down hover:!brightness-90" : ""}
                   >
                     {state.confirmLabel ?? "Confirm"}
                   </Button>

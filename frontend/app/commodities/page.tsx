@@ -89,7 +89,7 @@ export default function CommoditiesPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-border text-muted">
-                <tr className="[&>th]:px-5 [&>th]:py-3 [&>th]:text-left [&>th]:text-[10px] [&>th]:font-normal [&>th]:uppercase [&>th]:tracking-[0.1px]">
+                <tr className="[&>th]:px-5 [&>th]:py-3 [&>th]:text-left [&>th]:text-micro-cap [&>th]:font-normal [&>th]:uppercase [&>th]:tracking-[0.1px]">
                   <th>
                     <button onClick={() => handleSort("product")} className={clsx("flex items-center gap-1 hover:text-fg", sortKey === "product" && "text-saffron")}>
                       Product <SortIcon active={sortKey === "product"} dir={sortDir} />

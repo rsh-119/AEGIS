@@ -65,9 +65,21 @@ export function PriceChart({ candles, up, activeMA, onMAToggle }: Props) {
   useEffect(() => {
     if (!ref.current || !candles.length) return;
 
-    const gridColor = isDark ? "rgba(31,38,50,0.7)" : "rgba(226,230,236,0.9)";
-    const borderCol = isDark ? "#1F2632" : "#E2E6EC";
-    const textCol   = isDark ? "#7C8696" : "#636e7d";
+    // lightweight-charts draws on <canvas>, which can't resolve CSS custom
+    // properties itself (canvas fillStyle silently no-ops on "var(...)") — so
+    // read the token's computed value here and hand off a plain rgb() string.
+    // lightweight-charts parses colors itself before handing off to canvas,
+    // and its parser only accepts classic comma-separated rgb()/rgba() — the
+    // modern space-separated form (which canvas itself accepts fine) throws
+    // "Cannot parse color" here, so the values are joined with commas.
+    const cssVar = (name: string) =>
+      getComputedStyle(document.documentElement).getPropertyValue(name).trim().split(/\s+/).join(",");
+    const borderRgb = cssVar("--color-border");
+    const mutedRgb  = cssVar("--color-muted");
+
+    const gridColor = `rgba(${borderRgb},${isDark ? 0.7 : 0.9})`;
+    const borderCol = `rgb(${borderRgb})`;
+    const textCol   = `rgb(${mutedRgb})`;
 
     chartRef.current?.remove();
     maRefs.current = {};
@@ -169,7 +181,7 @@ export function PriceChart({ candles, up, activeMA, onMAToggle }: Props) {
       {zoomed && (
         <button
           onClick={resetZoom}
-          className="absolute right-3 top-2 z-10 flex items-center gap-1 rounded-md border border-border bg-surface/90 px-2 py-1 text-[10px] font-medium text-muted shadow-sm backdrop-blur-sm transition hover:text-fg"
+          className="absolute right-3 top-2 z-10 flex items-center gap-1 rounded-md border border-border bg-surface/90 px-2 py-1 text-micro-cap font-medium text-muted shadow-sm backdrop-blur-sm transition hover:text-fg"
         >
           <Maximize2 className="h-2.5 w-2.5" />
           Reset

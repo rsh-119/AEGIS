@@ -176,7 +176,7 @@ function CatCard({ cat, funds, period, isMF }: {
       {/* Fund rows */}
       <div className="divide-y divide-border/40 px-1 py-1">
         {funds.length === 0 ? (
-          <p className="py-4 text-center text-[11px] text-muted">No data yet</p>
+          <p className="py-4 text-center text-micro text-muted">No data yet</p>
         ) : (
           funds.slice(0, 5).map((f, i) => (
             <FundRow key={f.scheme_code ?? f.ticker ?? i} fund={f} cat={cat} period={period} isMF={isMF} />

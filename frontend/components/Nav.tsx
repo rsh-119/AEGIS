@@ -125,7 +125,7 @@ export function Nav() {
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-up opacity-60" />
               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-up" />
             </span>
-            <span className="text-[10px] font-semibold text-up">Live</span>
+            <span className="text-micro-cap font-semibold text-up">Live</span>
           </div>
 
           {/* Theme toggle */}

@@ -23,10 +23,22 @@ export function VolumeChart({ candles }: { candles: Candle[] }) {
   useEffect(() => {
     if (!ref.current || !candles.length) return;
 
+    // lightweight-charts draws on <canvas>, which can't resolve CSS custom
+    // properties itself (canvas fillStyle silently no-ops on "var(...)") — so
+    // read the token's computed value here and hand off a plain rgb() string.
+    // lightweight-charts parses colors itself before handing off to canvas,
+    // and its parser only accepts classic comma-separated rgb()/rgba() — the
+    // modern space-separated form (which canvas itself accepts fine) throws
+    // "Cannot parse color" here, so the values are joined with commas.
+    const cssVar = (name: string) =>
+      getComputedStyle(document.documentElement).getPropertyValue(name).trim().split(/\s+/).join(",");
+    const borderRgb = cssVar("--color-border");
+    const mutedRgb  = cssVar("--color-muted");
+
     const bg        = "transparent";
-    const gridColor = dark ? "rgba(31,38,50,0.7)" : "rgba(226,230,236,0.9)";
-    const borderCol = dark ? "#1F2632" : "#E2E6EC";
-    const textCol   = dark ? "#7C8696" : "#636e7d";
+    const gridColor = `rgba(${borderRgb},${dark ? 0.7 : 0.9})`;
+    const borderCol = `rgb(${borderRgb})`;
+    const textCol   = `rgb(${mutedRgb})`;
 
     chartRef.current?.remove();
     const c = createChart(ref.current, {
@@ -144,7 +156,7 @@ export function VolumeChart({ candles }: { candles: Candle[] }) {
       {zoomed && (
         <button
           onClick={resetZoom}
-          className="absolute right-3 top-2 z-10 flex items-center gap-1 rounded-md border border-border bg-surface/90 px-2 py-1 text-[10px] font-medium text-muted shadow-sm backdrop-blur-sm transition hover:text-fg"
+          className="absolute right-3 top-2 z-10 flex items-center gap-1 rounded-md border border-border bg-surface/90 px-2 py-1 text-micro-cap font-medium text-muted shadow-sm backdrop-blur-sm transition hover:text-fg"
         >
           <Maximize2 className="h-2.5 w-2.5" />
           Reset
@@ -161,7 +173,7 @@ export function VolumeChart({ candles }: { candles: Candle[] }) {
           20-day avg
         </span>
         <span className="flex items-center gap-1.5">
-          <i className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500" />
+          <i className="inline-block h-2.5 w-2.5 rounded-sm bg-down" />
           Spike (2× avg)
         </span>
         <span className="ml-auto text-[10px] text-muted/60">Scroll to zoom · Drag to pan</span>

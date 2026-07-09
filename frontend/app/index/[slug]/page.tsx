@@ -102,7 +102,7 @@ export default function IndexPage({ params }: { params: Promise<{ slug: string }
             { label: "52W Low", value: q.week52_low?.toLocaleString("en-IN", { maximumFractionDigits: 2 }) ?? "—" },
             { label: `${periodLabel} Change`, value: hist.pct_change != null ? `${hist.pct_change >= 0 ? "+" : ""}${hist.pct_change.toFixed(2)}%` : "—" },
           ].map((s) => (
-            <Card key={s.label} className="cursor-default select-none transition-all duration-200 hover:-translate-y-0.5 hover:border-[rgba(21,128,61,0.22)] hover:shadow-[var(--shadow-md),var(--shadow-glow)] min-w-[110px] text-center shrink-0 px-3 py-2.5">
+            <Card key={s.label} className="cursor-default select-none transition-all duration-200 hover:-translate-y-0.5 hover:border-[rgb(var(--color-saffron)/0.22)] hover:shadow-[var(--shadow-md),var(--shadow-glow)] min-w-[110px] text-center shrink-0 px-3 py-2.5">
               <Label className="block">{s.label}</Label>
               <p className="nums mt-1 text-sm font-bold">{s.value}</p>
             </Card>

@@ -240,7 +240,7 @@ function AlertTable({
       </div>
       <table className="w-full text-sm">
         <thead className="border-b border-border text-muted">
-          <tr className="[&>th]:px-5 [&>th]:py-2.5 [&>th]:text-left [&>th]:text-[10px] [&>th]:font-normal [&>th]:uppercase [&>th]:tracking-[0.1px]">
+          <tr className="[&>th]:px-5 [&>th]:py-2.5 [&>th]:text-left [&>th]:text-micro-cap [&>th]:font-normal [&>th]:uppercase [&>th]:tracking-[0.1px]">
             <th>Stock</th>
             <th>Condition</th>
             <th className="!text-right">Target</th>

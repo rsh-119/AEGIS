@@ -64,7 +64,7 @@ function YoY({ pct, label }: { pct: number | null; label?: string }) {
   if (pct == null) return null;
   const up = pct >= 0;
   return (
-    <span className={clsx("nums inline-flex items-center gap-0.5 text-[11px] font-semibold", up ? "text-up" : "text-down")}>
+    <span className={clsx("nums inline-flex items-center gap-0.5 text-micro font-semibold", up ? "text-up" : "text-down")}>
       {up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
       {up ? "+" : ""}{pct.toFixed(1)}%{label ? ` ${label} YoY` : " YoY"}
     </span>
@@ -74,7 +74,7 @@ function YoY({ pct, label }: { pct: number | null; label?: string }) {
 function StatBox({ label, value, sub }: { label: string; value: string | number | null; sub?: React.ReactNode }) {
   if (value == null) return null;
   return (
-    <Card className="p-4 cursor-default select-none text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-[rgba(21,128,61,0.22)] hover:shadow-[var(--shadow-md),var(--shadow-glow)]">
+    <Card className="p-4 cursor-default select-none text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-[rgb(var(--color-saffron)/0.22)] hover:shadow-[var(--shadow-md),var(--shadow-glow)]">
       <Label className="mb-1 block">{label}</Label>
       <p className="nums text-sm font-bold text-fg">{value}</p>
       {sub && <div className="mt-1">{sub}</div>}
@@ -87,7 +87,7 @@ function MarginBar({ label, value, color }: { label: string; value: number | nul
   const w = Math.min(Math.max(value, 0), 100);
   return (
     <div>
-      <div className="flex justify-between text-[11px] mb-0.5">
+      <div className="flex justify-between text-micro mb-0.5">
         <span className="text-muted">{label}</span>
         <span className={clsx("nums font-semibold", color)}>{value}%</span>
       </div>
@@ -176,14 +176,14 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
             {/* Top 3 highlighted cards */}
             <div className="grid grid-cols-1 gap-2 mb-3 sm:grid-cols-3">
               <div className="rounded-xl border border-up/20 bg-up/5 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-up mb-1">Revenue</p>
+                <p className="text-micro-cap font-semibold uppercase tracking-wider text-up mb-1">Revenue</p>
                 <p className="nums text-sm font-bold text-fg">{q.revenue ?? "—"}</p>
                 {q.revenue_yoy_pct != null && <div className="mt-1"><YoY pct={q.revenue_yoy_pct} label="YoY" /></div>}
                 {q.prev_revenue && <p className="text-[10px] text-muted mt-0.5">Prev: {q.prev_revenue}</p>}
               </div>
 
-              <div className={clsx("rounded-xl border p-3", isProfit ? "border-emerald-500/20 bg-emerald-500/5" : "border-down/20 bg-down/5")}>
-                <p className={clsx("text-[10px] font-semibold uppercase tracking-wider mb-1", isProfit ? "text-emerald-400" : "text-down")}>Net Profit</p>
+              <div className={clsx("rounded-xl border p-3", isProfit ? "border-up/20 bg-up/5" : "border-down/20 bg-down/5")}>
+                <p className={clsx("text-micro-cap font-semibold uppercase tracking-wider mb-1", isProfit ? "text-up" : "text-down")}>Net Profit</p>
                 <p className="nums text-sm font-bold text-fg">{q.net_income ?? "—"}</p>
                 {q.net_income_yoy_pct != null && <div className="mt-1"><YoY pct={q.net_income_yoy_pct} label="YoY" /></div>}
                 {q.net_margin_pct != null && <p className="text-[10px] text-muted mt-0.5">Margin: {q.net_margin_pct.toFixed(1)}%</p>}
@@ -191,7 +191,7 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
               </div>
 
               <div className="rounded-xl border border-saffron/20 bg-saffron/5 p-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-saffron mb-1">Total Debt</p>
+                <p className="text-micro-cap font-semibold uppercase tracking-wider text-saffron mb-1">Total Debt</p>
                 <p className="nums text-sm font-bold text-fg">{q.total_debt ?? "—"}</p>
                 {q.interest_expense && <p className="text-[10px] text-muted mt-0.5">Interest exp: {q.interest_expense}</p>}
               </div>
@@ -223,7 +223,7 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
           {/* ── YoY summary row ── */}
           {(q.revenue_yoy_pct != null || q.net_income_yoy_pct != null || q.op_income_yoy_pct != null) && (
             <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-lg bg-raised/50 border border-border px-4 py-3 text-sm text-muted">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted shrink-0 self-center">YoY Change</span>
+              <span className="text-micro font-semibold uppercase tracking-wider text-muted shrink-0 self-center">YoY Change</span>
               {q.revenue_yoy_pct != null && (
                 <span className="flex items-center gap-1.5">Revenue <YoY pct={q.revenue_yoy_pct} /></span>
               )}
@@ -330,7 +330,7 @@ function QuarterPanel({ q, defaultOpen, idx }: { q: Quarter; defaultOpen: boolea
             <div>
               <button
                 onClick={() => setNewsExpanded((e) => !e)}
-                className="text-[10px] font-normal uppercase tracking-[0.1px] text-muted mb-2 flex items-center gap-1.5 hover:text-fg transition-colors"
+                className="text-micro-cap font-normal uppercase tracking-[0.1px] text-muted mb-2 flex items-center gap-1.5 hover:text-fg transition-colors"
               >
                 <Newspaper className="h-3.5 w-3.5" />
                 Source news ({q.news_headlines.length})
@@ -382,7 +382,7 @@ export function ConcallCard({ ticker }: { ticker: string }) {
           </div>
           <div>
             <h2 className="section-title">Quarterly Concall Analysis</h2>
-            <p className="text-[11px] text-muted">AI-generated summaries of last 4 earnings calls with real news context</p>
+            <p className="text-micro text-muted">AI-generated summaries of last 4 earnings calls with real news context</p>
           </div>
         </div>
         {data?.company && (

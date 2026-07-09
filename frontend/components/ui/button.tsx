@@ -14,7 +14,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-saffron text-white shadow-[0_1px_3px_rgba(21,128,61,0.30),inset_0_1px_0_rgba(255,255,255,0.15)] hover:-translate-y-px hover:bg-[rgba(22,101,52,1)] hover:shadow-[0_4px_14px_rgba(21,128,61,0.40),inset_0_1px_0_rgba(255,255,255,0.15)] dark:text-[#022c22] dark:shadow-[0_2px_10px_rgba(74,222,128,0.25),inset_0_1px_0_rgba(255,255,255,0.1)] dark:hover:bg-saffron dark:hover:shadow-[0_4px_20px_rgba(74,222,128,0.38),inset_0_1px_0_rgba(255,255,255,0.15)]",
+          "bg-saffron text-white shadow-[0_1px_3px_rgb(var(--color-saffron)/0.30),inset_0_1px_0_rgba(255,255,255,0.15)] hover:-translate-y-px hover:bg-[rgba(22,101,52,1)] hover:shadow-[0_4px_14px_rgb(var(--color-saffron)/0.40),inset_0_1px_0_rgba(255,255,255,0.15)] dark:text-[#022c22] dark:shadow-[0_2px_10px_rgb(var(--color-saffron)/0.25),inset_0_1px_0_rgba(255,255,255,0.1)] dark:hover:bg-saffron dark:hover:shadow-[0_4px_20px_rgb(var(--color-saffron)/0.38),inset_0_1px_0_rgba(255,255,255,0.15)]",
         ghost:
           "border border-border text-muted hover:bg-raised/80 hover:text-fg",
       },

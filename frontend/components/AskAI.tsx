@@ -200,7 +200,7 @@ export function AskAI({ ticker }: { ticker: string }) {
                   ))}
                 </div>
                 {m.confidence && (
-                  <p className={`pl-1 text-[10px] font-medium ${CONFIDENCE_COLOR[m.confidence] ?? "text-muted"}`}>
+                  <p className={`pl-1 text-micro-cap font-medium ${CONFIDENCE_COLOR[m.confidence] ?? "text-muted"}`}>
                     Confidence: {m.confidence}
                   </p>
                 )}
