@@ -33,6 +33,7 @@ from app.routers import stocks, ai, portfolio, watchlist, market, chat, document
 from app.routers.auth import router as auth_router
 from app.routers.alerts import router as alerts_router
 from app.routers.health import router as health_router
+from app.routers.admin import router as admin_router
 
 settings = get_settings()
 
@@ -140,6 +141,7 @@ app.include_router(market.router)
 app.include_router(chat.router)
 app.include_router(documents.router)
 app.include_router(mf.router)
+app.include_router(admin_router)
 
 
 # ── Legacy health endpoint (kept for backward compat) ─────────────────────────

@@ -63,6 +63,8 @@ async def init_db() -> None:
             # second user from ever watching a stock someone else already had.
             "DROP INDEX IF EXISTS ix_watchlist_ticker",
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_watchlist_user_ticker ON watchlist (user_id, ticker)",
+            # Admin flag for the /api/admin/* dashboard — defaults false, granted manually
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE",
         ]
         from sqlalchemy import text
         for sql in migrations:

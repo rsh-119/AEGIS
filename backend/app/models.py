@@ -18,6 +18,7 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(200))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     def to_dict(self) -> dict:
@@ -26,6 +27,7 @@ class User(Base):
             "email": self.email,
             "username": self.username,
             "is_active": self.is_active,
+            "is_admin": self.is_admin,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
