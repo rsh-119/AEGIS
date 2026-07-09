@@ -6,8 +6,8 @@ import { Github, Twitter, Linkedin, Mail, X, Send } from "lucide-react";
 import { Card } from "@/components/ui/card";
 
 const SOCIALS = [
-  { icon: Github,   label: "GitHub",   href: "https://github.com/rishabh" },
-  { icon: Linkedin, label: "LinkedIn", href: "https://linkedin.com/in/rishabh" },
+  { icon: Github,   label: "GitHub",   href: "https://github.com/rsh-119" },
+  { icon: Linkedin, label: "LinkedIn", href: "https://www.linkedin.com/in/rishabh-yadav-5749523b1?utm_source=share_via&utm_content=profile&utm_medium=member_android" },
   { icon: Twitter,  label: "Twitter",  href: "https://twitter.com/rishabh" },
 ];
 
@@ -21,7 +21,7 @@ function ContactModal({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     const subject = encodeURIComponent(`[AEGIS] Message from ${name}`);
     const body    = encodeURIComponent(`Name: ${name}\nEmail: ${email}\n\n${message}`);
-    window.location.href = `mailto:personalrsh11@gmail.com?subject=${subject}&body=${body}`;
+    window.location.href = `mailto:social.rsh11@gmail.com?subject=${subject}&body=${body}`;
     setSent(true);
   }
 

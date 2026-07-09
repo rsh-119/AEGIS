@@ -5,17 +5,13 @@ import useSWR from "swr";
 import Link from "next/link";
 import { fetcher, inr, inrCompact, pct, signCls, num } from "@/lib/api";
 import { PriceChart } from "@/components/PriceChart";
-import {
-  TrendingUp, TrendingDown, ChevronRight, ChevronLeft,
-  ArrowUpRight, ArrowDownRight, Building2, BarChart3,
-  Cpu, Landmark, Heart, Zap, Factory, Layers,
-  Radio, Sun, Home as HomeIcon, ShoppingCart,
-} from "lucide-react";
+import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Zap } from "lucide-react";
 import clsx from "clsx";
 import { ChartCard } from "@/components/ui/animated-card-chart";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StockLogo } from "@/components/StockLogo";
+import { SECTORS } from "@/lib/sectors";
 
 /* ─── Types ──────────────────────────────────────── */
 type Candle = { date: string; close: number; ma20: number | null; ma50: number | null };
@@ -35,28 +31,6 @@ const PERIODS = [
   { label: "5Y", value: "5y"  },
 ];
 
-/* ─── Sector config ──────────────────────────────── */
-type SectorCfg = {
-  name: string;
-  slug: string;           // API sector name
-  indexSlug?: string;     // /api/market/index/{indexSlug}
-  icon: React.ComponentType<{ className?: string }>;
-  color: string;          // tailwind bg + text combo
-  accent: string;         // border / ring color
-};
-
-const SECTORS: SectorCfg[] = [
-  { name: "Technology",           slug: "Technology",           indexSlug: "niftyit",      icon: Cpu,         color: "bg-blue-500/10 text-blue-500",      accent: "border-blue-500/30 ring-blue-500/20" },
-  { name: "Financial Services",   slug: "Financial Services",   indexSlug: "banknifty",    icon: Landmark,    color: "bg-emerald-500/10 text-emerald-500", accent: "border-emerald-500/30 ring-emerald-500/20" },
-  { name: "Healthcare",           slug: "Healthcare",           indexSlug: "niftypharma",  icon: Heart,       color: "bg-rose-500/10 text-rose-500",       accent: "border-rose-500/30 ring-rose-500/20" },
-  { name: "Energy",               slug: "Energy",               indexSlug: "niftyenergy",  icon: Zap,         color: "bg-orange-500/10 text-orange-500",   accent: "border-orange-500/30 ring-orange-500/20" },
-  { name: "Consumer Defensive",   slug: "Consumer Defensive",   indexSlug: "niftyfmcg",   icon: ShoppingCart,color: "bg-purple-500/10 text-purple-500",   accent: "border-purple-500/30 ring-purple-500/20" },
-  { name: "Consumer Cyclical",    slug: "Consumer Cyclical",    indexSlug: "niftyauto",    icon: ArrowUpRight,color: "bg-pink-500/10 text-pink-500",        accent: "border-pink-500/30 ring-pink-500/20" },
-  { name: "Industrials",          slug: "Industrials",          indexSlug: "niftyinfra",   icon: Factory,     color: "bg-yellow-500/10 text-yellow-600",   accent: "border-yellow-500/30 ring-yellow-500/20" },
-  { name: "Basic Materials",      slug: "Basic Materials",      indexSlug: "niftymetal",   icon: Layers,      color: "bg-stone-500/10 text-stone-500",     accent: "border-stone-500/30 ring-stone-500/20" },
-  { name: "Real Estate",          slug: "Real Estate",          indexSlug: "niftyrealty",  icon: HomeIcon,    color: "bg-teal-500/10 text-teal-500",       accent: "border-teal-500/30 ring-teal-500/20" },
-  { name: "Communication",        slug: "Communication Services",indexSlug: "niftymedia",  icon: Radio,       color: "bg-indigo-500/10 text-indigo-500",   accent: "border-indigo-500/30 ring-indigo-500/20" },
-];
 
 /* ─── Index chart card ───────────────────────────── */
 function IndexCard({ slug, name, period, onPeriodChange }: {
@@ -147,24 +121,16 @@ function IndexCard({ slug, name, period, onPeriodChange }: {
 }
 
 /* ─── Sector card grid ───────────────────────────── */
-function SectorGrid({ selected, onSelect }: {
-  selected: SectorCfg | null;
-  onSelect: (s: SectorCfg) => void;
-}) {
+function SectorGrid() {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       {SECTORS.map((s) => {
         const Icon = s.icon;
-        const isActive = selected?.slug === s.slug;
         return (
-          <button
+          <Link
             key={s.slug}
-            onClick={() => onSelect(s)}
-            className={clsx(
-              "card flex flex-col items-start gap-3 p-4 text-left transition-all duration-200",
-              "hover:-translate-y-0.5 hover:shadow-md",
-              isActive ? `border-2 ${s.accent} shadow-md` : "border border-border"
-            )}
+            href={`/sector/${encodeURIComponent(s.slug)}`}
+            className="card flex flex-col items-start gap-3 border border-border p-4 text-left transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
           >
             <span className={clsx(
               "flex h-9 w-9 items-center justify-center rounded-xl ring-1",
@@ -173,14 +139,11 @@ function SectorGrid({ selected, onSelect }: {
               <Icon className="h-4 w-4" />
             </span>
             <div className="min-w-0 w-full">
-              <p className={clsx("text-sm font-semibold leading-tight", isActive ? s.color.split(" ")[1] : "text-fg")}>
+              <p className="text-sm font-semibold leading-tight text-fg">
                 {s.name}
               </p>
-              {isActive && (
-                <p className="mt-0.5 text-[10px] text-muted">Viewing detail ↓</p>
-              )}
             </div>
-          </button>
+          </Link>
         );
       })}
     </div>
@@ -234,192 +197,6 @@ function RowSkeleton() {
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-/* ─── Sector detail panel ────────────────────────── */
-type SectorTab = "performers" | "losers" | "allstocks";
-
-function SectorDetail({ cfg }: { cfg: SectorCfg }) {
-  const [tab, setTab]       = useState<SectorTab>("performers");
-  const [period, setPeriod] = useState("1y");
-
-  const { data: sectorData, isLoading } = useSWR(
-    `/api/market/sector/${encodeURIComponent(cfg.slug)}`, fetcher,
-    { revalidateOnFocus: false }
-  );
-
-  const { data: indexData, isLoading: indexLoading } = useSWR(
-    cfg.indexSlug ? `/api/market/index/${cfg.indexSlug}?period=${period}` : null,
-    fetcher,
-    { revalidateOnFocus: false }
-  );
-
-  const stocks: SectorStock[] = sectorData?.stocks ?? [];
-
-  const performers = [...stocks]
-    .filter((s) => s.change_pct != null)
-    .sort((a, b) => (b.change_pct ?? 0) - (a.change_pct ?? 0));
-
-  const losers = [...performers].reverse();
-
-  const allstocks = [...stocks]
-    .filter((s) => s.market_cap != null)
-    .sort((a, b) => (b.market_cap ?? 0) - (a.market_cap ?? 0));
-
-  const listMap: Record<SectorTab, SectorStock[]> = {
-    performers, losers, allstocks,
-  };
-
-  const indexQ    = indexData?.quote ?? {};
-  const indexHist = indexData?.history ?? {};
-  const indexUp   = (indexHist.pct_change ?? 0) >= 0;
-  const indexCandles: Candle[] = indexHist.candles ?? [];
-
-  // Aggregate for badge
-  const avgChange = stocks.length
-    ? stocks.reduce((s, x) => s + (x.change_pct ?? 0), 0) / stocks.filter(x => x.change_pct != null).length
-    : null;
-
-  const Icon = cfg.icon;
-
-  return (
-    <div className="space-y-5 animate-fade-up">
-      {/* Section header */}
-      <div className="flex items-center gap-3">
-        <span className={clsx("flex h-9 w-9 items-center justify-center rounded-xl ring-1", cfg.color, cfg.accent)}>
-          <Icon className="h-4 w-4" />
-        </span>
-        <div>
-          <h2 className="font-display text-xl font-bold">{cfg.name}</h2>
-          <p className="text-xs text-muted">
-            {stocks.length} stocks tracked ·{" "}
-            {avgChange != null && (
-              <span className={avgChange >= 0 ? "text-up font-semibold" : "text-down font-semibold"}>
-                avg {avgChange >= 0 ? "+" : ""}{avgChange.toFixed(2)}% today
-              </span>
-            )}
-          </p>
-        </div>
-        {avgChange != null && (
-          <span className={clsx(
-            "ml-auto rounded-full px-3 py-1 text-xs font-bold ring-1",
-            avgChange >= 0 ? "bg-up/10 text-up ring-up/20" : "bg-down/10 text-down ring-down/20"
-          )}>
-            {avgChange >= 0 ? <TrendingUp className="inline h-3 w-3 mr-1" /> : <TrendingDown className="inline h-3 w-3 mr-1" />}
-            {avgChange >= 0 ? "+" : ""}{avgChange.toFixed(2)}%
-          </span>
-        )}
-      </div>
-
-      {/* Sector index chart (if available) */}
-      {cfg.indexSlug && (
-        <Card className="overflow-hidden">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
-            <div>
-              <p className="text-xs text-muted">Sector Index</p>
-              <p className="font-semibold text-fg">{cfg.name} Index</p>
-              {indexQ.current_price && (
-                <p className="nums text-sm font-bold text-fg">
-                  {indexQ.current_price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
-                  {indexHist.pct_change != null && (
-                    <span className={clsx("ml-2 text-xs", indexUp ? "text-up" : "text-down")}>
-                      {indexUp ? "+" : ""}{indexHist.pct_change.toFixed(2)}%
-                    </span>
-                  )}
-                </p>
-              )}
-            </div>
-            <div className="flex items-center gap-1 rounded-lg bg-raised p-1">
-              {PERIODS.map((p) => (
-                <button
-                  key={p.value}
-                  onClick={() => setPeriod(p.value)}
-                  className={clsx(
-                    "rounded-md px-2.5 py-1 text-xs font-medium transition-all",
-                    period === p.value ? "bg-surface text-fg shadow-sm" : "text-muted hover:text-fg"
-                  )}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="px-2 pb-3 pt-3">
-            {indexLoading || indexCandles.length === 0 ? (
-              <div className="skeleton h-44 w-full rounded-lg" />
-            ) : (
-              <PriceChart candles={indexCandles} up={indexUp} />
-            )}
-          </div>
-        </Card>
-      )}
-
-      {/* Tab list */}
-      <Card className="overflow-hidden">
-        {/* Tab header */}
-        <div className="flex items-center justify-between border-b border-border">
-          <div className="flex overflow-x-auto">
-            {([
-              { value: "performers" as SectorTab, label: "Top Performers", icon: TrendingUp },
-              { value: "losers"     as SectorTab, label: "Top Losers",     icon: TrendingDown },
-              { value: "allstocks"  as SectorTab, label: "All Stocks",     icon: BarChart3 },
-            ] as { value: SectorTab; label: string; icon: React.ComponentType<{className?: string}> }[]).map((t) => {
-              const TIcon = t.icon;
-              return (
-                <button
-                  key={t.value}
-                  onClick={() => setTab(t.value)}
-                  className={clsx(
-                    "flex shrink-0 items-center gap-1.5 border-b-2 px-5 py-3.5 text-sm font-medium transition-all",
-                    tab === t.value
-                      ? "border-saffron text-saffron"
-                      : "border-transparent text-muted hover:text-fg"
-                  )}
-                >
-                  <TIcon className="h-3.5 w-3.5" />
-                  {t.label}
-                  {t.value === "allstocks" && stocks.length > 0 && (
-                    <span className="ml-1 rounded-full bg-raised px-1.5 py-0.5 text-[10px] font-bold text-muted">
-                      {stocks.length}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Column labels */}
-        <div className="flex items-center justify-between border-b border-border/50 px-5 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted">
-          <span>Stock</span>
-          <span>Price · {tab === "allstocks" ? "Mkt Cap" : "1D Change"}</span>
-        </div>
-
-        {/* Rows — scrollable container for All Stocks tab */}
-        {isLoading ? (
-          <RowSkeleton />
-        ) : tab === "allstocks" ? (
-          <div
-            className="overflow-y-auto divide-y divide-border"
-            style={{ maxHeight: "480px" }}
-          >
-            {allstocks.length === 0
-              ? <p className="px-5 py-8 text-center text-sm text-muted">No stocks found</p>
-              : allstocks.map((s, i) => (
-                  <StockRow key={s.ticker} stock={s} rank={i + 1} />
-                ))
-            }
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {listMap[tab].slice(0, 10).map((s, i) => (
-              <StockRow key={s.ticker} stock={s} rank={i + 1} />
-            ))}
-          </div>
-        )}
-      </Card>
     </div>
   );
 }
@@ -505,18 +282,6 @@ function PriceShockersSection() {
 export default function MarketPage() {
   const [niftyPeriod, setNiftyPeriod]   = useState("1y");
   const [sensexPeriod, setSensexPeriod] = useState("1y");
-  const [activeSector, setActiveSector] = useState<SectorCfg | null>(null);
-
-  const handleSectorClick = (s: SectorCfg) => {
-    // Toggle off if same sector clicked again
-    setActiveSector((prev) => (prev?.slug === s.slug ? null : s));
-    // Scroll to sector detail smoothly
-    if (activeSector?.slug !== s.slug) {
-      setTimeout(() => {
-        document.getElementById("sector-detail")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 100);
-    }
-  };
 
   return (
     <div className="space-y-10 animate-fade-up">
@@ -549,29 +314,12 @@ export default function MarketPage() {
 
       {/* ── Sector grid ── */}
       <section className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold text-fg">Explore by Sector</h2>
-            <p className="text-xs text-muted">Click any sector to see index chart, top performers, losers &amp; large caps</p>
-          </div>
-          {activeSector && (
-            <button
-              onClick={() => setActiveSector(null)}
-              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-muted ring-1 ring-border hover:bg-raised hover:text-fg transition-all"
-            >
-              <ChevronLeft className="h-3.5 w-3.5" /> Back to all
-            </button>
-          )}
+        <div>
+          <h2 className="font-semibold text-fg">Explore by Sector</h2>
+          <p className="text-xs text-muted">Click any sector to open its index chart, rankings &amp; financials</p>
         </div>
-        <SectorGrid selected={activeSector} onSelect={handleSectorClick} />
+        <SectorGrid />
       </section>
-
-      {/* ── Sector detail ── */}
-      {activeSector && (
-        <section id="sector-detail">
-          <SectorDetail cfg={activeSector} />
-        </section>
-      )}
 
       {/* ── 52-Week Highs/Lows ── */}
       <FiftyTwoWeekSection />

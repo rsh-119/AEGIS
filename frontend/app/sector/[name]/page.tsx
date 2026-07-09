@@ -9,9 +9,20 @@ import {
   ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
 import clsx from "clsx";
+import { PriceChart } from "@/components/PriceChart";
 import { ChartCard } from "@/components/ui/animated-card-chart";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { findSectorCfg } from "@/lib/sectors";
+
+const PERIODS = [
+  { label: "1M", value: "1mo" },
+  { label: "3M", value: "3mo" },
+  { label: "6M", value: "6mo" },
+  { label: "1Y", value: "1y"  },
+  { label: "2Y", value: "2y"  },
+  { label: "5Y", value: "5y"  },
+];
 
 type Stock = {
   ticker: string;
@@ -133,6 +144,7 @@ function StatBox({ label, value, up }: { label: string; value: string; up?: bool
 export default function SectorPage({ params }: { params: Promise<{ name: string }> }) {
   const { name } = use(params);
   const sector = decodeURIComponent(name);
+  const cfg = findSectorCfg(sector);
 
   const { data, isLoading, error } = useSWR<SectorData>(
     `/api/market/sector/${encodeURIComponent(sector)}`,
@@ -142,6 +154,17 @@ export default function SectorPage({ params }: { params: Promise<{ name: string 
 
   const [sortKey, setSortKey] = useState<SortKey>("market_cap");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [period, setPeriod] = useState("1y");
+
+  const { data: indexData, isLoading: indexLoading } = useSWR(
+    cfg?.indexSlug ? `/api/market/index/${cfg.indexSlug}?period=${period}` : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const indexQ    = indexData?.quote ?? {};
+  const indexHist = indexData?.history ?? {};
+  const indexUp   = (indexHist.pct_change ?? 0) >= 0;
+  const indexCandles = indexHist.candles ?? [];
 
   const handleSort = useCallback((key: keyof Stock) => {
     setSortKey((prev) => {
@@ -171,8 +194,11 @@ export default function SectorPage({ params }: { params: Promise<{ name: string 
 
       {/* Header */}
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-saffron/10 ring-1 ring-saffron/20">
-          <Building2 className="h-5 w-5 text-saffron" />
+        <div className={clsx(
+          "flex h-10 w-10 items-center justify-center rounded-xl ring-1",
+          cfg ? cfg.color : "bg-saffron/10 text-saffron", cfg ? cfg.accent : "ring-saffron/20"
+        )}>
+          {cfg ? <cfg.icon className="h-5 w-5" /> : <Building2 className="h-5 w-5" />}
         </div>
         <div>
           <h1 className="font-display text-2xl font-bold">{sector}</h1>
@@ -181,6 +207,49 @@ export default function SectorPage({ params }: { params: Promise<{ name: string 
           </p>
         </div>
       </div>
+
+      {/* Sector index chart */}
+      {cfg?.indexSlug && (
+        <Card className="overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3">
+            <div>
+              <p className="text-xs text-muted">Sector Index</p>
+              <p className="font-semibold text-fg">{sector} Index</p>
+              {indexQ.current_price && (
+                <p className="nums text-sm font-bold text-fg">
+                  {indexQ.current_price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                  {indexHist.pct_change != null && (
+                    <span className={clsx("ml-2 text-xs", indexUp ? "text-up" : "text-down")}>
+                      {indexUp ? "+" : ""}{indexHist.pct_change.toFixed(2)}%
+                    </span>
+                  )}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-1 rounded-lg bg-raised p-1">
+              {PERIODS.map((p) => (
+                <button
+                  key={p.value}
+                  onClick={() => setPeriod(p.value)}
+                  className={clsx(
+                    "rounded-md px-2.5 py-1 text-xs font-medium transition-all",
+                    period === p.value ? "bg-surface text-fg shadow-sm" : "text-muted hover:text-fg"
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="px-2 pb-3 pt-3">
+            {indexLoading || indexCandles.length === 0 ? (
+              <div className="skeleton h-44 w-full rounded-lg" />
+            ) : (
+              <PriceChart candles={indexCandles} up={indexUp} />
+            )}
+          </div>
+        </Card>
+      )}
 
       {/* Sector stats */}
       {data?.stats && (
