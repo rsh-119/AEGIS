@@ -68,32 +68,18 @@ function AuroraBg() {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
 
-      {/* ── LIGHT MODE: colourful aurora blobs ── */}
+      {/* ── LIGHT MODE: single soft glow, no colour wash ── */}
       <div className="dark:hidden">
-        <div className="absolute" style={{
-          top: "-18%", right: "-12%", width: "780px", height: "780px", borderRadius: "50%",
-          background: "radial-gradient(circle at center, rgba(245,165,36,0.32) 0%, rgba(251,146,60,0.18) 35%, transparent 70%)",
-          filter: "blur(72px)", animation: "aurora-drift-1 18s ease-in-out infinite alternate",
+        {/* Single top-centre radial — very faint blue */}
+        <div className="absolute inset-x-0 top-0" style={{
+          height: "60%",
+          background: "radial-gradient(ellipse 70% 55% at 50% -5%, rgba(0,82,255,0.05) 0%, transparent 100%)",
         }} />
+        {/* Subtle blue warmth at top-right corner only */}
         <div className="absolute" style={{
-          bottom: "-20%", left: "-14%", width: "680px", height: "680px", borderRadius: "50%",
-          background: "radial-gradient(circle at center, rgba(139,92,246,0.28) 0%, rgba(109,67,236,0.14) 40%, transparent 70%)",
-          filter: "blur(80px)", animation: "aurora-drift-2 22s ease-in-out infinite alternate",
-        }} />
-        <div className="absolute" style={{
-          top: "15%", left: "5%", width: "520px", height: "520px", borderRadius: "50%",
-          background: "radial-gradient(circle at center, rgba(20,184,166,0.18) 0%, rgba(6,182,212,0.10) 45%, transparent 70%)",
-          filter: "blur(90px)", animation: "aurora-drift-3 26s ease-in-out infinite alternate",
-        }} />
-        <div className="absolute" style={{
-          top: "-10%", left: "28%", width: "460px", height: "460px", borderRadius: "50%",
-          background: "radial-gradient(circle at center, rgba(251,113,133,0.14) 0%, transparent 65%)",
-          filter: "blur(70px)", animation: "aurora-drift-4 14s ease-in-out infinite alternate",
-        }} />
-        <div className="absolute" style={{
-          top: "20%", left: "42%", width: "360px", height: "360px", borderRadius: "50%",
-          background: "radial-gradient(circle at center, rgba(245,165,36,0.12) 0%, transparent 65%)",
-          filter: "blur(60px)", animation: "aurora-drift-5 10s ease-in-out infinite alternate",
+          top: "-20%", right: "-10%", width: "500px", height: "500px", borderRadius: "50%",
+          background: "radial-gradient(circle at center, rgba(0,82,255,0.06) 0%, transparent 70%)",
+          filter: "blur(80px)",
         }} />
       </div>
 
@@ -854,8 +840,10 @@ export default function Home() {
 
 
 
-          {/* Headline — display-xxl, weight 300, tight tracking */}
-          <h1 className="hero-el mt-7 text-[2.75rem] font-light leading-[1.08] tracking-[-0.05em] sm:text-6xl lg:text-[4.25rem]">
+          {/* Headline — weight 400, tight tracking. Coinbase's spec explicitly calls
+              for display copy to stay at normal weight ("editorial calm, not
+              fintech-bombastic") rather than the bold treatment tried earlier. */}
+          <h1 className="hero-el mt-7 text-[2.75rem] font-normal leading-[1.05] tracking-tighter sm:text-6xl lg:text-[4.25rem]">
             Stop Guessing.
             <br />
             <span className="hero-gradient-text">Start Knowing.</span>

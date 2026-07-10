@@ -2,61 +2,75 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Design tokens — Stripi design language ─────────────────────────────────── */
+/* ── Design tokens — Coinbase design language (DESIGN.md) ──────────────────── */
 :root {
   --font-sans:    "Inter", system-ui, sans-serif;
   --font-display: "Inter", system-ui, sans-serif;
   --font-mono:    "IBM Plex Mono", ui-monospace, monospace;
 
-  /* ── Light mode (canvas / Stripe-inspired) ─────────────────────────────── */
-  --color-ink:        246 249 252;   /* page floor — canvas-soft #f6f9fc      */
-  --color-surface:    255 255 255;   /* card face  — canvas      #ffffff       */
-  --color-raised:     246 249 252;   /* inputs, chips — canvas-soft            */
-  --color-border:     227 232 238;   /* hairline   — #e3e8ee                   */
-  --color-muted:      100 116 141;   /* ink-mute   — #64748d                   */
-  --color-fg:         13  37  61;    /* ink — deep navy body text #0d253d      */
-  --color-saffron:    21  128 61;    /* primary green #15803d (CTA only)       */
-  --color-accent:     220 38  38;    /* loss red — accent, never button        */
-  --color-up:         21  128 61;    /* profit green  */
-  --color-down:       220 38  38;    /* loss red      */
+  /* ── Light mode (Coinbase canvas) ──────────────────────────────────────── */
+  --color-ink:        255 255 255;   /* page floor — canvas #ffffff           */
+  --color-surface:    255 255 255;   /* card face  — canvas #ffffff           */
+  --color-raised:     247 247 247;   /* inputs, chips — surface-soft #f7f7f7  */
+  --color-border:     222 225 230;   /* hairline   — #dee1e6                   */
+  --color-muted:      91  97  110;   /* body       — #5b616e                   */
+  --color-fg:         10  11  13;    /* ink — #0a0b0d                          */
+  --color-saffron:    0   82  255;   /* primary Coinbase Blue #0052ff (CTA)    */
+  --color-accent:     207 32  47;    /* semantic-down red — accent, never button */
+  --color-up:         5   177 105;   /* semantic-up   #05b169  */
+  --color-down:       207 32  47;    /* semantic-down #cf202f  */
 
   /* Canvas tints */
-  --color-canvas-soft:  246 249 252; /* #f6f9fc */
+  --color-canvas-soft:  247 247 247; /* #f7f7f7 */
   --color-canvas-cream: 236 253 245; /* #ecfdf5 — very light mint */
   --color-ink-secondary: 39 57 81;   /* #273951 */
-  --color-ink-mute:     100 116 141; /* #64748d */
+  --color-ink-mute:     91  97  110; /* #5b616e */
   --color-brand-dark:    4   51  25; /* #043319 — dark forest green */
 
-  /* Shadows (navy-tinted, not pure black) */
-  --shadow-sm:  0 1px 3px rgba(0,55,112,0.08), 0 1px 2px rgba(0,55,112,0.04);
-  --shadow-md:  0 8px 24px rgba(0,55,112,0.08), 0 2px 6px rgba(0,55,112,0.04);
-  --shadow-lg:  0 20px 48px rgba(0,55,112,0.10), 0 6px 16px rgba(0,55,112,0.06);
-  --shadow-glow: 0 0 0 3px rgba(21,128,61,0.14), 0 4px 16px rgba(21,128,61,0.10);
+  /* Shadows — Coinbase's single flat tier, 0 4px 12px rgba(0,0,0,0.04) */
+  --shadow-sm:  0 2px 6px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
+  --shadow-md:  0 4px 12px rgba(0,0,0,0.04);
+  --shadow-lg:  0 8px 24px rgba(0,0,0,0.06);
+  --shadow-glow: 0 0 0 3px rgba(0,82,255,0.14), 0 4px 16px rgba(0,82,255,0.10);
+
+  /* ── Additive tokens (merged in — safe, non-conflicting) ──────────────────
+     Radius + motion tokens so future components stay consistent with the
+     values your existing utilities already use. Nothing above is changed. */
+  --radius-sm:  8px;
+  --radius:     14px;
+  --radius-lg:  18px;
+  --radius-xl:  28px;
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);  /* matches your animations */
+  --dur-fast:   150ms;
+  --dur:        260ms;
 }
 
 .dark {
-  /* ── Dark mode — deep navy / Stripi dashboard track ───────────────────── */
-  --color-ink:        6   11  24;    /* #06080F — very deep navy page floor   */
-  --color-surface:    10  18  38;    /* #0A1226 — card face                   */
-  --color-raised:     16  25  50;    /* #101932 — inputs, chips, hover fills  */
-  --color-border:     28  42  75;    /* #1C2A4B — visible, not harsh          */
-  --color-muted:      120 140 178;   /* #788CB2 — readable secondary           */
-  --color-fg:         212 224 244;   /* #D4E0F4 — cool near-white             */
-  --color-saffron:    74  222 128;   /* #4ade80 — lighter green for dark bg   */
-  --color-accent:     248 113 113;   /* #f87171 — red-adjusted for dark       */
-  --color-up:         34  197 128;   /* emerald */
-  --color-down:       240 72  78;    /* red */
+  /* ── Dark mode — Fey's "quiet luxury" warm-black + cream palette. Light mode
+     stays Coinbase; dark mode is restyled separately per fey-reference/DESIGN_SPEC.md.
+     Brand accent (saffron/blue) is kept from the Coinbase pass — Fey's own palette
+     doesn't define a CTA color, it just says "used sparingly". ────────────────── */
+  --color-ink:        11  12  11;    /* #0b0c0b — near-black, faint warm/green tint */
+  --color-surface:    23  25  22;    /* #171916 — cards, one step up from ink       */
+  --color-raised:     31  33  29;    /* #1f211d — inputs, chips                      */
+  --color-border:     45  44  40;    /* #2d2c28 — warm hairline, visible not harsh   */
+  --color-muted:      155 155 148;   /* #9b9b94 — warm muted grey, secondary text    */
+  --color-fg:         247 243  236;  /* #f7f3ec — warm cream, NOT pure white          */
+  --color-saffron:    59  130 246;   /* Coinbase Blue, kept as the CTA/brand accent  */
+  --color-accent:     229 72   77;   /* #e5484d — Fey's negative/accent red          */
+  --color-up:         63  178 127;   /* #3fb27f — Fey's positive data green          */
+  --color-down:       229 72   77;   /* #e5484d — Fey's negative data red            */
 
-  --color-canvas-soft:  16  25  50;
+  --color-canvas-soft:  23  25  22;
   --color-canvas-cream: 5   30  15;
   --color-ink-secondary: 160 180 215;
-  --color-ink-mute:     120 140 178;
+  --color-ink-mute:     155 155 148;
   --color-brand-dark:    4   51  25;
 
   --shadow-sm:  0 1px 3px rgba(0,0,0,0.5),  0 1px 2px rgba(0,0,0,0.35);
   --shadow-md:  0 8px 24px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.4);
   --shadow-lg:  0 20px 48px rgba(0,0,0,0.65), 0 6px 16px rgba(0,0,0,0.45);
-  --shadow-glow: 0 0 0 3px rgba(74,222,128,0.18), 0 4px 20px rgba(74,222,128,0.12);
+  --shadow-glow: 0 0 0 3px rgba(59,130,246,0.18), 0 4px 20px rgba(59,130,246,0.12);
 }
 
 /* ── Base ────────────────────────────────────────────────────────────────────── */
@@ -92,7 +106,7 @@
 
   /* Focus rings */
   *:focus-visible {
-    outline: 2px solid rgba(21, 128, 61, 0.6);
+    outline: 2px solid rgba(0, 82, 255, 0.6);
     outline-offset: 2px;
     border-radius: 4px;
   }
@@ -106,39 +120,41 @@
   .scrollbar-none::-webkit-scrollbar { display: none; }
 }
 
-/* ── Display typography — negative tracking, weight 300 ─────────────────────── */
+/* ── Display typography — Coinbase scale, weight 400 (never bold) ───────────── */
 @layer utilities {
-  /* display-xxl: 56px / -1.4px — hero headline */
+  /* display-xxl: 80px / -2px — hero headline (Coinbase display-mega) */
   .text-display-xxl {
-    font-size: 56px; font-weight: 300; line-height: 1.03;
-    letter-spacing: -1.4px;
+    font-size: 80px; font-weight: 400; line-height: 1.0;
+    letter-spacing: -2px;
   }
-  /* display-xl: 48px / -0.96px — section opener */
+  /* display-xl: 64px / -1.6px — section opener (Coinbase display-xl) */
   .text-display-xl {
-    font-size: 48px; font-weight: 300; line-height: 1.15;
-    letter-spacing: -0.96px;
+    font-size: 64px; font-weight: 400; line-height: 1.0;
+    letter-spacing: -1.6px;
   }
-  /* display-lg: 32px / -0.64px — card title */
+  /* display-lg: 52px / -1.3px — card title (Coinbase display-lg) */
   .text-display-lg {
-    font-size: 32px; font-weight: 300; line-height: 1.1;
-    letter-spacing: -0.64px;
+    font-size: 52px; font-weight: 400; line-height: 1.0;
+    letter-spacing: -1.3px;
   }
-  /* display-md: 26px / -0.26px — compact card title */
+  /* display-md: 44px / -1px — compact card title (Coinbase display-md) */
   .text-display-md {
-    font-size: 26px; font-weight: 300; line-height: 1.12;
-    letter-spacing: -0.26px;
+    font-size: 44px; font-weight: 400; line-height: 1.09;
+    letter-spacing: -1px;
   }
+  /* heading-lg: 32px / -0.4px (Coinbase title-lg) */
   .text-heading-lg {
-    font-size: 22px; font-weight: 300; line-height: 1.1;
-    letter-spacing: -0.22px;
+    font-size: 32px; font-weight: 400; line-height: 1.13;
+    letter-spacing: -0.4px;
   }
+  /* heading-md: 18px / 600 weight (Coinbase title-md — a component title, not display) */
   .text-heading-md {
-    font-size: 20px; font-weight: 300; line-height: 1.4;
-    letter-spacing: -0.2px;
+    font-size: 18px; font-weight: 600; line-height: 1.33;
+    letter-spacing: 0;
   }
   .text-body-tabular {
-    font-size: 14px; font-weight: 300; line-height: 1.4;
-    letter-spacing: -0.42px;
+    font-size: 14px; font-weight: 400; line-height: 1.4;
+    letter-spacing: 0;
     font-feature-settings: "tnum", "ss01";
   }
 }
@@ -146,22 +162,17 @@
 /* ── Components ──────────────────────────────────────────────────────────────── */
 @layer components {
 
-  /* ─ Gradient mesh backdrop — green left (bull) / red right (bear) ──────── */
+  /* ─ Gradient mesh backdrop — flat canvas, single soft blue glow ─────────── */
   .gradient-mesh {
     background:
-      radial-gradient(ellipse 80% 65% at 0%   40%, rgba(220,252,231,0.90) 0%, transparent 55%),
-      radial-gradient(ellipse 55% 45% at 18%  10%, rgba(134,239,172,0.50) 0%, transparent 50%),
-      radial-gradient(ellipse 50% 45% at 82%  10%, rgba(254,202,202,0.60) 0%, transparent 50%),
-      radial-gradient(ellipse 65% 60% at 100% 42%, rgba(252,165,165,0.45) 0%, transparent 55%),
-      radial-gradient(ellipse 70% 60% at 50%  55%, rgba(255,255,255,1)    0%, transparent 65%),
+      radial-gradient(ellipse 70% 55% at 50% 0%,   rgba(0,82,255,0.06) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 100% 30%, rgba(0,82,255,0.04) 0%, transparent 55%),
       #ffffff;
   }
   .dark .gradient-mesh {
     background:
-      radial-gradient(ellipse 70% 55% at 0%   40%, rgba(5,46,22,0.60)   0%, transparent 55%),
-      radial-gradient(ellipse 50% 40% at 18%  10%, rgba(6,78,42,0.40)   0%, transparent 50%),
-      radial-gradient(ellipse 50% 42% at 85%  10%, rgba(69,10,10,0.50)  0%, transparent 50%),
-      radial-gradient(ellipse 60% 55% at 100% 42%, rgba(127,29,29,0.38) 0%, transparent 55%),
+      radial-gradient(ellipse 70% 55% at 50% 0%,   rgba(59,130,246,0.10) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 50% at 100% 30%, rgba(59,130,246,0.06) 0%, transparent 55%),
       rgb(var(--color-ink));
   }
 
@@ -176,10 +187,10 @@
   }
 
   /* ─ Pills & tags ─ */
-  /* Subdued green tag */
+  /* Subdued primary (blue) tag */
   .pill-primary {
-    background: rgba(21,128,61,0.10);
-    color: rgba(20,83,45,1);
+    background: rgba(0,82,255,0.10);
+    color: rgba(0,62,204,1);
     border-radius: 9999px;
     padding: 4px 8px;
     font-size: 10px;
@@ -188,7 +199,7 @@
     text-transform: uppercase;
   }
   .dark .pill-primary {
-    background: rgba(74,222,128,0.15);
+    background: rgba(59,130,246,0.15);
     color: rgb(var(--color-saffron));
   }
 
@@ -206,27 +217,27 @@
     @apply inline-flex items-center gap-1 text-xs font-medium;
     padding: 3px 8px;
     border-radius: 9999px;
-    background: rgba(21,128,61,0.10);
-    color: rgba(21,128,61,1);
-    border: 1px solid rgba(21,128,61,0.18);
+    background: rgba(5,177,105,0.10);
+    color: rgba(5,177,105,1);
+    border: 1px solid rgba(5,177,105,0.18);
   }
   .badge-down {
     @apply inline-flex items-center gap-1 text-xs font-medium;
     padding: 3px 8px;
     border-radius: 9999px;
-    background: rgba(220,38,38,0.10);
-    color: rgba(220,38,38,1);
-    border: 1px solid rgba(220,38,38,0.18);
+    background: rgba(207,32,47,0.10);
+    color: rgba(207,32,47,1);
+    border: 1px solid rgba(207,32,47,0.18);
   }
   .dark .badge-up {
-    background: rgba(34,197,128,0.12);
+    background: rgba(63,178,127,0.12);
     color: rgb(var(--color-up));
-    border-color: rgba(34,197,128,0.22);
+    border-color: rgba(63,178,127,0.22);
   }
   .dark .badge-down {
-    background: rgba(240,72,78,0.12);
+    background: rgba(229,72,77,0.12);
     color: rgb(var(--color-down));
-    border-color: rgba(240,72,78,0.22);
+    border-color: rgba(229,72,77,0.22);
   }
 
   /* ─ Accent / AI badge ─ */
@@ -234,9 +245,9 @@
     @apply inline-flex items-center gap-1 text-xs font-medium;
     padding: 3px 8px;
     border-radius: 9999px;
-    background: rgba(21,128,61,0.10);
+    background: rgba(0,82,255,0.10);
     color: rgb(var(--color-saffron));
-    border: 1px solid rgba(21,128,61,0.18);
+    border: 1px solid rgba(0,82,255,0.18);
   }
 
   /* ─ Nav ─ */
@@ -247,7 +258,7 @@
     border-bottom: 1px solid rgb(var(--color-border));
   }
   .dark .nav-glass {
-    background: rgba(10,18,38,0.88);
+    background: rgba(11,12,11,0.88);
     border-bottom: 1px solid rgb(var(--color-border));
     box-shadow: 0 1px 0 rgba(255,255,255,0.025);
   }
@@ -258,9 +269,9 @@
     background: linear-gradient(
       90deg,
       transparent 0%,
-      rgba(21,128,61,0.35) 30%,
-      rgba(21,128,61,0.60) 50%,
-      rgba(21,128,61,0.35) 70%,
+      rgba(0,82,255,0.35) 30%,
+      rgba(0,82,255,0.60) 50%,
+      rgba(0,82,255,0.35) 70%,
       transparent 100%
     );
   }
@@ -271,13 +282,13 @@
 .skeleton::after {
   content: "";
   @apply absolute inset-0;
-  background: linear-gradient(90deg, transparent, rgba(21,128,61,0.04), transparent);
+  background: linear-gradient(90deg, transparent, rgba(0,82,255,0.04), transparent);
   transform: translateX(-100%);
   animation: shimmer 1.8s infinite;
 }
 .dark .skeleton { background: rgb(var(--color-raised)); }
 .dark .skeleton::after {
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+  background: linear-gradient(90deg, transparent, rgba(247,243,236,0.04), transparent);
 }
 
 /* ── Hero search bar ─────────────────────────────────────────────────────────── */
@@ -306,7 +317,7 @@
 .hero-search-outer:hover,
 .hero-search-outer:focus-within {
   animation-play-state: running;
-  box-shadow: 0 0 0 4px rgba(21,128,61,0.10), 0 8px 32px rgba(21,128,61,0.14);
+  box-shadow: 0 0 0 4px rgba(0,82,255,0.10), 0 8px 32px rgba(0,82,255,0.14);
 }
 .hero-search-outer:focus-within { animation-duration: 1.8s; }
 .hero-search-inner {
@@ -375,6 +386,7 @@
 .hero-el:nth-child(4) { animation-delay: 250ms; }
 .hero-el:nth-child(5) { animation-delay: 350ms; }
 .hero-el:nth-child(6) { animation-delay: 450ms; }
+.hero-el:nth-child(7) { animation-delay: 550ms; }
 
 /* ── Hero gradient text ───────────────────────────────────────────────────────── */
 @keyframes gradient-flow {
@@ -385,10 +397,9 @@
 .hero-gradient-text {
   background: linear-gradient(
     110deg,
-    #15803d 0%,
-    #16a34a 28%,
-    #ca8a04 58%,
-    #dc2626 88%
+    #003ecc 0%,
+    #0052ff 50%,
+    #3d7bff 100%
   );
   background-size: 250% 250%;
   -webkit-background-clip: text;
@@ -399,10 +410,9 @@
 .dark .hero-gradient-text {
   background: linear-gradient(
     110deg,
-    #4ade80 0%,
-    #86efac 30%,
-    #fde047 60%,
-    #f87171 88%
+    #3b82f6 0%,
+    #60a5fa 50%,
+    #93c5fd 100%
   );
   background-size: 200% 200%;
   -webkit-background-clip: text;
@@ -435,7 +445,7 @@
 
 /* ── Dark scrollbar ──────────────────────────────────────────────────────────── */
 .dark ::-webkit-scrollbar-thumb { background: rgb(var(--color-border)); }
-.dark ::-webkit-scrollbar-thumb:hover { background: rgba(120,140,178,0.5); }
+.dark ::-webkit-scrollbar-thumb:hover { background: rgba(90,88,80,0.6); }
 
 /* ── Glass ───────────────────────────────────────────────────────────────────── */
 .glass {
@@ -445,7 +455,7 @@
   border: 1px solid rgb(var(--color-border));
 }
 .dark .glass {
-  background: rgba(16,25,50,0.72);
+  background: rgba(31,33,29,0.72);
 }
 
 /* ── Orb drift (legacy compat) ───────────────────────────────────────────────── */
@@ -455,3 +465,27 @@
   66%       { transform: translate(-20px, 15px) scale(0.96); }
 }
 .orb { animation: orb-drift var(--orb-dur, 12s) ease-in-out infinite; }
+
+/* ── Accessibility: respect reduced-motion (merged in) ───────────────────────────
+   Placed last so it overrides every animation/transition above. Users who set
+   "reduce motion" in their OS get instant, static UI — no spins, floats, marquees
+   or reveals — while opacity-only changes remain gentle. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .hero-el,
+  .animate-fade-up,
+  .animate-scale-in,
+  .chart-panel { opacity: 1 !important; transform: none !important; }
+  .hero-chip,
+  .orb,
+  .animate-marquee,
+  .hero-search-outer { animation: none !important; }
+  .hero-gradient-text { animation: none !important; }
+}

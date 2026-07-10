@@ -39,13 +39,13 @@ const config: Config = {
       },
 
       fontSize: {
-        /* Display tier — weight 300, negative tracking baked into Tailwind */
-        "display-xxl": ["56px", { lineHeight: "1.03", letterSpacing: "-1.4px", fontWeight: "300" }],
-        "display-xl":  ["48px", { lineHeight: "1.15", letterSpacing: "-0.96px", fontWeight: "300" }],
-        "display-lg":  ["32px", { lineHeight: "1.1",  letterSpacing: "-0.64px", fontWeight: "300" }],
-        "display-md":  ["26px", { lineHeight: "1.12", letterSpacing: "-0.26px", fontWeight: "300" }],
-        "heading-lg":  ["22px", { lineHeight: "1.1",  letterSpacing: "-0.22px", fontWeight: "300" }],
-        "heading-md":  ["20px", { lineHeight: "1.4",  letterSpacing: "-0.2px",  fontWeight: "300" }],
+        /* Display tier — Coinbase scale, weight 400 (never bold), negative tracking */
+        "display-xxl": ["80px", { lineHeight: "1.0",  letterSpacing: "-2px",   fontWeight: "400" }],
+        "display-xl":  ["64px", { lineHeight: "1.0",  letterSpacing: "-1.6px", fontWeight: "400" }],
+        "display-lg":  ["52px", { lineHeight: "1.0",  letterSpacing: "-1.3px", fontWeight: "400" }],
+        "display-md":  ["44px", { lineHeight: "1.09", letterSpacing: "-1px",   fontWeight: "400" }],
+        "heading-lg":  ["32px", { lineHeight: "1.13", letterSpacing: "-0.4px", fontWeight: "400" }],
+        "heading-md":  ["18px", { lineHeight: "1.33", letterSpacing: "0",      fontWeight: "600" }],
         "heading-sm":  ["18px", { lineHeight: "1.4",  letterSpacing: "0",       fontWeight: "300" }],
         "body-lg":     ["16px", { lineHeight: "1.4",  letterSpacing: "0",       fontWeight: "300" }],
         "body-md":     ["15px", { lineHeight: "1.6",  letterSpacing: "0",       fontWeight: "300" }],
@@ -58,7 +58,7 @@ const config: Config = {
       },
 
       borderRadius: {
-        card:  "12px",  /* feature cards */
+        card:  "24px",  /* feature cards — Coinbase rounded.xl */
         "xl":  "16px",  /* dashboard mockup chrome */
         "lg":  "12px",
         "md":  "8px",
