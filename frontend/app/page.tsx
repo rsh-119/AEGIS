@@ -558,15 +558,15 @@ export default function Home() {
           <p className="font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">
             <MotionNumber value={5000} suffix="+" />
           </p>
-          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">NSE &amp; BSE stocks</p>
+          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">Every NSE &amp; BSE stock, covered</p>
         </div>
         <div>
           <p className="nums font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">₹0</p>
-          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">Free, forever</p>
+          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">The price of admission — forever</p>
         </div>
         <div>
           <p className="font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">Live</p>
-          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">NSE · BSE quotes</p>
+          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">Prices straight off the tape</p>
         </div>
       </Stagger>
 
@@ -633,19 +633,12 @@ export default function Home() {
       <Reveal>
       <section className="relative overflow-hidden rounded-[2.5rem] bg-fg px-6 py-20 text-center text-ink sm:py-28">
         {/* Inverted dot grid + saffron crown glow */}
-        <div className="panel-dots-invert absolute inset-0 opacity-60" aria-hidden />
+        <div className="panel-dots-invert absolute inset-0 opacity-25" aria-hidden />
         <div
           className="pointer-events-none absolute inset-x-0 top-0 h-56"
-          style={{ background: "radial-gradient(ellipse 55% 100% at 50% 0%, rgb(var(--color-saffron)/0.22), transparent 70%)" }}
+          style={{ background: "radial-gradient(ellipse 65% 100% at 50% 0%, rgb(var(--color-saffron)/0.10), transparent 75%)" }}
           aria-hidden
         />
-        {/* Ghost wordmark */}
-        <span
-          className="pointer-events-none absolute inset-x-0 -bottom-4 select-none text-center font-display text-[6rem] font-bold leading-none tracking-tighter text-ink/5 sm:-bottom-10 sm:text-[13rem]"
-          aria-hidden
-        >
-          AEGIS
-        </span>
 
         <div className="relative">
           <p className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-saffron">Get started</p>

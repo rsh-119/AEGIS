@@ -276,18 +276,21 @@ async def _call_openrouter(system: str, user: str, max_tokens: int, model: str |
 
 # ── Unified waterfall: NVIDIA → Groq → OpenRouter ────────────────────────────
 
-async def _chat_json(system: str, user: str, max_tokens: int = 1200) -> dict:
+async def _chat_json(system: str, user: str, max_tokens: int = 1200, use_cache: bool = True) -> dict:
     """
     Multi-model waterfall — Groq (primary) → NVIDIA DeepSeek → OpenRouter.
     Prompt-level cache: identical (system, user) pairs return cached result
     within 20 hours without hitting any provider.
     Moves to the next provider on any error. Returns a dict; never raises.
     """
-    # ── 0. Prompt cache — skip all providers for repeated calls ───────────────
-    cached = _prompt_cache.get(system, user)
-    if cached is not None:
-        logger.debug("Prompt cache hit — skipping provider calls")
-        return cached
+    # ── 0. Prompt cache — skip all providers for repeated calls.
+    #    use_cache=False for live-data prompts (e.g. portfolio review/Q&A)
+    #    where a fresh model call is expected every time. ─────────────────────
+    if use_cache:
+        cached = _prompt_cache.get(system, user)
+        if cached is not None:
+            logger.debug("Prompt cache hit — skipping provider calls")
+            return cached
 
     errors: list[str] = []
 
@@ -298,7 +301,8 @@ async def _chat_json(system: str, user: str, max_tokens: int = 1200) -> dict:
                 result = await _call_groq(system, user, max_tokens, gmodel)
                 if gmodel != settings.groq_model:
                     logger.info("Groq fallback succeeded: %s", gmodel)
-                _prompt_cache.set(system, user, result)
+                if use_cache:
+                    _prompt_cache.set(system, user, result)
                 return result
             except RateLimitError:
                 errors.append(f"Groq/{gmodel}: 429 rate-limited")
@@ -323,7 +327,8 @@ async def _chat_json(system: str, user: str, max_tokens: int = 1200) -> dict:
     if settings.nvidia_api_key:
         try:
             result = await _call_nvidia(system, user, max_tokens)
-            _prompt_cache.set(system, user, result)
+            if use_cache:
+                _prompt_cache.set(system, user, result)
             return result
         except NvidiaRateLimitError:
             errors.append("NVIDIA/DeepSeek: 429 rate-limited")
@@ -343,7 +348,8 @@ async def _chat_json(system: str, user: str, max_tokens: int = 1200) -> dict:
         try:
             result = await _call_minimax(system, user, max_tokens)
             logger.info("MiniMax M2.7 succeeded")
-            _prompt_cache.set(system, user, result)
+            if use_cache:
+                _prompt_cache.set(system, user, result)
             return result
         except NvidiaRateLimitError:
             errors.append("MiniMax/M2.7: 429 rate-limited")
@@ -364,7 +370,8 @@ async def _chat_json(system: str, user: str, max_tokens: int = 1200) -> dict:
             try:
                 logger.info("Trying OpenRouter model: %s", ormodel)
                 result = await _call_openrouter(system, user, max_tokens, ormodel)
-                _prompt_cache.set(system, user, result)
+                if use_cache:
+                    _prompt_cache.set(system, user, result)
                 return result
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 429:
@@ -867,3 +874,65 @@ Respond ONLY with valid JSON:
         "document": text,
     }, default=str)
     return await _chat_json(system, user, max_tokens=900)
+
+
+async def review_portfolio(context: str) -> dict:
+    """Structured portfolio review — exactly 3 typed observations rendered as
+    cards by the frontend. Strict-JSON via the same provider waterfall.
+    Uncached — "Run again" should genuinely re-run, not replay."""
+    system = """You are a seasoned Indian equity portfolio reviewer.
+Given a retail investor's portfolio snapshot, return STRICT JSON:
+{"observations": [
+  {"severity": "risk" | "opportunity" | "neutral",
+   "title": "<the specific issue or strength, max 10 words>",
+   "action": "<one concrete next step to consider, max 22 words>"}
+]}
+RULES:
+1. Exactly 3 observations, most important first.
+2. Be specific — name stocks/sectors from the data, never generic filler.
+3. "action" must start with a verb (Trim, Review, Diversify, Set, Book, Hold…).
+4. Interpret the numbers; never merely restate them.
+5. No disclaimers, no extra keys, no markdown."""
+    result = await _chat_json(system, context, max_tokens=500, use_cache=False)
+
+    obs = result.get("observations")
+    if not isinstance(obs, list):
+        return {"observations": []}
+    clean = []
+    for o in obs[:3]:
+        if not isinstance(o, dict):
+            continue
+        sev = o.get("severity")
+        title = str(o.get("title") or "").strip()
+        action = str(o.get("action") or "").strip()
+        if title and action:
+            clean.append({
+                "severity": sev if sev in ("risk", "opportunity", "neutral") else "neutral",
+                "title": title,
+                "action": action,
+            })
+    return {"observations": clean}
+
+
+async def ask_portfolio(question: str, context: str) -> dict:
+    """Portfolio-grounded Q&A: the user's holdings snapshot IS the grounding.
+    Returns {"answer": str, "followups": [str, str]}. Uncached — the
+    snapshot is live data, so every ask deserves a fresh model pass."""
+    system = """You are Aegis, a portfolio assistant for an Indian retail investor.
+You will get PORTFOLIO SNAPSHOT (the investor's real holdings) and QUESTION.
+Return STRICT JSON: {"answer": "<answer>", "followups": ["<q1>", "<q2>"]}
+RULES:
+1. Ground every claim in the snapshot — quote its exact numbers (₹, %, weights).
+2. Answer the question directly in 2-5 sentences. Specific > generic.
+3. If the snapshot can't answer it, say exactly what data is missing, then
+   answer what you can from general Indian-market knowledge, clearly labelled.
+4. Indian conventions: ₹, lakh/crore, NSE/BSE, LTCG/STCG where relevant.
+5. "followups": 2 short natural next questions THIS investor would ask (max 8 words each).
+6. No markdown, no disclaimers."""
+    user = f"PORTFOLIO SNAPSHOT:\n{context}\n\nQUESTION: {question}"
+    result = await _chat_json(system, user, max_tokens=700, use_cache=False)
+    answer = str(result.get("answer") or "").strip()
+    followups = [str(f).strip() for f in (result.get("followups") or []) if str(f).strip()][:2]
+    if not answer:
+        return {"answer": None, "followups": []}
+    return {"answer": answer, "followups": followups}

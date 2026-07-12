@@ -14,6 +14,7 @@ import { useAuth } from "@/lib/auth";
 import { Trash2, Plus, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
+import { AnalysisPanel } from "./AnalysisPanel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ export default function PortfolioPage() {
 
   const [sortKey, setSortKey] = useState<SortKey>("ticker");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [view, setView] = useState<"holdings" | "analysis">("holdings");
 
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -117,8 +119,25 @@ export default function PortfolioPage() {
 
   return (
     <div className="space-y-6 animate-fade-up">
-      <h1 className="font-display text-3xl font-semibold">Portfolio</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-display text-3xl font-semibold">Portfolio</h1>
+        <div className="flex gap-2">
+          {([["holdings", "Holdings"], ["analysis", "Analysis"]] as const).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setView(key)}
+              className={view === key ? "seg seg-on" : "seg seg-off"}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
 
+      {view === "analysis" ? (
+        <AnalysisPanel />
+      ) : (
+      <>
       {/* Summary */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Invested" value={inr(summary?.invested)} />
@@ -213,6 +232,8 @@ export default function PortfolioPage() {
           </tbody>
         </table>
       </Card>
+      </>
+      )}
     </div>
   );
 }
