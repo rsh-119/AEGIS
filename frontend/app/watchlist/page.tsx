@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import useSWR, { mutate } from "swr";
+// useSWRConfig().mutate, not the bare `mutate` export — the app runs on a
+// custom SWR cache provider, and the global mutate doesn't reach it.
+import useSWR, { useSWRConfig } from "swr";
 import { fetcher, num, pct, signCls, del } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
 import { LoginPrompt } from "@/components/LoginPrompt";
@@ -50,6 +52,7 @@ export default function WatchlistPage() {
   const { user, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
   const confirm = useConfirm();
+  const { mutate } = useSWRConfig();
   const { data } = useSWR(user ? "/api/watchlist" : null, fetcher, { revalidateOnFocus: false });
   const items = data?.items || [];
 

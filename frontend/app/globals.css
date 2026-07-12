@@ -335,18 +335,19 @@
 }
 .animate-fade-up { animation: fade-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 
-/* ── Scroll reveal (Wealthsimple-style: slow rise, long ease-out, no bounce)
-     with a soft blur-in for the tech-SaaS "coming into focus" feel ── */
+/* ── Scroll reveal (Wealthsimple-style: slow rise, long ease-out, no bounce).
+     Opacity + transform only — both compositable, so the reveal never
+     repaints. (A blur() transition was tried here and janks on large
+     sections; blur-in lives only on .hero-word, a small text area.) ── */
 .reveal {
   opacity: 0;
   transform: translateY(26px);
-  filter: blur(8px);
+  will-change: opacity, transform;
   transition:
     opacity   0.9s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.9s cubic-bezier(0.16, 1, 0.3, 1),
-    filter    0.9s cubic-bezier(0.16, 1, 0.3, 1);
+    transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.reveal-visible { opacity: 1; transform: none; filter: none; }
+.reveal-visible { opacity: 1; transform: none; will-change: auto; }
 
 /* ── Hero headline: per-word blur-in stagger (set --wi per word) ── */
 @keyframes word-in {
@@ -369,6 +370,69 @@
   transition: background-size 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .link-sweep:hover { background-size: 100% 1px; }
+
+/* ── Dotted-grid texture for showcase panels ── */
+.panel-dots {
+  background-image: radial-gradient(rgb(var(--color-fg) / 0.07) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+/* Inverted variant for fg-colored bands (ink dots on dark/cream) */
+.panel-dots-invert {
+  background-image: radial-gradient(rgb(var(--color-ink) / 0.12) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* ── Floating accent chips (uses the existing float-gentle keyframes) ── */
+.float-chip {
+  animation: float-gentle var(--float-dur, 5s) ease-in-out infinite;
+  animation-delay: var(--float-delay, 0s);
+}
+
+/* ── Cursor spotlight — radial highlight following the pointer inside cards.
+     Position comes from --sx/--sy, written by an onMouseMove handler. ── */
+.spotlight-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  background: radial-gradient(
+    240px circle at var(--sx, 50%) var(--sy, 50%),
+    rgb(var(--color-saffron) / 0.09),
+    transparent 70%
+  );
+}
+.group:hover .spotlight-layer { opacity: 1; }
+
+/* ── Button sheen — a light band sweeps across primary CTAs on hover ── */
+.btn-sheen { position: relative; overflow: hidden; }
+.btn-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.35) 50%, transparent 60%);
+  transform: translateX(-130%);
+  transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-sheen:hover::after { transform: translateX(130%); }
+
+/* ── Tick pulse — the live % badge softly blinks like a refreshing quote ── */
+@keyframes tick-pulse {
+  0%, 90%, 100% { opacity: 1; }
+  95%           { opacity: 0.45; }
+}
+.tick-pulse { animation: tick-pulse 5s ease-in-out infinite; }
+
+/* ── Concall brief bullets — stagger in once the panel reveals ── */
+@keyframes brief-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.brief-li { opacity: 0; }
+.reveal-visible .brief-li { animation: brief-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.reveal-visible .brief-li:nth-child(1) { animation-delay: 0.45s; }
+.reveal-visible .brief-li:nth-child(2) { animation-delay: 0.60s; }
+.reveal-visible .brief-li:nth-child(3) { animation-delay: 0.75s; }
 
 /* ── Micro-animations inside revealed product mocks ── */
 /* Sparkline draws itself once its panel reveals (pathLength=1 on the path). */
@@ -537,9 +601,11 @@
   .animate-scale-in,
   .reveal,
   .chart-panel { opacity: 1 !important; transform: none !important; }
-  .reveal { filter: none !important; }
   /* Animation delays survive the global duration reset — force final states. */
   .hero-word  { opacity: 1 !important; transform: none !important; filter: none !important; animation: none !important; }
+  .float-chip { animation: none !important; }
+  .tick-pulse { animation: none !important; }
+  .brief-li   { opacity: 1 !important; transform: none !important; animation: none !important; }
   .spark-path { stroke-dashoffset: 0 !important; animation: none !important; }
   .spark-fill { opacity: 0.1 !important; animation: none !important; }
   .alloc-seg  { transform: none !important; animation: none !important; }

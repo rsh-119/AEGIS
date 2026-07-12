@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import useSWR, { mutate } from "swr";
+// NOTE: the bare `mutate` exported from "swr" targets the DEFAULT cache — this
+// app runs on a custom IDB-backed provider (lib/swr-config), so that mutate
+// silently no-ops and new holdings only appeared after a full reload.
+// useSWRConfig().mutate is bound to the active provider.
+import useSWR, { useSWRConfig } from "swr";
 import { useRouter } from "next/navigation";
 import { fetcher, inr, pct, signCls, post, del } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
@@ -31,6 +35,7 @@ export default function PortfolioPage() {
   const router = useRouter();
   const { toast } = useToast();
   const confirm = useConfirm();
+  const { mutate } = useSWRConfig();
   const { data } = useSWR(user ? "/api/portfolio" : null, fetcher, { revalidateOnFocus: false });
   const [form, setForm] = useState({ ticker: "", shares: "", avg_price: "", buy_date: "" });
   const [busy, setBusy] = useState(false);

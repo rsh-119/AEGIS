@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import useSWR, { mutate } from "swr";
+// useSWRConfig().mutate, not the bare `mutate` export — the app runs on a
+// custom SWR cache provider, and the global mutate doesn't reach it.
+import useSWR, { useSWRConfig } from "swr";
 import { fetcher, inr, pct, del, post, patch } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
 import { Bell, BellOff, Pencil, Trash2, Plus, CheckCircle2 } from "lucide-react";
@@ -31,6 +33,7 @@ const ALERTS_URL = "/api/alerts";
 export default function AlertsPage() {
   const { toast } = useToast();
   const confirm = useConfirm();
+  const { mutate } = useSWRConfig();
   const { data, isLoading } = useSWR<{ alerts: Alert[] }>(ALERTS_URL, fetcher, {
     revalidateOnFocus: false,
     refreshInterval: 30_000,   // poll every 30s so triggered alerts appear

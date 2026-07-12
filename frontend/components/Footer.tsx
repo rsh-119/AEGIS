@@ -90,6 +90,33 @@ function ContactModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+const PRODUCT_LINKS = [
+  { label: "Market",      href: "/market" },
+  { label: "MF & ETF",    href: "/mf" },
+  { label: "IPO Watch",   href: "/ipo" },
+  { label: "Commodities", href: "/commodities" },
+];
+
+const TOOL_LINKS = [
+  { label: "AI Concall",      href: "/concall" },
+  { label: "Peer Comparison", href: "/peers" },
+  { label: "Ask AI",          href: "/ask" },
+  { label: "Watchlist",       href: "/watchlist" },
+  { label: "Portfolio",       href: "/portfolio" },
+  { label: "Alerts",          href: "/alerts" },
+];
+
+function FooterLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="block text-sm text-muted transition-all duration-200 hover:translate-x-0.5 hover:text-saffron"
+    >
+      {children}
+    </Link>
+  );
+}
+
 export function Footer() {
   const [showContact, setShowContact] = useState(false);
 
@@ -98,69 +125,73 @@ export function Footer() {
       <footer className="relative border-t border-border/60 bg-ink/40 backdrop-blur-sm">
         {/* Top glow line */}
         <div className="glow-line absolute top-0 inset-x-0 opacity-60" />
-        <div className="mx-auto max-w-screen-xl px-6 py-8 md:px-12 lg:px-16">
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-3 md:items-center">
-            {/* Left: Brand block — flush left with slight inset */}
-            <div className="space-y-2 pl-0">
+        <div className="mx-auto max-w-screen-xl px-6 py-12 md:px-12 lg:px-16">
+          <div className="grid grid-cols-2 gap-x-8 gap-y-10 md:grid-cols-[2fr_1fr_1fr_1fr]">
+            {/* Brand block */}
+            <div className="col-span-2 space-y-3 md:col-span-1">
               <div className="flex items-center gap-2">
-                <span className="font-display text-xl font-bold text-saffron drop-shadow-[0_0_12px_rgb(var(--color-saffron)/0.4)]">AEGIS</span>
+                <span className="font-display text-2xl font-bold tracking-tight text-fg">AEGIS</span>
                 <span className="rounded-md border border-saffron/20 bg-saffron/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-saffron">
                   Beta
                 </span>
               </div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted/70">
-                Advanced Equity Guidance and Intelligent System
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted/70">
+                Advanced Equity Guidance<br />and Intelligent System
               </p>
-              <p className="text-sm text-muted">
-                Data via IndianAPI &middot; For information only, not investment advice.
+              <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
+                <span className="relative flex h-1.5 w-1.5" aria-hidden>
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-up opacity-60 motion-reduce:hidden" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-up" />
+                </span>
+                NSE · BSE · Live data
+              </p>
+              <p className="max-w-xs pt-1 text-xs leading-relaxed text-muted/70">
+                Built with <span className="text-accent">&#9829;</span> by Rishabh
               </p>
             </div>
 
-            {/* Center: Built with heart — truly centered in the 3-col grid */}
-            <div className="flex flex-col items-center justify-center text-center">
-              <p className="text-base font-semibold text-fg/80">
-                Built with <span className="text-red-400">&#9829;</span> by Rishabh
-              </p>
+            {/* Product */}
+            <div className="space-y-2.5">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Product</p>
+              {PRODUCT_LINKS.map((l) => (
+                <FooterLink key={l.href} href={l.href}>{l.label}</FooterLink>
+              ))}
             </div>
 
-            {/* Right: Links */}
-            <div className="flex justify-end gap-10">
-              <div className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wider text-muted">Navigate</p>
-                {[
-                  { label: "Home",            href: "/"       },
-                  { label: "Peer Comparison", href: "/peers"  },
-                  { label: "Market",          href: "/market" },
-                ].map((l) => (
-                  <Link key={l.href} href={l.href}
-                    className="block text-sm text-muted hover:text-fg transition-colors">
-                    {l.label}
-                  </Link>
-                ))}
-              </div>
+            {/* Tools */}
+            <div className="space-y-2.5">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Tools</p>
+              {TOOL_LINKS.map((l) => (
+                <FooterLink key={l.href} href={l.href}>{l.label}</FooterLink>
+              ))}
+            </div>
 
-              <div className="space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wider text-muted">Connect</p>
-                {SOCIALS.map(({ icon: Icon, label, href }) => (
-                  <a key={label} href={href} target="_blank" rel="noreferrer"
-                    className="flex items-center gap-2 text-sm text-muted hover:text-fg transition-colors">
-                    <Icon className="h-4 w-4" />
-                    {label}
-                  </a>
-                ))}
-                <button
-                  onClick={() => setShowContact(true)}
-                  className="flex items-center gap-2 text-sm text-muted hover:text-fg transition-colors">
-                  <Mail className="h-4 w-4" />
-                  Contact Us
-                </button>
-              </div>
+            {/* Connect */}
+            <div className="space-y-2.5">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Connect</p>
+              {SOCIALS.map(({ icon: Icon, label, href }) => (
+                <a key={label} href={href} target="_blank" rel="noreferrer"
+                  className="flex items-center gap-2 text-sm text-muted transition-all duration-200 hover:translate-x-0.5 hover:text-saffron">
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </a>
+              ))}
+              <button
+                onClick={() => setShowContact(true)}
+                className="flex items-center gap-2 text-sm text-muted transition-all duration-200 hover:translate-x-0.5 hover:text-saffron">
+                <Mail className="h-4 w-4" />
+                Contact Us
+              </button>
             </div>
           </div>
 
-          <div className="mt-6 border-t border-border/60 pt-4 text-center">
+          {/* Bottom bar */}
+          <div className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-border/60 pt-5 sm:flex-row">
             <p className="text-xs text-muted/50">
               &copy; {new Date().getFullYear()} AEGIS. All rights reserved.
+            </p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted/50">
+              Data via IndianAPI · For information only, not investment advice
             </p>
           </div>
         </div>

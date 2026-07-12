@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
+import { motion, useScroll, useTransform } from "framer-motion";
 import { SearchBox } from "@/components/SearchBox";
-import { Reveal } from "@/components/ui/reveal";
+import { Reveal, Stagger, MotionNumber } from "@/components/motion";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import { AuroraBackground } from "@/components/ui/aurora-background";
 import { BentoGrid } from "@/components/ui/bento-grid";
@@ -15,7 +16,7 @@ function SectionHeading({ eyebrow, title, sub }: { eyebrow: string; title: strin
   return (
     <div className="mx-auto max-w-2xl text-center">
       <p className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-saffron">{eyebrow}</p>
-      <h2 className="mt-3 font-display text-3xl font-medium tracking-tight text-fg sm:text-[2.5rem] sm:leading-tight">
+      <h2 className="mt-3 font-display text-[clamp(2rem,4.5vw,3rem)] font-medium leading-[1.12] tracking-[-0.015em] text-fg">
         {title}
       </h2>
       {sub && <p className="mt-3 text-[15px] leading-relaxed text-muted">{sub}</p>}
@@ -26,7 +27,7 @@ function SectionHeading({ eyebrow, title, sub }: { eyebrow: string; title: strin
 /* ─── Product showcase — Wealthsimple-style alternating band:
        copy on one side, a soft-tinted panel holding a product mock on the other ── */
 function Showcase({
-  eyebrow, title, description, link, linkLabel, panelClass, flip, children,
+  eyebrow, title, description, link, linkLabel, panelClass, flip, accents, children,
 }: {
   eyebrow: string;
   title: string;
@@ -35,13 +36,15 @@ function Showcase({
   linkLabel: string;
   panelClass: string;
   flip?: boolean;
+  /** Floating accent chips, absolutely positioned inside the panel. */
+  accents?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="grid items-center gap-8 lg:grid-cols-2 lg:gap-14">
       <Reveal className={clsx("max-w-lg", flip && "lg:order-2 lg:justify-self-end")}>
         <p className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-saffron">{eyebrow}</p>
-        <h3 className="mt-3 font-display text-3xl font-medium tracking-tight text-fg sm:text-4xl">{title}</h3>
+        <h3 className="mt-3 font-display text-[clamp(2rem,4vw,2.875rem)] font-medium leading-[1.1] tracking-[-0.015em] text-fg">{title}</h3>
         <p className="mt-4 text-[15px] leading-relaxed text-muted">{description}</p>
         <InteractiveHoverButton href={link} className="mt-7">
           {linkLabel}
@@ -49,18 +52,97 @@ function Showcase({
       </Reveal>
       <Reveal
         delay={140}
+        onMouseMove={spotlightMove}
         className={clsx(
-          "group flex items-center justify-center rounded-3xl border border-border/50 px-6 py-12 sm:py-16",
+          "group relative flex items-center justify-center overflow-hidden rounded-3xl border border-border/50 px-6 py-12 sm:py-16",
+          "panel-dots",
           panelClass,
           flip && "lg:order-1",
         )}
       >
-        {/* Gentle settle on hover — the panel responds without being a link */}
-        <div className="flex w-full justify-center transition-transform duration-500 ease-out group-hover:-translate-y-1.5">
-          {children}
-        </div>
+        <div className="spotlight-layer" aria-hidden />
+        {accents}
+        {/* Gentle settle + tilt on hover; Parallax drifts the mock as you scroll */}
+        <Parallax className="w-full">
+          <div className="flex w-full justify-center transition-transform duration-500 ease-out group-hover:-translate-y-1.5 group-hover:rotate-[0.5deg]">
+            {children}
+          </div>
+        </Parallax>
       </Reveal>
     </div>
+  );
+}
+
+/* Cursor spotlight: writes the pointer position into CSS vars consumed by
+   the .spotlight-layer radial highlight. */
+function spotlightMove(e: React.MouseEvent<HTMLElement>) {
+  const r = e.currentTarget.getBoundingClientRect();
+  e.currentTarget.style.setProperty("--sx", `${e.clientX - r.left}px`);
+  e.currentTarget.style.setProperty("--sy", `${e.clientY - r.top}px`);
+}
+
+/* Scroll parallax: drifts children vertically as the element crosses the
+   viewport. Transform-only (composited) so it stays smooth. */
+function Parallax({ amount = 26, className, children }: {
+  amount?: number; className?: string; children: React.ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "end start"] });
+  const y = useTransform(scrollYProgress, [0, 1], [amount, -amount]);
+  return (
+    <motion.div ref={ref} style={{ y }} className={className}>
+      {children}
+    </motion.div>
+  );
+}
+
+/* Full-bleed keyword marquee — a moving strip of product vocabulary that
+   breaks the page into chapters between the hero and the showcases. */
+function KeywordMarquee() {
+  const words = [
+    "Concall Briefs", "Live Quotes", "Peer Medians", "XIRR",
+    "52-Week Radar", "Price Shockers", "Smart Alerts", "Ask AI",
+  ];
+  const row = (copy: string) =>
+    words.map((w) => (
+      <span key={`${copy}-${w}`} className="flex shrink-0 items-center gap-8">
+        <span className="font-display text-xl font-medium text-muted/50 transition-colors duration-300 hover:text-saffron sm:text-2xl">
+          {w}
+        </span>
+        <span className="h-1.5 w-1.5 rounded-full bg-saffron/40" aria-hidden />
+      </span>
+    ));
+
+  return (
+    <div className="relative -mx-4 overflow-hidden border-y border-border bg-raised/40 py-5 sm:-mx-6 md:-mx-10 lg:-mx-14">
+      <div className="animate-marquee flex w-max items-center gap-8" style={{ animationDuration: "45s" }}>
+        <div className="flex shrink-0 items-center gap-8">{row("a")}</div>
+        <div className="flex shrink-0 items-center gap-8" aria-hidden>{row("b")}</div>
+      </div>
+      {/* Edge fades so the strip dissolves at both ends */}
+      <div className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-ink to-transparent" aria-hidden />
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-ink to-transparent" aria-hidden />
+    </div>
+  );
+}
+
+/* Small floating pill used as a panel accent */
+function FloatChip({
+  className, dur = 5, delay = 0, children,
+}: {
+  className?: string; dur?: number; delay?: number; children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={clsx(
+        "float-chip pointer-events-none absolute hidden rounded-full border border-border/70 bg-surface px-3 py-1.5 font-mono text-[10px] shadow-sm sm:block",
+        className,
+      )}
+      style={{ "--float-dur": `${dur}s`, "--float-delay": `${delay}s` } as React.CSSProperties}
+      aria-hidden
+    >
+      {children}
+    </span>
   );
 }
 
@@ -76,15 +158,15 @@ function ConcallMock() {
         <span className="shrink-0 rounded-full bg-saffron/10 px-2.5 py-1 font-mono text-[10px] text-saffron">AI brief</span>
       </div>
       <ul className="mt-3.5 space-y-2.5 text-[13px] leading-relaxed">
-        <li className="flex gap-2">
+        <li className="brief-li flex gap-2">
           <span className="shrink-0 text-up">▲</span>
           <span className="text-fg">Guidance raised — deal TCV at an all-time high</span>
         </li>
-        <li className="flex gap-2">
+        <li className="brief-li flex gap-2">
           <span className="shrink-0 text-muted">—</span>
           <span className="text-muted">Margins up 40 bps QoQ on utilisation gains</span>
         </li>
-        <li className="flex gap-2">
+        <li className="brief-li flex gap-2">
           <span className="shrink-0 text-muted">—</span>
           <span className="text-muted">BFSI recovery: management sees early green shoots</span>
         </li>
@@ -106,7 +188,7 @@ function MarketMock() {
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">Nifty 50</p>
           <p className="nums mt-0.5 text-xl font-semibold text-fg">24,206.90</p>
         </div>
-        <span className="nums text-sm font-semibold text-up">+1.02%</span>
+        <span className="nums tick-pulse text-sm font-semibold text-up">+1.02%</span>
       </div>
       <svg viewBox="0 0 240 56" className="mt-3 h-14 w-full text-up" preserveAspectRatio="none" aria-hidden>
         <path
@@ -177,7 +259,7 @@ function PeerBarsBg() {
         <div key={b.t} className="flex items-center gap-3 font-mono text-[10px] text-muted">
           <span className="w-12 shrink-0">{b.t}</span>
           <div className="h-2 flex-1 overflow-hidden rounded-full bg-raised">
-            <div className={b.hl ? "h-full rounded-full bg-saffron/70" : "h-full rounded-full bg-border"} style={{ width: b.w }} />
+            <div className={clsx("h-full origin-left rounded-full transition-transform duration-500 ease-out group-hover:scale-x-[1.06]", b.hl ? "bg-saffron/70" : "bg-border")} style={{ width: b.w }} />
           </div>
           <span className="w-14 shrink-0 text-right">{b.v}</span>
         </div>
@@ -202,11 +284,11 @@ function AskAiBg() {
 function AlertsBg() {
   return (
     <div className="absolute inset-x-6 top-6 space-y-2 font-mono text-[10px]">
-      <div className="flex items-center justify-between rounded-xl border border-up/20 bg-up/5 px-3 py-2">
+      <div className="flex items-center justify-between rounded-xl border border-up/20 bg-up/5 px-3 py-2 transition-transform duration-300 group-hover:translate-x-1">
         <span className="text-fg">RELIANCE ≥ ₹3,000</span>
         <span className="text-up">Triggered ▲</span>
       </div>
-      <div className="flex items-center justify-between rounded-xl border border-border bg-raised/50 px-3 py-2">
+      <div className="flex items-center justify-between rounded-xl border border-border bg-raised/50 px-3 py-2 transition-transform duration-300 delay-75 group-hover:translate-x-1">
         <span className="text-muted">TCS ≤ ₹4,000</span>
         <span className="text-muted">Watching</span>
       </div>
@@ -223,7 +305,7 @@ function WatchlistBg() {
   return (
     <div className="absolute inset-x-6 top-5 divide-y divide-border/70 opacity-90">
       {rows.map((r) => (
-        <div key={r.t} className="flex items-center justify-between py-2 font-mono text-[10px]">
+        <div key={r.t} className="flex items-center justify-between py-2 font-mono text-[10px] transition-transform duration-300 group-hover:translate-x-0.5">
           <span className="text-muted">{r.t}</span>
           <span className="nums text-fg">
             {r.p} <span className={r.up ? "text-up" : "text-down"}>{r.c}</span>
@@ -231,45 +313,6 @@ function WatchlistBg() {
         </div>
       ))}
     </div>
-  );
-}
-
-/* ─── Count-up stat — animates once when scrolled into view ── */
-function CountUpStat({ value, suffix }: { value: number; suffix?: string }) {
-  const ref = useRef<HTMLParagraphElement>(null);
-  const [display, setDisplay] = useState(0);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry.isIntersecting) return;
-        obs.disconnect();
-        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-          setDisplay(value);
-          return;
-        }
-        const start = performance.now();
-        const duration = 1400;
-        const tick = (now: number) => {
-          const p = Math.min((now - start) / duration, 1);
-          const eased = 1 - Math.pow(1 - p, 4); // easeOutQuart — settles, no bounce
-          setDisplay(Math.round(value * eased));
-          if (p < 1) requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      },
-      { threshold: 0.5 },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [value]);
-
-  return (
-    <p ref={ref} className="nums font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">
-      {display.toLocaleString("en-IN")}{suffix}
-    </p>
   );
 }
 
@@ -285,7 +328,7 @@ export default function Home() {
         <div className="relative z-10 mx-auto max-w-3xl text-center">
           {/* Per-word blur-in stagger (.hero-word); not a .hero-el so the words
               own their entrance instead of double-fading with the wrapper */}
-          <h1 className="font-display text-[3rem] font-medium leading-[1.02] tracking-[-0.03em] sm:text-7xl lg:text-[5.25rem]">
+          <h1 className="font-display text-[clamp(3rem,7.5vw,5.25rem)] font-medium leading-[1.04] tracking-[-0.02em]">
             <span className="text-muted/70">
               <span className="hero-word" style={{ "--wi": 0 } as React.CSSProperties}>Stop</span>{" "}
               <span className="hero-word" style={{ "--wi": 1 } as React.CSSProperties}>guessing.</span>
@@ -324,7 +367,7 @@ export default function Home() {
               <Link
                 key={t}
                 href={`/stock/${t}.NS`}
-                className="rounded-full border border-border/60 bg-surface/70 px-3 py-1 text-xs font-semibold text-muted backdrop-blur-sm transition-all duration-200 hover:border-saffron/50 hover:bg-saffron/8 hover:text-saffron hover:-translate-y-0.5 hover:shadow-sm"
+                className="rounded-full border border-border/60 bg-surface/70 px-3 py-1 text-xs font-semibold text-muted backdrop-blur-sm transition-all duration-200 hover:scale-105 hover:border-saffron/50 hover:bg-saffron/8 hover:text-saffron hover:-translate-y-0.5 hover:shadow-sm"
               >
                 {t}
               </Link>
@@ -334,8 +377,55 @@ export default function Home() {
         </AuroraBackground>
       </section>
 
+      {/* ── Keyword marquee — moving chapter break ── */}
+      <KeywordMarquee />
+
       {/* ── Product showcases — one product per band, alternating sides ── */}
       <section className="space-y-20 sm:space-y-24">
+        <Showcase
+          eyebrow="Live Market Dashboard"
+          title="The whole market, one glance."
+          description="Real-time Nifty 50, Sensex and sector indices with market movers, 52-week highs and lows, IPOs and price shockers — the terminal view, without the terminal fee."
+          link="/market"
+          linkLabel="Open the dashboard"
+          panelClass="bg-[#e4ecf4] dark:bg-surface"
+          accents={
+            <>
+              <FloatChip className="right-8 top-8" dur={5.5}>
+                <span className="text-up">▲ +1.02% today</span>
+              </FloatChip>
+              <FloatChip className="bottom-8 left-8" dur={6.5} delay={1.2}>
+                <span className="text-muted">52W HIGH · </span>
+                <span className="text-fg">SENSEX</span>
+              </FloatChip>
+            </>
+          }
+        >
+          <MarketMock />
+        </Showcase>
+
+        <Showcase
+          flip
+          eyebrow="Portfolio & XIRR"
+          title="Know what you actually earn."
+          description="Log your holdings once. Aegis computes XIRR the way institutions do, benchmarks you against the Nifty, and shows exactly where your gains and losses come from."
+          link="/portfolio"
+          linkLabel="Track your portfolio"
+          panelClass="bg-[#e7ede5] dark:bg-surface"
+          accents={
+            <>
+              <FloatChip className="left-8 top-8" dur={6} delay={0.6}>
+                <span className="text-up">+7.2% alpha</span>
+              </FloatChip>
+              <FloatChip className="bottom-8 right-8" dur={5} delay={1.8}>
+                <span className="text-muted">vs NIFTY 50</span>
+              </FloatChip>
+            </>
+          }
+        >
+          <PortfolioMock />
+        </Showcase>
+
         <Showcase
           eyebrow="AI Concall Analysis"
           title="Earnings calls, read for you."
@@ -343,36 +433,24 @@ export default function Home() {
           link="/concall"
           linkLabel="Read a brief"
           panelClass="bg-[#f2ede3] dark:bg-surface"
+          accents={
+            <>
+              <FloatChip className="right-8 top-8" dur={5.8} delay={0.4}>
+                <span className="text-up">▲ Guidance raised</span>
+              </FloatChip>
+              <FloatChip className="bottom-8 left-8" dur={6.8} delay={1.5}>
+                <span className="text-saffron">AI</span>
+                <span className="text-muted"> · 2-min read</span>
+              </FloatChip>
+            </>
+          }
         >
           <ConcallMock />
         </Showcase>
-
-        <Showcase
-          flip
-          eyebrow="Live Market Dashboard"
-          title="The whole market, one glance."
-          description="Real-time Nifty 50, Sensex and sector indices with market movers, 52-week highs and lows, IPOs and price shockers — the terminal view, without the terminal fee."
-          link="/market"
-          linkLabel="Open the dashboard"
-          panelClass="bg-[#e4ecf4] dark:bg-surface"
-        >
-          <MarketMock />
-        </Showcase>
-
-        <Showcase
-          eyebrow="Portfolio & XIRR"
-          title="Know what you actually earn."
-          description="Log your holdings once. Aegis computes XIRR the way institutions do, benchmarks you against the Nifty, and shows exactly where your gains and losses come from."
-          link="/portfolio"
-          linkLabel="Track your portfolio"
-          panelClass="bg-[#e7ede5] dark:bg-surface"
-        >
-          <PortfolioMock />
-        </Showcase>
       </section>
 
-      {/* ── Secondary tools ── */}
-      <section className="space-y-10">
+      {/* ── Secondary tools — full-bleed contrasting band ── */}
+      <section className="-mx-4 space-y-10 border-y border-border bg-raised/40 px-4 py-20 sm:-mx-6 sm:px-6 sm:py-24 md:-mx-10 md:px-10 lg:-mx-14 lg:px-14">
         <Reveal>
           <SectionHeading
             eyebrow="Also included"
@@ -471,22 +549,26 @@ export default function Home() {
       </section>
 
       {/* ── Stats band ── */}
-      <section className="grid gap-10 border-y border-border py-12 sm:grid-cols-3 sm:gap-6 sm:py-14">
-        {[
-          { value: 5000, suffix: "+", label: "NSE & BSE stocks" },
-          { value: "₹0",  label: "Free, forever" },
-          { value: "Live", label: "NSE · BSE quotes" },
-        ].map((s, i) => (
-          <Reveal key={s.label} delay={i * 120} className="text-center">
-            {typeof s.value === "number" ? (
-              <CountUpStat value={s.value} suffix={s.suffix} />
-            ) : (
-              <p className="nums font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">{s.value}</p>
-            )}
-            <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">{s.label}</p>
-          </Reveal>
-        ))}
-      </section>
+      <Stagger
+        step={120}
+        className="grid gap-10 border-y border-border py-12 sm:grid-cols-3 sm:gap-6 sm:py-14"
+        itemClassName="text-center"
+      >
+        <div>
+          <p className="font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">
+            <MotionNumber value={5000} suffix="+" />
+          </p>
+          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">NSE &amp; BSE stocks</p>
+        </div>
+        <div>
+          <p className="nums font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">₹0</p>
+          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">Free, forever</p>
+        </div>
+        <div>
+          <p className="font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">Live</p>
+          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">NSE · BSE quotes</p>
+        </div>
+      </Stagger>
 
       {/* ── How It Works — ledger rows: the steps are a real sequence ── */}
       <section className="space-y-10">
@@ -547,23 +629,52 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Closing CTA — tinted band, black pill ── */}
+      {/* ── Closing CTA — inverted band: near-black in light, cream in dark ── */}
       <Reveal>
-      <section className="rounded-3xl bg-[#f2ede3] px-6 py-16 text-center dark:border dark:border-border dark:bg-surface sm:py-20">
-        <h2 className="font-display text-3xl font-medium tracking-tight text-fg sm:text-4xl">
-          Ready when you are.
-        </h2>
-        <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed text-muted">
-          Research like the institutions do — without paying like one.
-        </p>
-        <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-          <InteractiveHoverButton href="/register" className="bg-transparent">
-            Get started — it&apos;s free
-          </InteractiveHoverButton>
-          <Link href="/market" className="group text-sm font-medium text-fg">
-            <span className="link-sweep">or browse the market</span>
-            <span className="inline-block transition-transform duration-300 group-hover:translate-x-1"> →</span>
-          </Link>
+      <section className="relative overflow-hidden rounded-[2.5rem] bg-fg px-6 py-20 text-center text-ink sm:py-28">
+        {/* Inverted dot grid + saffron crown glow */}
+        <div className="panel-dots-invert absolute inset-0 opacity-60" aria-hidden />
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 h-56"
+          style={{ background: "radial-gradient(ellipse 55% 100% at 50% 0%, rgb(var(--color-saffron)/0.22), transparent 70%)" }}
+          aria-hidden
+        />
+        {/* Ghost wordmark */}
+        <span
+          className="pointer-events-none absolute inset-x-0 -bottom-4 select-none text-center font-display text-[6rem] font-bold leading-none tracking-tighter text-ink/5 sm:-bottom-10 sm:text-[13rem]"
+          aria-hidden
+        >
+          AEGIS
+        </span>
+
+        <div className="relative">
+          <p className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-saffron">Get started</p>
+          <h2 className="mt-4 font-display text-[clamp(2.25rem,5.5vw,3.75rem)] font-medium leading-[1.08] tracking-[-0.015em]">
+            Ready when you are.
+          </h2>
+          <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-ink/60">
+            Research like the institutions do — without paying like one.
+          </p>
+          <div className="mt-9 flex flex-wrap items-center justify-center gap-5">
+            <Link
+              href="/register"
+              className="btn-sheen rounded-full bg-saffron px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-saffron/25 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-saffron/40 active:scale-[0.98] active:translate-y-0"
+            >
+              Get started — it&apos;s free
+            </Link>
+            <Link href="/market" className="group text-sm font-medium text-ink/80 transition-colors hover:text-ink">
+              <span className="link-sweep">or browse the market</span>
+              <span className="inline-block transition-transform duration-300 group-hover:translate-x-1"> →</span>
+            </Link>
+          </div>
+          {/* Mono proofline */}
+          <div className="mt-11 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ink/40">
+            <span>5,000+ stocks</span>
+            <span className="h-3 w-px bg-ink/20" aria-hidden />
+            <span>NSE · BSE live</span>
+            <span className="h-3 w-px bg-ink/20" aria-hidden />
+            <span>₹0 forever</span>
+          </div>
         </div>
       </section>
       </Reveal>

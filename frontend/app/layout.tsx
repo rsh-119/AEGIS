@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
-import { Inter, IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
+import { Inter, IBM_Plex_Mono, Fraunces } from "next/font/google";
 import "./globals.css";
 import { Nav } from "@/components/Nav";
 import { MarketBar } from "@/components/MarketBar";
 import { Footer } from "@/components/Footer";
 import { ScrollToTop } from "@/components/ScrollToTop";
+import { ScrollProgress } from "@/components/motion";
 import { SWRCacheProvider } from "@/lib/swr-config";
 import { AuthProvider } from "@/lib/auth";
 import { ToastProvider } from "@/components/ui/toast";
@@ -23,12 +24,13 @@ const ibmMono = IBM_Plex_Mono({
   display: "swap",
   weight: ["400", "500"],
 });
-// Display face for headlines/wordmarks — the techy grotesque voice
-const spaceGrotesk = Space_Grotesk({
+// Display face for headlines/wordmarks — high-contrast serif against the
+// Inter body for the premium/editorial fintech contrast
+const fraunces = Fraunces({
   subsets: ["latin"],
   variable: "--font-display",
   display: "swap",
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
@@ -38,7 +40,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${ibmMono.variable} ${spaceGrotesk.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${ibmMono.variable} ${fraunces.variable}`}>
       <body suppressHydrationWarning>
         {/*
           Anti-flash: runs before body renders, sets .dark on <html> from
@@ -51,6 +53,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             __html: `try{var t=localStorage.getItem('aegis-theme')||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.toggle('dark',t==='dark');}catch(e){}`,
           }}
         />
+        <ScrollProgress />
         <AuthProvider>
           <SWRCacheProvider>
             <ToastProvider>

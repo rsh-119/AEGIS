@@ -5,7 +5,7 @@ import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Reveal } from "@/components/ui/reveal";
+import { Reveal } from "@/components/motion";
 import { useOutsideClick } from "@/hooks/use-outside-click";
 
 /* MagicUI "Bento Grid" + Aceternity "Expandable Card", merged and ported to
@@ -89,7 +89,7 @@ export function BentoGrid({ items, className }: { items: BentoItem[]; className?
                 <div className="min-w-0">
                   <motion.h3
                     layoutId={`bento-title-${active.name}-${id}`}
-                    className="text-lg font-semibold text-fg"
+                    className="font-display text-xl font-semibold text-fg"
                   >
                     {active.name}
                   </motion.h3>
@@ -129,6 +129,11 @@ export function BentoGrid({ items, className }: { items: BentoItem[]; className?
             <motion.div
               layoutId={`bento-card-${item.name}-${id}`}
               onClick={() => setActive(item)}
+              onMouseMove={(e) => {
+                const r = e.currentTarget.getBoundingClientRect();
+                e.currentTarget.style.setProperty("--sx", `${e.clientX - r.left}px`);
+                e.currentTarget.style.setProperty("--sy", `${e.clientY - r.top}px`);
+              }}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActive(item); } }}
               role="button"
               tabIndex={0}
@@ -145,13 +150,14 @@ export function BentoGrid({ items, className }: { items: BentoItem[]; className?
               </motion.div>
               {/* Legibility fade over the background's lower half */}
               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface via-surface/60 to-transparent" aria-hidden />
+              <div className="spotlight-layer" aria-hidden />
 
               {/* Content — lifts on hover to make room for the CTA hint */}
               <div className="pointer-events-none relative z-10 flex flex-col gap-1 p-6 transition-all duration-300 group-hover:-translate-y-8">
-                <item.Icon className="h-10 w-10 origin-left text-fg transition-all duration-300 ease-in-out group-hover:scale-75" />
+                <item.Icon className="h-10 w-10 origin-left text-fg transition-all duration-300 ease-in-out group-hover:-rotate-6 group-hover:scale-75 group-hover:text-saffron" />
                 <motion.h3
                   layoutId={`bento-title-${item.name}-${id}`}
-                  className="mt-2 text-lg font-semibold text-fg transition-colors duration-300 group-hover:text-saffron"
+                  className="mt-2 font-display text-xl font-semibold text-fg transition-colors duration-300 group-hover:text-saffron"
                 >
                   {item.name}
                 </motion.h3>

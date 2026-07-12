@@ -3,17 +3,22 @@
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 
-/** Scroll-triggered reveal: children fade in and rise ~24px the first time
- * they enter the viewport. Pure CSS transition (see `.reveal` in globals.css);
- * this component only toggles the visible class. `delay` staggers siblings. */
+/** Scroll-triggered reveal: children fade in and rise ~26px the first time
+ * they enter the viewport. Pure CSS transition (see `.reveal` in globals.css —
+ * opacity + transform only, both compositable, so it never repaints); this
+ * component only toggles the visible class. `delay` staggers siblings.
+ * The `.reveal-visible` class also drives the in-mock micro-animations
+ * (sparkline draw, allocation growth, concall bullet stagger). */
 export function Reveal({
   children,
   delay = 0,
   className,
+  onMouseMove,
 }: {
   children: React.ReactNode;
   delay?: number;
   className?: string;
+  onMouseMove?: React.MouseEventHandler<HTMLDivElement>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -41,6 +46,7 @@ export function Reveal({
       ref={ref}
       style={delay ? { transitionDelay: `${delay}ms` } : undefined}
       className={clsx("reveal", visible && "reveal-visible", className)}
+      onMouseMove={onMouseMove}
     >
       {children}
     </div>
