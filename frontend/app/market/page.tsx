@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import { fetcher, inr, inrCompact, pct, signCls, num } from "@/lib/api";
 import { PriceChart } from "@/components/PriceChart";
-import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Zap } from "lucide-react";
+import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Zap, Activity, Rocket, Flame, ChevronRight } from "lucide-react";
 import clsx from "clsx";
 import { ChartCard } from "@/components/ui/animated-card-chart";
 import { Card } from "@/components/ui/card";
@@ -20,6 +20,7 @@ type SectorStock = {
   market_cap?: number; pe_ratio?: number; roe?: number;
   revenue_growth?: number; net_margin?: number; website?: string | null;
 };
+type OverviewData = { gainers: SectorStock[]; losers: SectorStock[]; fetched_at?: number };
 
 /* ─── Period selector ────────────────────────────── */
 const PERIODS = [
@@ -251,6 +252,153 @@ function FiftyTwoWeekSection() {
   );
 }
 
+/* ─── Market Movers section ──────────────────────── */
+function MarketMoversSection() {
+  const { data, isLoading } = useSWR<OverviewData>("/api/market/overview", fetcher, {
+    revalidateOnFocus: false,
+    refreshInterval: 30_000,
+  });
+  const gainers = data?.gainers ?? [];
+  const losers  = data?.losers  ?? [];
+  const ageMin = data?.fetched_at
+    ? Math.round((Date.now() / 1000 - data.fetched_at) / 60)
+    : null;
+
+  return (
+    <section id="movers" className="space-y-4">
+      <div>
+        <h2 className="font-semibold text-fg">Market Movers</h2>
+        <p className="text-xs text-muted">
+          Nifty 50{ageMin != null ? ` · as of ${ageMin} min ago` : ""}
+        </p>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-border bg-raised/40 px-4 py-3">
+            <TrendingUp className="h-4 w-4 text-up" />
+            <h3 className="text-sm font-semibold">Top Gainers</h3>
+            <Badge className="ml-auto bg-up/10 text-up text-[10px]">{gainers.length}</Badge>
+          </div>
+          {isLoading ? (
+            <RowSkeleton />
+          ) : gainers.length === 0 ? (
+            <p className="p-8 text-center text-sm text-muted">No data</p>
+          ) : (
+            <div className="divide-y divide-border overflow-y-auto" style={{ maxHeight: "420px" }}>
+              {gainers.slice(0, 10).map((s, i) => <StockRow key={s.ticker} stock={s} rank={i + 1} />)}
+            </div>
+          )}
+        </Card>
+        <Card className="overflow-hidden">
+          <div className="flex items-center gap-2 border-b border-border bg-raised/40 px-4 py-3">
+            <TrendingDown className="h-4 w-4 text-down" />
+            <h3 className="text-sm font-semibold">Top Losers</h3>
+            <Badge className="ml-auto bg-down/10 text-down text-[10px]">{losers.length}</Badge>
+          </div>
+          {isLoading ? (
+            <RowSkeleton />
+          ) : losers.length === 0 ? (
+            <p className="p-8 text-center text-sm text-muted">No data</p>
+          ) : (
+            <div className="divide-y divide-border overflow-y-auto" style={{ maxHeight: "420px" }}>
+              {losers.slice(0, 10).map((s, i) => <StockRow key={s.ticker} stock={s} rank={i + 1} />)}
+            </div>
+          )}
+        </Card>
+      </div>
+    </section>
+  );
+}
+
+/* ─── Quick links: IPO Watch + Commodities (relocated from homepage) ── */
+function ViewAllLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link href={href} className="mt-2 flex items-center gap-0.5 text-[10px] text-saffron hover:underline">
+      {label} <ChevronRight className="h-3 w-3" />
+    </Link>
+  );
+}
+
+type IpoPreview = { symbol: string; name: string; status: string; document_url?: string | null };
+
+function IpoWidget() {
+  const { data, isLoading } = useSWR<IpoPreview[]>("/api/market/ipo", fetcher, { revalidateOnFocus: false });
+  const items = (data ?? []).filter((i) => i.status !== "listed").slice(0, 4);
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-border bg-raised/40 px-4 py-3">
+        <Rocket className="h-4 w-4 text-saffron" />
+        <h3 className="text-sm font-semibold">IPO Watch</h3>
+      </div>
+      <div className="p-4">
+        {isLoading ? (
+          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
+        ) : items.length === 0 ? (
+          <p className="text-xs text-muted">No upcoming or open IPOs right now.</p>
+        ) : (
+          <ul className="space-y-2">
+            {items.map((ipo) => (
+              <li key={ipo.symbol}>
+                <Link href="/ipo" className="flex items-center justify-between gap-2 rounded-lg text-xs transition-colors hover:bg-raised/60 -mx-2 px-2 py-1">
+                  <span className="truncate font-medium text-fg">{ipo.name.trim()}</span>
+                  <span className="shrink-0 capitalize text-muted">{ipo.status}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        <ViewAllLink href="/ipo" label="View all IPOs" />
+      </div>
+    </Card>
+  );
+}
+
+type CommodityPreview = { product: string; last_traded_price: string; per_change: number };
+
+function CommoditiesWidget() {
+  const { data, isLoading } = useSWR<CommodityPreview[]>("/api/market/commodities", fetcher, { revalidateOnFocus: false });
+  const items = useMemo(() => {
+    const byProduct = new Map<string, CommodityPreview>();
+    for (const c of data ?? []) if (!byProduct.has(c.product)) byProduct.set(c.product, c);
+    return [...byProduct.values()].slice(0, 4);
+  }, [data]);
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-border bg-raised/40 px-4 py-3">
+        <Flame className="h-4 w-4 text-saffron" />
+        <h3 className="text-sm font-semibold">Commodities</h3>
+      </div>
+      <div className="p-4">
+        {isLoading ? (
+          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
+        ) : items.length === 0 ? (
+          <p className="text-xs text-muted">Commodities data unavailable.</p>
+        ) : (
+          <ul className="space-y-2">
+            {items.map((c) => {
+              const up = c.per_change >= 0;
+              return (
+                <li key={c.product}>
+                  <Link href="/commodities" className="flex items-center justify-between gap-2 rounded-lg text-xs transition-colors hover:bg-raised/60 -mx-2 px-2 py-1">
+                    <span className="truncate font-medium text-fg">{c.product}</span>
+                    <span className="nums shrink-0">
+                      ₹{c.last_traded_price}{" "}
+                      <span className={up ? "text-up" : "text-down"}>{up ? "+" : ""}{c.per_change?.toFixed(1)}%</span>
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <ViewAllLink href="/commodities" label="View all" />
+      </div>
+    </Card>
+  );
+}
+
 /* ─── Price Shockers section ─────────────────────── */
 function PriceShockersSection() {
   const { data, isLoading } = useSWR<SectorStock[]>("/api/market/price-shockers", fetcher, { revalidateOnFocus: false });
@@ -312,6 +460,9 @@ export default function MarketPage() {
         </div>
       </section>
 
+      {/* ── Market Movers ── */}
+      <MarketMoversSection />
+
       {/* ── Sector grid ── */}
       <section className="space-y-4">
         <div>
@@ -326,6 +477,15 @@ export default function MarketPage() {
 
       {/* ── Price Shockers ── */}
       <PriceShockersSection />
+
+      {/* ── IPO Watch + Commodities ── */}
+      <section className="space-y-4">
+        <h2 className="font-semibold text-fg">More Markets</h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <IpoWidget />
+          <CommoditiesWidget />
+        </div>
+      </section>
 
     </div>
   );

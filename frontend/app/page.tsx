@@ -1,867 +1,315 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
-import useSWR from "swr";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import clsx from "clsx";
+import { SearchBox } from "@/components/SearchBox";
+import { Reveal } from "@/components/ui/reveal";
+import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
+import { AuroraBackground } from "@/components/ui/aurora-background";
+import { BentoGrid } from "@/components/ui/bento-grid";
+import { BarChart3, Activity, Bell, Bookmark, ChevronRight } from "lucide-react";
 
-/* ─── Lazy-load hook: fires when element enters viewport OR after 2s max ── */
-function useLazy(rootMargin = "400px") {
-  const ref  = useRef<HTMLDivElement>(null);
-  const [ready, setReady] = useState(false);
+/* ─── Section heading — mono eyebrow + calm display title ── */
+function SectionHeading({ eyebrow, title, sub }: { eyebrow: string; title: string; sub?: string }) {
+  return (
+    <div className="mx-auto max-w-2xl text-center">
+      <p className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-saffron">{eyebrow}</p>
+      <h2 className="mt-3 font-display text-3xl font-medium tracking-tight text-fg sm:text-[2.5rem] sm:leading-tight">
+        {title}
+      </h2>
+      {sub && <p className="mt-3 text-[15px] leading-relaxed text-muted">{sub}</p>}
+    </div>
+  );
+}
+
+/* ─── Product showcase — Wealthsimple-style alternating band:
+       copy on one side, a soft-tinted panel holding a product mock on the other ── */
+function Showcase({
+  eyebrow, title, description, link, linkLabel, panelClass, flip, children,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  link: string;
+  linkLabel: string;
+  panelClass: string;
+  flip?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid items-center gap-8 lg:grid-cols-2 lg:gap-14">
+      <Reveal className={clsx("max-w-lg", flip && "lg:order-2 lg:justify-self-end")}>
+        <p className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-saffron">{eyebrow}</p>
+        <h3 className="mt-3 font-display text-3xl font-medium tracking-tight text-fg sm:text-4xl">{title}</h3>
+        <p className="mt-4 text-[15px] leading-relaxed text-muted">{description}</p>
+        <InteractiveHoverButton href={link} className="mt-7">
+          {linkLabel}
+        </InteractiveHoverButton>
+      </Reveal>
+      <Reveal
+        delay={140}
+        className={clsx(
+          "group flex items-center justify-center rounded-3xl border border-border/50 px-6 py-12 sm:py-16",
+          panelClass,
+          flip && "lg:order-1",
+        )}
+      >
+        {/* Gentle settle on hover — the panel responds without being a link */}
+        <div className="flex w-full justify-center transition-transform duration-500 ease-out group-hover:-translate-y-1.5">
+          {children}
+        </div>
+      </Reveal>
+    </div>
+  );
+}
+
+/* ─── Product mocks — static, token-driven ── */
+function ConcallMock() {
+  return (
+    <div className="w-full max-w-sm rounded-2xl border border-border bg-surface p-5 text-left shadow-lg shadow-black/5">
+      <div className="flex items-start justify-between gap-3 border-b border-border pb-3.5">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">Q3 FY26 · Earnings call</p>
+          <p className="mt-1 text-sm font-semibold text-fg">Tata Consultancy Services</p>
+        </div>
+        <span className="shrink-0 rounded-full bg-saffron/10 px-2.5 py-1 font-mono text-[10px] text-saffron">AI brief</span>
+      </div>
+      <ul className="mt-3.5 space-y-2.5 text-[13px] leading-relaxed">
+        <li className="flex gap-2">
+          <span className="shrink-0 text-up">▲</span>
+          <span className="text-fg">Guidance raised — deal TCV at an all-time high</span>
+        </li>
+        <li className="flex gap-2">
+          <span className="shrink-0 text-muted">—</span>
+          <span className="text-muted">Margins up 40 bps QoQ on utilisation gains</span>
+        </li>
+        <li className="flex gap-2">
+          <span className="shrink-0 text-muted">—</span>
+          <span className="text-muted">BFSI recovery: management sees early green shoots</span>
+        </li>
+      </ul>
+    </div>
+  );
+}
+
+function MarketMock() {
+  const rows = [
+    { t: "RELIANCE", p: "2,981.40", c: "+1.24%", up: true },
+    { t: "HDFCBANK", p: "1,714.85", c: "+0.86%", up: true },
+    { t: "TCS",      p: "4,102.10", c: "−0.38%", up: false },
+  ];
+  return (
+    <div className="w-full max-w-sm rounded-2xl border border-border bg-surface p-5 text-left shadow-lg shadow-black/5">
+      <div className="flex items-baseline justify-between">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">Nifty 50</p>
+          <p className="nums mt-0.5 text-xl font-semibold text-fg">24,206.90</p>
+        </div>
+        <span className="nums text-sm font-semibold text-up">+1.02%</span>
+      </div>
+      <svg viewBox="0 0 240 56" className="mt-3 h-14 w-full text-up" preserveAspectRatio="none" aria-hidden>
+        <path
+          className="spark-fill"
+          d="M0 46 L24 42 L48 45 L72 34 L96 38 L120 26 L144 30 L168 18 L192 22 L216 12 L240 14 L240 56 L0 56 Z"
+          fill="currentColor"
+        />
+        <path
+          className="spark-path"
+          pathLength={1}
+          d="M0 46 L24 42 L48 45 L72 34 L96 38 L120 26 L144 30 L168 18 L192 22 L216 12 L240 14"
+          fill="none" stroke="currentColor" strokeWidth="1.5"
+        />
+      </svg>
+      <div className="mt-3 divide-y divide-border border-t border-border">
+        {rows.map((r) => (
+          <div key={r.t} className="flex items-center justify-between py-2 text-[13px]">
+            <span className="font-mono text-muted">{r.t}</span>
+            <span className="nums flex items-center gap-3 text-fg">
+              ₹{r.p}
+              <span className={clsx("nums w-14 text-right font-semibold", r.up ? "text-up" : "text-down")}>{r.c}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PortfolioMock() {
+  return (
+    <div className="w-full max-w-sm rounded-2xl border border-border bg-surface p-5 text-left shadow-lg shadow-black/5">
+      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">Your portfolio</p>
+      <div className="mt-1 flex items-baseline justify-between">
+        <p className="nums text-xl font-semibold text-fg">₹12,40,318</p>
+        <span className="rounded-md bg-up/10 px-2 py-1 font-mono text-[10.5px] text-up">XIRR +18.4%</span>
+      </div>
+      {/* Allocation bar */}
+      <div className="mt-4 flex h-2.5 w-full overflow-hidden rounded-full">
+        <span className="alloc-seg w-[38%] bg-saffron" />
+        <span className="alloc-seg w-[27%] bg-blue-400" />
+        <span className="alloc-seg w-[21%] bg-up" />
+        <span className="alloc-seg w-[14%] bg-border" />
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 font-mono text-[10.5px] text-muted">
+        <span><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-saffron" />Financials 38%</span>
+        <span><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-blue-400" />IT 27%</span>
+        <span><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-up" />Energy 21%</span>
+        <span><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-border" />Other 14%</span>
+      </div>
+      <p className="mt-4 border-t border-border pt-3 font-mono text-[10.5px] text-muted">
+        vs Nifty 50 <span className="text-up">+7.2% alpha</span> · 1Y
+      </p>
+    </div>
+  );
+}
+
+/* ─── Bento card backgrounds — quiet decorative readouts, top-anchored ── */
+function PeerBarsBg() {
+  const bars = [
+    { t: "TCS",   w: "72%", hl: true,  v: "ROE 28%" },
+    { t: "INFY",  w: "58%", hl: false, v: "ROE 22%" },
+    { t: "WIPRO", w: "41%", hl: false, v: "ROE 16%" },
+  ];
+  return (
+    <div className="absolute inset-x-6 top-6 space-y-3 opacity-80">
+      {bars.map((b) => (
+        <div key={b.t} className="flex items-center gap-3 font-mono text-[10px] text-muted">
+          <span className="w-12 shrink-0">{b.t}</span>
+          <div className="h-2 flex-1 overflow-hidden rounded-full bg-raised">
+            <div className={b.hl ? "h-full rounded-full bg-saffron/70" : "h-full rounded-full bg-border"} style={{ width: b.w }} />
+          </div>
+          <span className="w-14 shrink-0 text-right">{b.v}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AskAiBg() {
+  return (
+    <div className="absolute inset-x-6 top-6 space-y-2 text-[11px] leading-snug">
+      <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm bg-saffron/10 px-3 py-1.5 text-fg">
+        How is LTCG taxed on equity?
+      </div>
+      <div className="w-fit max-w-[90%] rounded-2xl rounded-bl-sm border border-border bg-raised/60 px-3 py-1.5 text-muted">
+        Gains above ₹1.25L a year are taxed at 12.5% — here&apos;s how it applies…
+      </div>
+    </div>
+  );
+}
+
+function AlertsBg() {
+  return (
+    <div className="absolute inset-x-6 top-6 space-y-2 font-mono text-[10px]">
+      <div className="flex items-center justify-between rounded-xl border border-up/20 bg-up/5 px-3 py-2">
+        <span className="text-fg">RELIANCE ≥ ₹3,000</span>
+        <span className="text-up">Triggered ▲</span>
+      </div>
+      <div className="flex items-center justify-between rounded-xl border border-border bg-raised/50 px-3 py-2">
+        <span className="text-muted">TCS ≤ ₹4,000</span>
+        <span className="text-muted">Watching</span>
+      </div>
+    </div>
+  );
+}
+
+function WatchlistBg() {
+  const rows = [
+    { t: "ITC",        p: "₹512.40",   c: "+0.82%", up: true },
+    { t: "HDFCBANK",   p: "₹1,714.85", c: "+0.86%", up: true },
+    { t: "TATASTEEL",  p: "₹171.20",   c: "−0.64%", up: false },
+  ];
+  return (
+    <div className="absolute inset-x-6 top-5 divide-y divide-border/70 opacity-90">
+      {rows.map((r) => (
+        <div key={r.t} className="flex items-center justify-between py-2 font-mono text-[10px]">
+          <span className="text-muted">{r.t}</span>
+          <span className="nums text-fg">
+            {r.p} <span className={r.up ? "text-up" : "text-down"}>{r.c}</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Count-up stat — animates once when scrolled into view ── */
+function CountUpStat({ value, suffix }: { value: number; suffix?: string }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [display, setDisplay] = useState(0);
+
   useEffect(() => {
-    if (ready) return;
-    const activate = () => setReady(true);
-    // Hard cap: always load within 2s so MF/deals aren't stuck forever
-    const timer = setTimeout(activate, 2000);
     const el = ref.current;
-    if (!el) return () => clearTimeout(timer);
+    if (!el) return;
     const obs = new IntersectionObserver(
-      ([e]) => { if (e.isIntersecting) { activate(); obs.disconnect(); } },
-      { rootMargin },
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        obs.disconnect();
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          setDisplay(value);
+          return;
+        }
+        const start = performance.now();
+        const duration = 1400;
+        const tick = (now: number) => {
+          const p = Math.min((now - start) / duration, 1);
+          const eased = 1 - Math.pow(1 - p, 4); // easeOutQuart — settles, no bounce
+          setDisplay(Math.round(value * eased));
+          if (p < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      },
+      { threshold: 0.5 },
     );
     obs.observe(el);
-    return () => { clearTimeout(timer); obs.disconnect(); };
-  }, [ready, rootMargin]);
-  return { ref, ready };
-}
-import Link from "next/link";
-import { fetcher, inr, inrCompact, pct, signCls } from "@/lib/api";
-import { SearchBox } from "@/components/SearchBox";
-import { useWatchlist } from "@/lib/useWatchlist";
-import {
-  TrendingUp, TrendingDown, Zap, BarChart3,
-  Sparkles, Activity, ArrowUpRight, ArrowDownRight,
-  ChevronRight, Bookmark, ArrowUpDown, Rocket, Flame,
-} from "lucide-react";
-import clsx from "clsx";
-import { Card } from "@/components/ui/card";
-import { StockLogo } from "@/components/StockLogo";
-import { HoverEffect, HoverEffectGroup } from "@/components/ui/card-hover-effect";
-
-/* ─── Types ──────────────────────────────────────── */
-type Stock = {
-  ticker: string;
-  name: string;
-  price: number;
-  change_pct: number | null;
-  market_cap: number | null;
-  pe_ratio: number | null;
-  volume: number | null;
-  avg_volume: number | null;
-  cap_type: "large" | "mid" | "small";
-  website?: string | null;
-};
-type OverviewData = {
-  gainers: Stock[];
-  losers: Stock[];
-  high_volume: Stock[];
-  fetched_at?: number;
-};
-
-/* ─── Hero background — light/dark variants ───────── */
-function AuroraBg() {
-  const VP = { x: 720, y: -60 };
-  const W  = 1440;
-  const H  = 220;
-  const spokeXs = [0, 120, 240, 360, 480, 580, 660, 720, 780, 860, 960, 1080, 1200, 1320, 1440];
-  const hLines  = [60, 100, 130, 155, 175, 190, 205, 218];
+    return () => obs.disconnect();
+  }, [value]);
 
   return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-
-      {/* ── LIGHT MODE: single soft glow, no colour wash ── */}
-      <div className="dark:hidden">
-        {/* Single top-centre radial — very faint blue */}
-        <div className="absolute inset-x-0 top-0" style={{
-          height: "60%",
-          background: "radial-gradient(ellipse 70% 55% at 50% -5%, rgba(0,82,255,0.05) 0%, transparent 100%)",
-        }} />
-        {/* Subtle blue warmth at top-right corner only */}
-        <div className="absolute" style={{
-          top: "-20%", right: "-10%", width: "500px", height: "500px", borderRadius: "50%",
-          background: "radial-gradient(circle at center, rgba(0,82,255,0.06) 0%, transparent 70%)",
-          filter: "blur(80px)",
-        }} />
-      </div>
-
-      {/* ── DARK MODE: monochrome top glow only ── */}
-      <div className="hidden dark:block">
-        {/* Single top-centre radial — very faint white */}
-        <div className="absolute inset-x-0 top-0" style={{
-          height: "60%",
-          background: "radial-gradient(ellipse 70% 55% at 50% -5%, rgba(255,255,255,0.055) 0%, transparent 100%)",
-        }} />
-        {/* Subtle saffron warmth at top-right corner only */}
-        <div className="absolute" style={{
-          top: "-20%", right: "-10%", width: "500px", height: "500px", borderRadius: "50%",
-          background: "radial-gradient(circle at center, rgba(246,171,40,0.07) 0%, transparent 70%)",
-          filter: "blur(80px)",
-        }} />
-      </div>
-
-      {/* ── Grain noise overlay (both modes) ── */}
-      <div className="absolute inset-0" style={{
-        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E")`,
-        backgroundRepeat: "repeat", backgroundSize: "180px 180px",
-        opacity: 0.045, mixBlendMode: "overlay",
-      }} />
-
-      {/* ── Perspective grid — bottom ── */}
-      <div className="absolute inset-x-0 bottom-0" style={{ height: `${H}px` }}>
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full h-full">
-          <defs>
-            {/* light mode grid — amber */}
-            <linearGradient id="grid-fade-light" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%"   stopColor="rgb(245,165,36)" stopOpacity="0" />
-              <stop offset="60%"  stopColor="rgb(245,165,36)" stopOpacity="0.12" />
-              <stop offset="100%" stopColor="rgb(245,165,36)" stopOpacity="0.22" />
-            </linearGradient>
-            <mask id="grid-mask-light"><rect width={W} height={H} fill="url(#grid-fade-light)" /></mask>
-            {/* dark mode grid — white/grey */}
-            <linearGradient id="grid-fade-dark" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%"   stopColor="rgb(255,255,255)" stopOpacity="0" />
-              <stop offset="55%"  stopColor="rgb(255,255,255)" stopOpacity="0.035" />
-              <stop offset="100%" stopColor="rgb(255,255,255)" stopOpacity="0.06" />
-            </linearGradient>
-            <mask id="grid-mask-dark"><rect width={W} height={H} fill="url(#grid-fade-dark)" /></mask>
-          </defs>
-
-          {/* light */}
-          <g mask="url(#grid-mask-light)" className="dark:hidden">
-            {spokeXs.map((x, i) => (
-              <line key={`sl${i}`} x1={VP.x} y1={VP.y} x2={x} y2={H}
-                stroke="rgb(245,165,36)" strokeWidth="0.6" strokeOpacity="0.9" />
-            ))}
-            {hLines.map((y, i) => {
-              const t = (y - VP.y) / (H - VP.y);
-              return <line key={`hl${i}`} x1={VP.x + (0 - VP.x)*t} y1={y} x2={VP.x + (W - VP.x)*t} y2={y}
-                stroke="rgb(245,165,36)" strokeWidth="0.5" strokeOpacity="0.85" />;
-            })}
-            <ellipse cx={VP.x} cy={H * 0.28} rx={280} ry={28} fill="rgb(245,165,36)" opacity="0.08" />
-          </g>
-
-          {/* dark */}
-          <g mask="url(#grid-mask-dark)" className="hidden dark:block">
-            {spokeXs.map((x, i) => (
-              <line key={`sd${i}`} x1={VP.x} y1={VP.y} x2={x} y2={H}
-                stroke="rgb(200,210,230)" strokeWidth="0.5" strokeOpacity="0.7" />
-            ))}
-            {hLines.map((y, i) => {
-              const t = (y - VP.y) / (H - VP.y);
-              return <line key={`hd${i}`} x1={VP.x + (0 - VP.x)*t} y1={y} x2={VP.x + (W - VP.x)*t} y2={y}
-                stroke="rgb(200,210,230)" strokeWidth="0.4" strokeOpacity="0.65" />;
-            })}
-          </g>
-        </svg>
-      </div>
-
-      {/* ── Vignette ── */}
-      <div className="absolute inset-0" style={{
-        background: "radial-gradient(ellipse at 50% 40%, transparent 40%, rgb(var(--color-ink)/0.5) 100%)",
-      }} />
-    </div>
-  );
-}
-
-/* ─── Pill tabs ──────────────────────────────────── */
-function Tabs<T extends string>({
-  tabs, active, onChange,
-}: {
-  tabs: { value: T; label: string; icon?: React.ReactNode }[];
-  active: T;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {tabs.map((t) => (
-        <button
-          key={t.value}
-          onClick={() => onChange(t.value)}
-          className={clsx(
-            "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition-all duration-150",
-            active === t.value
-              ? "bg-ink text-white shadow-sm dark:bg-white dark:text-ink"
-              : "bg-raised text-muted ring-1 ring-border hover:text-fg hover:ring-border/80"
-          )}
-        >
-          {t.icon}
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/* ─── Sort selector ──────────────────────────────── */
-type SortKey = "change_pct" | "market_cap";
-
-function SortBtn({ sort, onChange }: { sort: SortKey; onChange: (s: SortKey) => void }) {
-  const labels: Record<SortKey, string> = {
-    change_pct: "1D Change",
-    market_cap: "Mkt Cap",
-  };
-  const options: SortKey[] = ["change_pct", "market_cap"];
-  return (
-    <button
-      onClick={() => {
-        const i = options.indexOf(sort);
-        onChange(options[(i + 1) % options.length]);
-      }}
-      className="flex items-center gap-1 text-xs font-semibold text-saffron hover:text-saffron/80 transition-colors"
-    >
-      {labels[sort]} <ArrowUpDown className="h-3 w-3" />
-    </button>
-  );
-}
-
-function sortStocks(stocks: Stock[], key: SortKey): Stock[] {
-  return [...stocks].sort((a, b) => {
-    const av = (a as unknown as Record<string, number | null>)[key] ?? 0;
-    const bv = (b as unknown as Record<string, number | null>)[key] ?? 0;
-    return bv - av;
-  });
-}
-
-/* ─── List row — Groww style ─────────────────────── */
-/* ─── Bookmark button ────────────────────────────── */
-function BookmarkBtn({ ticker, name }: { ticker: string; name: string }) {
-  const { isWatched, toggle } = useWatchlist();
-  const watched = isWatched(ticker);
-  return (
-    <button
-      onClick={async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        await toggle(ticker, name);
-      }}
-      title={watched ? "Remove from watchlist" : "Add to watchlist"}
-      className={clsx(
-        "shrink-0 rounded-md p-1 transition-all duration-200 hover:scale-110",
-        watched
-          ? "text-saffron"
-          : "text-muted/50 hover:text-muted"
-      )}
-    >
-      <Bookmark className={clsx("h-4 w-4", watched ? "fill-saffron stroke-saffron" : "fill-none")} />
-    </button>
-  );
-}
-
-function StockListRow({ s, rank }: { s: Stock; rank?: number }) {
-  const up   = (s.change_pct ?? 0) >= 0;
-  const bare = s.ticker.replace(/\.(NS|BO)$/, "");
-  const name = s.name || bare;
-
-  return (
-    <div className="group flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-raised/50">
-      <Link
-        href={`/stock/${encodeURIComponent(s.ticker)}`}
-        className="flex min-w-0 flex-1 items-center gap-4"
-      >
-        <StockLogo ticker={s.ticker} website={s.website} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-fg group-hover:text-saffron transition-colors leading-tight">
-            {name}
-          </p>
-          <div className="mt-0.5 flex items-center gap-2 min-w-0">
-            <span className="shrink-0 font-mono text-[10px] text-muted">{bare}</span>
-            {s.market_cap && (
-              <span className="truncate text-[10px] text-muted">· {inrCompact(s.market_cap)}</span>
-            )}
-          </div>
-        </div>
-        <div className="shrink-0 text-right">
-          <p className="nums text-sm font-bold text-fg">{inr(s.price)}</p>
-          <p className={clsx(
-            "nums mt-0.5 flex items-center justify-end gap-0.5 text-xs font-semibold",
-            up ? "text-up" : "text-down"
-          )}>
-            {up ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-            {up ? "+" : ""}{(s.change_pct ?? 0).toFixed(2)}%
-          </p>
-        </div>
-      </Link>
-      <BookmarkBtn ticker={s.ticker} name={name} />
-    </div>
-  );
-}
-
-/* ─── List skeleton ──────────────────────────────── */
-function ListSkeleton({ n = 8 }: { n?: number }) {
-  return (
-    <div className="divide-y divide-border">
-      {Array.from({ length: n }).map((_, i) => (
-        <div key={i} className="flex items-center gap-4 px-5 py-3.5" style={{ opacity: 1 - i * 0.08 }}>
-          <div className="skeleton h-9 w-9 rounded-xl shrink-0" />
-          <div className="flex-1 space-y-1.5">
-            <div className="skeleton h-3.5 w-32 rounded" />
-            <div className="skeleton h-2.5 w-20 rounded" />
-          </div>
-          <div className="space-y-1.5 text-right shrink-0">
-            <div className="skeleton h-3.5 w-16 rounded" />
-            <div className="skeleton h-2.5 w-12 rounded ml-auto" />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ─── Section with header ────────────────────────── */
-function SectionCard({
-  title, subtitle, icon, sort, onSortChange, children, topBorder,
-}: {
-  title: string;
-  subtitle?: string;
-  icon: React.ReactNode;
-  sort?: SortKey;
-  onSortChange?: (s: SortKey) => void;
-  children: React.ReactNode;
-  topBorder?: "up" | "down" | "warn" | "neutral";
-}) {
-  const accentColors = {
-    up:      "from-up",
-    down:    "from-down",
-    warn:    "from-yellow-500",
-    neutral: "from-saffron",
-  };
-  const accent = topBorder ? accentColors[topBorder] : "from-saffron";
-  return (
-    <Card className="relative overflow-hidden">
-      {/* Gradient top line */}
-      <div className={clsx(
-        "relative h-[2px] w-full bg-gradient-to-r to-transparent via-current",
-        accent
-      )} />
-      {/* Header */}
-      <div className="relative flex items-center justify-between gap-3 border-b border-border/80 bg-raised/30 px-5 py-3.5 backdrop-blur-sm">
-        <div className="flex items-center gap-2.5">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-surface text-saffron ring-1 ring-border shadow-sm">
-            {icon}
-          </span>
-          <div>
-            <h2 className="text-sm font-semibold text-fg">{title}</h2>
-            {subtitle && <p className="text-[10px] text-muted mt-0.5">{subtitle}</p>}
-          </div>
-        </div>
-        {sort && onSortChange && (
-          <SortBtn sort={sort} onChange={onSortChange} />
-        )}
-      </div>
-      <div className="relative">{children}</div>
-    </Card>
-  );
-}
-
-/* ─── Market Movers block ────────────────────────── */
-function MoverColumn({
-  title,
-  stocks,
-  loading,
-  color,
-}: {
-  title: string;
-  stocks: Stock[];
-  loading: boolean;
-  color: "up" | "down";
-}) {
-  return (
-    <div className="flex-1 min-w-0 flex flex-col">
-      <div className={clsx(
-        "px-4 py-2.5 text-xs font-semibold uppercase tracking-wider border-b border-border shrink-0",
-        color === "up" ? "text-up" : "text-down"
-      )}>
-        {color === "up" ? "↑" : "↓"} {title}
-      </div>
-      {/* ~10 rows visible (each row ≈56px), scroll for the rest */}
-      <div className="overflow-y-auto max-h-[560px] divide-y divide-border scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border">
-        {loading
-          ? <ListSkeleton n={8} />
-          : stocks.length
-          ? stocks.map((s) => <StockListRow key={s.ticker} s={s} />)
-          : <p className="px-4 py-8 text-center text-sm text-muted">No data</p>
-        }
-      </div>
-    </div>
-  );
-}
-
-function MarketMovers({ data, loading }: { data?: OverviewData; loading: boolean }) {
-  const gainers = data?.gainers ?? [];
-  const losers  = data?.losers  ?? [];
-
-  const ageMin = data?.fetched_at
-    ? Math.round((Date.now() / 1000 - data.fetched_at) / 60)
-    : null;
-
-  return (
-    <SectionCard
-      title="Market Movers"
-      subtitle={ageMin != null ? `Nifty 50 · as of ${ageMin} min ago` : "Nifty 50"}
-      icon={<Activity className="h-4 w-4" />}
-    >
-      <div className="flex flex-col divide-y divide-border sm:flex-row sm:divide-y-0 sm:divide-x">
-        <MoverColumn title="Top Gainers" stocks={gainers} loading={loading} color="up"   />
-        <MoverColumn title="Top Losers"  stocks={losers}  loading={loading} color="down" />
-      </div>
-    </SectionCard>
-  );
-}
-
-/* ─── Top Mutual Funds block ─────────────────────── */
-type MFHighlights = {
-  popular:     MFFund[];
-  top_gainers: MFFund[];
-  top_losers:  MFFund[];
-  most_active: MFFund[];
-};
-type MFFund = {
-  scheme_code: number;
-  name:        string;
-  nav:         number | null;
-  nav_date:    string | null;
-  return_1d:   number | null;
-  return_1y:   number | null;
-  return_3y:   number | null;
-  return_5y:   number | null;
-  fund_house:  string | null;
-  scheme_type: string | null;
-};
-type MFPeriod = "1y" | "3y" | "5y";
-type MFView   = "popular" | "gainers" | "losers";
-
-const CAT_COLORS: Record<string, string> = {
-  "Small Cap":  "bg-rose-500/10 text-rose-500",
-  "Mid Cap":    "bg-orange-500/10 text-orange-500",
-  "Large Cap":  "bg-blue-500/10 text-blue-500",
-  "Flexi Cap":  "bg-violet-500/10 text-violet-500",
-  "ELSS":       "bg-green-500/10 text-green-500",
-  "Hybrid":     "bg-teal-500/10 text-teal-500",
-  "Index":      "bg-sky-500/10 text-sky-500",
-  "Debt":       "bg-slate-500/10 text-slate-400",
-  "Liquid":     "bg-slate-400/10 text-slate-400",
-  "Sector":     "bg-amber-500/10 text-amber-500",
-  "Intl":       "bg-purple-500/10 text-purple-500",
-  "Thematic":   "bg-pink-500/10 text-pink-500",
-  "Equity":     "bg-saffron/10 text-saffron",
-};
-
-function inferCategory(name: string): string {
-  const n = name.toLowerCase();
-  if (n.includes("small cap") || n.includes("smallcap"))                     return "Small Cap";
-  if (n.includes("mid cap") || n.includes("midcap"))                         return "Mid Cap";
-  if (n.includes("large cap") || n.includes("largecap"))                     return "Large Cap";
-  if (n.includes("flexi cap") || n.includes("flexicap") || n.includes("multi cap")) return "Flexi Cap";
-  if (n.includes("elss") || n.includes("tax saver") || n.includes("long term equity")) return "ELSS";
-  if (n.includes("balanced") || n.includes("hybrid") || n.includes("advantage")) return "Hybrid";
-  if (n.includes("liquid") || n.includes("overnight") || n.includes("money market")) return "Liquid";
-  if (n.includes("debt") || n.includes("bond") || n.includes("gilt") || n.includes("income")) return "Debt";
-  if (n.includes("index") || n.includes("nifty") || n.includes("sensex"))    return "Index";
-  if (n.includes("international") || n.includes("global") || n.includes("overseas")) return "Intl";
-  if (n.includes("sectoral") || n.includes("banking") || n.includes("pharma") || n.includes("infra")) return "Sector";
-  if (n.includes("thematic") || n.includes("esg") || n.includes("consumption")) return "Thematic";
-  return "Equity";
-}
-
-function shortAMC(fundHouse: string | null): string {
-  if (!fundHouse) return "";
-  const h = fundHouse.toLowerCase();
-  if (h.includes("sbi"))                         return "SBI";
-  if (h.includes("hdfc"))                        return "HDFC";
-  if (h.includes("icici"))                       return "ICICI Pru";
-  if (h.includes("axis"))                        return "Axis";
-  if (h.includes("mirae"))                       return "Mirae";
-  if (h.includes("kotak"))                       return "Kotak";
-  if (h.includes("nippon") || h.includes("reliance")) return "Nippon";
-  if (h.includes("uti"))                         return "UTI";
-  if (h.includes("aditya") || h.includes("birla") || h.includes("absl")) return "ABSL";
-  if (h.includes("dsp"))                         return "DSP";
-  if (h.includes("franklin"))                    return "Franklin";
-  if (h.includes("parag parikh") || h.includes("ppfas")) return "PPFAS";
-  if (h.includes("motilal"))                     return "Motilal";
-  if (h.includes("tata"))                        return "Tata";
-  if (h.includes("quant"))                       return "Quant";
-  if (h.includes("whiteoak"))                    return "WhiteOak";
-  if (h.includes("edelweiss"))                   return "Edelweiss";
-  if (h.includes("bandhan"))                     return "Bandhan";
-  if (h.includes("canara"))                      return "Canara";
-  if (h.includes("invesco"))                     return "Invesco";
-  if (h.includes("baroda") || h.includes("bnp")) return "Baroda BNP";
-  return fundHouse.split(" ")[0];
-}
-
-function TopMutualFunds() {
-  const [view,   setView]   = useState<MFView>("popular");
-  const [period, setPeriod] = useState<MFPeriod>("1y");
-  const { ref: lazyRef, ready } = useLazy();
-
-  const { data, isLoading } = useSWR<MFHighlights>(
-    ready ? `/api/mf/highlights?period=${period}` : null,
-    fetcher,
-    { revalidateOnFocus: false, dedupingInterval: 60_000 },
-  );
-
-  const funds: MFFund[] =
-    view === "popular" ? (data?.popular ?? []) :
-    view === "gainers" ? (data?.top_gainers ?? []) :
-                         (data?.top_losers ?? []);
-
-  const retKey = period === "3y" ? "return_3y" : period === "5y" ? "return_5y" : "return_1y";
-
-  const viewTabs: { value: MFView; label: string }[] = [
-    { value: "popular", label: "Popular" },
-    { value: "gainers", label: "Top Gainers" },
-    { value: "losers",  label: "Top Losers"  },
-  ];
-  const periodTabs: { value: MFPeriod; label: string }[] = [
-    { value: "1y", label: "1Y" },
-    { value: "3y", label: "3Y" },
-    { value: "5y", label: "5Y" },
-  ];
-
-  return (
-    <div ref={lazyRef}>
-    <SectionCard
-      title="Top Mutual Funds"
-      subtitle="AMFI · live NAV via MFapi"
-      icon={<BarChart3 className="h-4 w-4" />}
-      topBorder="up"
-    >
-      {/* View + period toggles */}
-      <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
-        <div className="flex gap-1">
-          {viewTabs.map((t) => (
-            <button
-              key={t.value}
-              onClick={() => setView(t.value)}
-              className={clsx(
-                "rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
-                view === t.value
-                  ? "bg-saffron text-white shadow-sm"
-                  : "text-muted hover:bg-raised hover:text-fg"
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        {view !== "popular" && (
-          <div className="flex items-center gap-0.5 rounded-lg bg-raised p-0.5">
-            {periodTabs.map((t) => (
-              <button
-                key={t.value}
-                onClick={() => setPeriod(t.value)}
-                className={clsx(
-                  "rounded-md px-2.5 py-1 text-micro font-semibold transition-all",
-                  period === t.value
-                    ? "bg-surface text-fg shadow-sm ring-1 ring-border"
-                    : "text-muted hover:text-fg"
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Column header */}
-      <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-5 py-2 text-micro-cap font-semibold uppercase tracking-wider text-muted border-b border-border">
-        <span>Fund</span>
-        <span className="text-right">NAV</span>
-        <span className="text-right w-20">{view === "popular" ? "1Y Return" : `${period.toUpperCase()} Return`}</span>
-      </div>
-
-      <div className="divide-y divide-border">
-        {isLoading ? (
-          <ListSkeleton n={8} />
-        ) : funds.length > 0 ? (
-          funds.map((fund) => {
-            const ret    = (fund[retKey] ?? fund.return_1y) as number | null;
-            const retUp  = ret != null && ret >= 0;
-            const dayUp  = (fund.return_1d ?? 0) >= 0;
-            const cat    = inferCategory(fund.name);
-            const amc    = shortAMC(fund.fund_house);
-            // Strip "- Regular Plan - Growth" suffixes for display
-            const displayName = fund.name
-              .replace(/- (regular|direct) (plan|growth|idcw|dividend).*/i, "")
-              .replace(/\s{2,}/g, " ")
-              .trim();
-
-            return (
-              <Link
-                key={fund.scheme_code}
-                href={`/mf/${fund.scheme_code}`}
-                className="grid grid-cols-[1fr_auto_auto] items-center gap-2 px-5 py-3 hover:bg-raised/40 transition-colors"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    {amc && (
-                      <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold bg-raised text-muted">
-                        {amc}
-                      </span>
-                    )}
-                    <span className={clsx(
-                      "shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold",
-                      CAT_COLORS[cat] ?? "bg-muted/10 text-muted"
-                    )}>
-                      {cat}
-                    </span>
-                  </div>
-                  <p className="text-sm font-semibold text-fg truncate leading-tight">{displayName}</p>
-                  {fund.return_1d != null && (
-                    <span className={clsx("text-micro-cap font-semibold", dayUp ? "text-up" : "text-down")}>
-                      {dayUp ? "▲" : "▼"} {Math.abs(fund.return_1d).toFixed(2)}% today
-                    </span>
-                  )}
-                </div>
-
-                <div className="text-right">
-                  {fund.nav != null ? (
-                    <>
-                      <p className="nums text-sm font-semibold">₹{fund.nav.toFixed(2)}</p>
-                      {fund.nav_date && (
-                        <p className="text-[9px] text-muted">{fund.nav_date}</p>
-                      )}
-                    </>
-                  ) : (
-                    <span className="text-sm text-muted">—</span>
-                  )}
-                </div>
-
-                <div className="w-20 text-right">
-                  {ret != null ? (
-                    <span className={clsx(
-                      "inline-flex items-center gap-0.5 rounded-md px-2 py-1 text-xs font-bold",
-                      retUp ? "bg-up/10 text-up" : "bg-down/10 text-down"
-                    )}>
-                      {retUp ? "▲" : "▼"} {Math.abs(ret).toFixed(1)}%
-                    </span>
-                  ) : (
-                    <span className="text-xs text-muted">—</span>
-                  )}
-                </div>
-              </Link>
-            );
-          })
-        ) : (
-          <div className="divide-y divide-border">
-            {[...Array(5)].map((_, i) => (
-              <div key={i} className="flex items-center gap-3 px-5 py-3">
-                <div className="h-7 w-7 rounded-md bg-muted/20 animate-pulse" />
-                <div className="flex-1 space-y-1.5">
-                  <div className="h-3 w-36 rounded bg-muted/20 animate-pulse" />
-                  <div className="h-2.5 w-24 rounded bg-muted/20 animate-pulse" />
-                </div>
-                <div className="h-4 w-14 rounded bg-muted/20 animate-pulse" />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="border-t border-border px-5 py-2.5 flex items-center justify-between">
-        <p className="text-[10px] text-muted">NAV via AMFI · MFapi.in · Not investment advice</p>
-        <Link href="/mf" className="text-[10px] text-saffron hover:underline flex items-center gap-0.5">
-          All funds <ChevronRight className="h-3 w-3" />
-        </Link>
-      </div>
-    </SectionCard>
-    </div>
-  );
-}
-
-/* ─── More Markets: compact preview widgets ──────── */
-function ViewAllLink({ href, label }: { href: string; label: string }) {
-  return (
-    <Link href={href} className="mt-2 flex items-center gap-0.5 text-[10px] text-saffron hover:underline">
-      {label} <ChevronRight className="h-3 w-3" />
-    </Link>
-  );
-}
-
-type IpoPreview = { symbol: string; name: string; status: string; document_url?: string | null };
-
-function IpoWidget() {
-  const { data, isLoading } = useSWR<IpoPreview[]>("/api/market/ipo", fetcher, { revalidateOnFocus: false });
-  const items = (data ?? []).filter((i) => i.status !== "listed").slice(0, 4);
-
-  return (
-    <SectionCard title="IPO Watch" icon={<Rocket className="h-4 w-4" />}>
-      <div className="p-4">
-        {isLoading ? (
-          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
-        ) : items.length === 0 ? (
-          <p className="text-xs text-muted">No upcoming or open IPOs right now.</p>
-        ) : (
-          <ul className="space-y-2">
-            {items.map((ipo) => (
-              <li key={ipo.symbol}>
-                <Link href="/ipo" className="flex items-center justify-between gap-2 rounded-lg text-xs transition-colors hover:bg-raised/60 -mx-2 px-2 py-1">
-                  <span className="truncate font-medium text-fg">{ipo.name.trim()}</span>
-                  <span className="shrink-0 capitalize text-muted">{ipo.status}</span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-        <ViewAllLink href="/ipo" label="View all IPOs" />
-      </div>
-    </SectionCard>
-  );
-}
-
-type CommodityPreview = { product: string; last_traded_price: string; per_change: number };
-
-function CommoditiesWidget() {
-  const { data, isLoading } = useSWR<CommodityPreview[]>("/api/market/commodities", fetcher, { revalidateOnFocus: false });
-  const items = useMemo(() => {
-    const byProduct = new Map<string, CommodityPreview>();
-    for (const c of data ?? []) if (!byProduct.has(c.product)) byProduct.set(c.product, c);
-    return [...byProduct.values()].slice(0, 4);
-  }, [data]);
-
-  return (
-    <SectionCard title="Commodities" icon={<Flame className="h-4 w-4" />} topBorder="warn">
-      <div className="p-4">
-        {isLoading ? (
-          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
-        ) : items.length === 0 ? (
-          <p className="text-xs text-muted">Commodities data unavailable.</p>
-        ) : (
-          <ul className="space-y-2">
-            {items.map((c) => {
-              const up = c.per_change >= 0;
-              return (
-                <li key={c.product}>
-                  <Link href="/commodities" className="flex items-center justify-between gap-2 rounded-lg text-xs transition-colors hover:bg-raised/60 -mx-2 px-2 py-1">
-                    <span className="truncate font-medium text-fg">{c.product}</span>
-                    <span className="nums shrink-0">
-                      ₹{c.last_traded_price}{" "}
-                      <span className={up ? "text-up" : "text-down"}>{up ? "+" : ""}{c.per_change?.toFixed(1)}%</span>
-                    </span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        <ViewAllLink href="/commodities" label="View all" />
-      </div>
-    </SectionCard>
-  );
-}
-
-function FiftyTwoWeekWidget() {
-  const { data, isLoading } = useSWR<{ highs: Stock[]; lows: Stock[] }>("/api/market/52week", fetcher, { revalidateOnFocus: false });
-  const highs = data?.highs ?? [];
-  const lows = data?.lows ?? [];
-
-  return (
-    <SectionCard title="52-Week High/Low" icon={<BarChart3 className="h-4 w-4" />} topBorder="up">
-      <div className="p-4">
-        {isLoading ? (
-          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
-        ) : (
-          <div className="space-y-1.5 text-xs">
-            <p><span className="font-semibold text-up">{highs.length}</span> <span className="text-muted">new highs today</span></p>
-            <p><span className="font-semibold text-down">{lows.length}</span> <span className="text-muted">new lows today</span></p>
-            {highs[0] && <p className="truncate text-muted">Top high: {highs[0].name || highs[0].ticker}</p>}
-            {lows[0] && <p className="truncate text-muted">Top low: {lows[0].name || lows[0].ticker}</p>}
-          </div>
-        )}
-        <ViewAllLink href="/market#52-week" label="View all" />
-      </div>
-    </SectionCard>
-  );
-}
-
-function PriceShockersWidget() {
-  const { data, isLoading } = useSWR<Stock[]>("/api/market/price-shockers", fetcher, { revalidateOnFocus: false });
-  const items = (data ?? []).slice(0, 4);
-
-  return (
-    <SectionCard title="Price Shockers" icon={<Zap className="h-4 w-4" />} topBorder="down">
-      <div className="p-4">
-        {isLoading ? (
-          <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
-        ) : items.length === 0 ? (
-          <p className="text-xs text-muted">No price shockers right now.</p>
-        ) : (
-          <ul className="space-y-2">
-            {items.map((s) => {
-              const up = (s.change_pct ?? 0) >= 0;
-              return (
-                <li key={s.ticker}>
-                  <Link href={`/stock/${encodeURIComponent(s.ticker)}`} className="flex items-center justify-between gap-2 rounded-lg text-xs transition-colors hover:bg-raised/60 -mx-2 px-2 py-1">
-                    <span className="truncate font-medium text-fg">{s.name || s.ticker}</span>
-                    {s.change_pct != null && (
-                      <span className={clsx("nums shrink-0", up ? "text-up" : "text-down")}>
-                        {up ? "+" : ""}{s.change_pct.toFixed(1)}%
-                      </span>
-                    )}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        <ViewAllLink href="/market#price-shockers" label="View all" />
-      </div>
-    </SectionCard>
+    <p ref={ref} className="nums font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">
+      {display.toLocaleString("en-IN")}{suffix}
+    </p>
   );
 }
 
 /* ─── Page ──────────────────────────────────────── */
 export default function Home() {
-  const { data, isLoading } = useSWR<OverviewData>("/api/market/overview", fetcher, {
-    revalidateOnFocus: false,
-    refreshInterval: 30_000,   // backend cache hit = <100 ms, so 30s feels live
-  });
-
-
-  const STAT_CHIPS = [
-    { icon: <Zap className="h-3 w-3" />,       label: "Real-time Quotes"       },
-    { icon: <Sparkles className="h-3 w-3" />,   label: "AI Concall Analysis"    },
-    { icon: <BarChart3 className="h-3 w-3" />,  label: "Peer Benchmarking"      },
-    { icon: <Activity className="h-3 w-3" />,   label: "5,000+ NSE/BSE Stocks"  },
-  ];
-
   return (
-    <div className="space-y-10">
+    <div className="space-y-24 sm:space-y-32">
 
-      {/* ── Hero ── */}
-      <section className="relative -mx-4 px-4 pb-24 pt-20 sm:-mx-6 sm:px-6 md:-mx-10 md:px-10 lg:-mx-14 lg:px-14 lg:pb-36 lg:pt-32">
+      {/* ── Hero — short, monochrome, sentence case, aurora backdrop ── */}
+      <section className="relative -mx-4 sm:-mx-6 md:-mx-10 lg:-mx-14">
+        <AuroraBackground className="px-4 pb-20 pt-20 sm:px-6 md:px-10 lg:px-14 lg:pb-28 lg:pt-28">
 
-        {/* Gradient mesh backdrop — Stripi signature; replaces animated blobs */}
-        <div className="absolute inset-0 gradient-mesh" />
-
-        {/* Content */}
         <div className="relative z-10 mx-auto max-w-3xl text-center">
-
-
-
-          {/* Headline — weight 400, tight tracking. Coinbase's spec explicitly calls
-              for display copy to stay at normal weight ("editorial calm, not
-              fintech-bombastic") rather than the bold treatment tried earlier. */}
-          <h1 className="hero-el mt-7 text-[2.75rem] font-normal leading-[1.05] tracking-tighter sm:text-6xl lg:text-[4.25rem]">
-            Stop Guessing.
+          {/* Per-word blur-in stagger (.hero-word); not a .hero-el so the words
+              own their entrance instead of double-fading with the wrapper */}
+          <h1 className="font-display text-[3rem] font-medium leading-[1.02] tracking-[-0.03em] sm:text-7xl lg:text-[5.25rem]">
+            <span className="text-muted/70">
+              <span className="hero-word" style={{ "--wi": 0 } as React.CSSProperties}>Stop</span>{" "}
+              <span className="hero-word" style={{ "--wi": 1 } as React.CSSProperties}>guessing.</span>
+            </span>
             <br />
-            <span className="hero-gradient-text">Start Knowing.</span>
+            {/* Gradient lives on an inner span — .hero-word and .hero-gradient-text
+                both declare `animation`, so on one element the gradient flow
+                overrides word-in and the text never fades in */}
+            <span className="hero-word" style={{ "--wi": 2 } as React.CSSProperties}>
+              <span className="hero-gradient-text">Start knowing.</span>
+            </span>
           </h1>
 
-          {/* Subtext */}
-          <p className="hero-el mx-auto mt-6 max-w-xl text-[1.05rem] text-muted leading-[1.7]">
-            Institutional-grade research for every Indian investor — AI concall summaries,
-            live fundamentals, peer benchmarks &amp; portfolio intelligence,{" "}
-            <span className="font-semibold text-fg">completely free.</span>
+          <p className="hero-el mx-auto mt-7 max-w-xl text-[1.05rem] leading-[1.7] text-muted">
+            Institutional-grade research for every Indian investor — concall briefs,
+            live fundamentals, peer benchmarks and portfolio intelligence.{" "}
+            <span className="font-semibold text-fg">Completely free.</span>
           </p>
 
-          {/* Search bar */}
-          {/* relative z-20: .hero-el's fade-up animation gives this its own
-              stacking context, so without an explicit z-index it paints
-              behind the later hero-el siblings (Trending row, stat chips)
-              in DOM order — burying the dropdown under them. */}
-          <div className="hero-el relative z-20 mx-auto mt-8 max-w-2xl">
+          {/* Search — the front door */}
+          {/* relative z-20: .hero-el's fade-up animation creates a stacking
+              context, so without an explicit z-index the dropdown paints
+              behind later hero-el siblings in DOM order. */}
+          <div className="hero-el relative z-20 mx-auto mt-9 max-w-2xl">
             <SearchBox
               size="hero"
               autoFocus
@@ -882,103 +330,243 @@ export default function Home() {
               </Link>
             ))}
           </div>
-
-          {/* Stat chips */}
-          <div className="hero-el mt-8 flex flex-wrap justify-center gap-2.5">
-            {STAT_CHIPS.map((chip, i) => (
-              <div
-                key={chip.label}
-                className="hero-chip flex items-center gap-2 rounded-xl border border-border/60 bg-surface/60 px-3.5 py-2 text-[11.5px] font-medium text-muted backdrop-blur-sm shadow-sm transition-all duration-200 hover:border-saffron/30 hover:text-fg"
-                style={{ animationDelay: `${i * 0.45}s`, animationDuration: `${3.5 + i * 0.4}s` }}
-              >
-                <span className="flex h-5 w-5 items-center justify-center rounded-md bg-saffron/12 text-saffron">
-                  {chip.icon}
-                </span>
-                {chip.label}
-              </div>
-            ))}
-          </div>
-
-          {/* Feature nav pills */}
-          <div className="hero-el mt-5 flex flex-wrap justify-center gap-2">
-            {[
-              { href: "/concall", icon: <Sparkles className="h-3 w-3" />, text: "AI Concall",   color: "hover:border-accent/40 hover:bg-accent/8 hover:text-accent" },
-              { href: "/peers",   icon: <BarChart3 className="h-3 w-3" />, text: "Peer Compare", color: "hover:border-blue-500/40 hover:bg-blue-500/8 hover:text-blue-400" },
-              { href: "/ask",     icon: <Activity className="h-3 w-3" />,  text: "Ask AI",        color: "hover:border-up/40 hover:bg-up/8 hover:text-up" },
-              { href: "/market",  icon: <TrendingUp className="h-3 w-3" />, text: "Market",       color: "hover:border-saffron/40 hover:bg-saffron/8 hover:text-saffron" },
-            ].map((c) => (
-              <Link
-                key={c.text}
-                href={c.href}
-                className={clsx(
-                  "flex items-center gap-1.5 rounded-full border border-border/70 bg-raised/50 px-3.5 py-1.5 text-xs font-medium text-muted backdrop-blur-sm",
-                  "transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm",
-                  c.color
-                )}
-              >
-                {c.icon} {c.text}
-              </Link>
-            ))}
-          </div>
-
         </div>
+        </AuroraBackground>
       </section>
 
-      {/* ── Two-column: Movers + Mutual Funds ── */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        <MarketMovers data={data} loading={isLoading} />
-        <TopMutualFunds />
-      </div>
-
-      {/* ── More Markets ── */}
-      <section className="space-y-4 animate-fade-up">
-        <h2 className="font-display text-xl font-semibold">More Markets</h2>
-        <HoverEffectGroup
-          count={4}
-          layoutId="more-markets-hover-bg"
-          className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4"
+      {/* ── Product showcases — one product per band, alternating sides ── */}
+      <section className="space-y-20 sm:space-y-24">
+        <Showcase
+          eyebrow="AI Concall Analysis"
+          title="Earnings calls, read for you."
+          description="Every quarter, Aegis distils the full concall into a brief you can read in two minutes — guidance, management commentary, and the numbers that moved, with real news context."
+          link="/concall"
+          linkLabel="Read a brief"
+          panelClass="bg-[#f2ede3] dark:bg-surface"
         >
-          {(idx) => [
-            <IpoWidget key="ipo" />,
-            <CommoditiesWidget key="commodities" />,
-            <FiftyTwoWeekWidget key="52week" />,
-            <PriceShockersWidget key="shockers" />,
-          ][idx]}
-        </HoverEffectGroup>
+          <ConcallMock />
+        </Showcase>
+
+        <Showcase
+          flip
+          eyebrow="Live Market Dashboard"
+          title="The whole market, one glance."
+          description="Real-time Nifty 50, Sensex and sector indices with market movers, 52-week highs and lows, IPOs and price shockers — the terminal view, without the terminal fee."
+          link="/market"
+          linkLabel="Open the dashboard"
+          panelClass="bg-[#e4ecf4] dark:bg-surface"
+        >
+          <MarketMock />
+        </Showcase>
+
+        <Showcase
+          eyebrow="Portfolio & XIRR"
+          title="Know what you actually earn."
+          description="Log your holdings once. Aegis computes XIRR the way institutions do, benchmarks you against the Nifty, and shows exactly where your gains and losses come from."
+          link="/portfolio"
+          linkLabel="Track your portfolio"
+          panelClass="bg-[#e7ede5] dark:bg-surface"
+        >
+          <PortfolioMock />
+        </Showcase>
       </section>
 
-      {/* ── Features ── */}
-      <section className="space-y-4 animate-fade-up">
-        <h2 className="font-display text-xl font-semibold">Platform Features</h2>
-        <HoverEffect
+      {/* ── Secondary tools ── */}
+      <section className="space-y-10">
+        <Reveal>
+          <SectionHeading
+            eyebrow="Also included"
+            title="Sharper tools for daily decisions."
+          />
+        </Reveal>
+        <BentoGrid
           items={[
             {
-              icon: <Sparkles className="h-5 w-5 text-saffron" />,
-              title: "AI Concall Analysis",
-              description: "Quarter-wise earnings call summaries with real news context — highlights, management commentary, guidance.",
-              link: "/concall",
-              color: "bg-saffron/10 ring-saffron/20 group-hover:bg-saffron group-hover:text-white group-hover:ring-saffron",
-              accentColor: "bg-gradient-to-r from-saffron/60 via-saffron to-saffron/60",
+              Icon: BarChart3,
+              name: "Peer Comparison",
+              description: "Any stock against its sector peers on P/E, ROE and growth — with sector medians.",
+              href: "/peers",
+              cta: "Compare peers",
+              className: "lg:col-span-2",
+              background: <PeerBarsBg />,
+              content: (
+                <>
+                  <p>
+                    Pick any NSE or BSE stock and Aegis lines it up against its real sector peers —
+                    P/E, ROE, revenue growth and margins — with the sector median as your baseline.
+                  </p>
+                  <p>
+                    One view tells you whether a stock is expensive for its quality, or quietly
+                    undervalued against the companies it actually competes with — no tab-hopping
+                    between screeners.
+                  </p>
+                </>
+              ),
             },
             {
-              icon: <ArrowUpRight className="h-5 w-5 text-blue-400" />,
-              title: "Peer Comparison",
-              description: "Compare any stock against sector peers on P/E, ROE, revenue growth — with sector median benchmarking.",
-              link: "/peers",
-              color: "bg-blue-500/10 ring-blue-500/20 group-hover:bg-blue-500 group-hover:text-white group-hover:ring-blue-500",
-              accentColor: "bg-gradient-to-r from-blue-500/60 via-blue-500 to-blue-500/60",
+              Icon: Activity,
+              name: "Ask AI Anything",
+              description: "An Indian-market expert on call — taxation, sector outlooks, FII flows and more.",
+              href: "/ask",
+              cta: "Ask a question",
+              className: "lg:col-span-1",
+              background: <AskAiBg />,
+              content: (
+                <>
+                  <p>
+                    Ask in plain English — how a capital gain on a specific sale is taxed, what
+                    sustained FII outflows mean for banks, or how to read a company&apos;s order book.
+                  </p>
+                  <p>
+                    Answers are grounded in Indian market context — SEBI rules, Indian tax slabs,
+                    NSE/BSE conventions — not generic global boilerplate.
+                  </p>
+                </>
+              ),
             },
             {
-              icon: <Activity className="h-5 w-5 text-accent" />,
-              title: "Ask AI Anything",
-              description: "Chat with an Indian market expert AI — taxation, sector outlook, stock analysis, FII flows and more.",
-              link: "/ask",
-              color: "bg-accent/10 ring-accent/20 group-hover:bg-accent group-hover:text-white group-hover:ring-accent",
-              accentColor: "bg-gradient-to-r from-accent/60 via-accent to-accent/60",
+              Icon: Bell,
+              name: "Smart Alerts",
+              description: "Precise price alerts with custom conditions and instant delivery.",
+              href: "/alerts",
+              cta: "Set an alert",
+              className: "lg:col-span-1",
+              background: <AlertsBg />,
+              content: (
+                <>
+                  <p>
+                    Set a level once — above, below, or a percent move — and Aegis watches the tape
+                    for you, on every stock in your watchlist.
+                  </p>
+                  <p>
+                    When it triggers you get an instant notification with the price that crossed,
+                    so decisions happen at your levels — not whenever you remember to check.
+                  </p>
+                </>
+              ),
+            },
+            {
+              Icon: Bookmark,
+              name: "Watchlist",
+              description: "The stocks you care about on one page — live prices, your alerts beside them.",
+              href: "/watchlist",
+              cta: "Build yours",
+              className: "lg:col-span-2",
+              background: <WatchlistBg />,
+              content: (
+                <>
+                  <p>
+                    Pin the stocks you actually follow and get one page with live prices, day
+                    change, and your alert status side by side.
+                  </p>
+                  <p>
+                    It syncs with alerts and your portfolio, so the same list drives what you
+                    track, what pings you, and what you measure.
+                  </p>
+                </>
+              ),
             },
           ]}
         />
       </section>
+
+      {/* ── Stats band ── */}
+      <section className="grid gap-10 border-y border-border py-12 sm:grid-cols-3 sm:gap-6 sm:py-14">
+        {[
+          { value: 5000, suffix: "+", label: "NSE & BSE stocks" },
+          { value: "₹0",  label: "Free, forever" },
+          { value: "Live", label: "NSE · BSE quotes" },
+        ].map((s, i) => (
+          <Reveal key={s.label} delay={i * 120} className="text-center">
+            {typeof s.value === "number" ? (
+              <CountUpStat value={s.value} suffix={s.suffix} />
+            ) : (
+              <p className="nums font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">{s.value}</p>
+            )}
+            <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">{s.label}</p>
+          </Reveal>
+        ))}
+      </section>
+
+      {/* ── How It Works — ledger rows: the steps are a real sequence ── */}
+      <section className="space-y-10">
+        <Reveal>
+          <SectionHeading
+            eyebrow="The workflow"
+            title="From curious to informed."
+          />
+        </Reveal>
+        <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+          {[
+            {
+              n: "01",
+              title: "Search any stock",
+              description: "Type a ticker or company name. Get price, charts, and AI insights instantly.",
+              href: "/market",
+              cta: "Explore the market",
+            },
+            {
+              n: "02",
+              title: "Build your watchlist",
+              description: "Pin stocks you care about and set price alerts to catch the right moment.",
+              href: "/watchlist",
+              cta: "Open watchlist",
+            },
+            {
+              n: "03",
+              title: "Track your portfolio",
+              description: "Log your holdings. Aegis calculates XIRR and benchmarks against Nifty.",
+              href: "/portfolio",
+              cta: "Set up portfolio",
+            },
+          ].map((step, i) => (
+            <Reveal key={step.n} delay={i * 110} className={clsx(i > 0 && "border-t border-border")}>
+              <Link
+                href={step.href}
+                className="group grid grid-cols-[52px_1fr_auto] items-center gap-x-5 px-5 py-7 transition-colors duration-200 hover:bg-raised/50 sm:grid-cols-[110px_1fr_auto] sm:gap-x-8 sm:px-10 sm:py-9"
+              >
+                <span
+                  className="nums font-mono text-4xl text-muted/30 transition-colors duration-300 group-hover:text-saffron sm:text-6xl"
+                  aria-hidden
+                >
+                  {step.n}
+                </span>
+                <div className="min-w-0">
+                  <h3 className="text-base font-semibold text-fg sm:text-lg">{step.title}</h3>
+                  <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted">{step.description}</p>
+                  <span className="mt-2 inline-block text-xs font-semibold text-saffron opacity-0 transition-all duration-300 group-hover:opacity-100 sm:mt-2.5">
+                    {step.cta} →
+                  </span>
+                </div>
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border text-muted transition-all duration-300 group-hover:border-saffron group-hover:bg-saffron group-hover:text-white sm:h-11 sm:w-11">
+                  <ChevronRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-0.5" />
+                </span>
+              </Link>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Closing CTA — tinted band, black pill ── */}
+      <Reveal>
+      <section className="rounded-3xl bg-[#f2ede3] px-6 py-16 text-center dark:border dark:border-border dark:bg-surface sm:py-20">
+        <h2 className="font-display text-3xl font-medium tracking-tight text-fg sm:text-4xl">
+          Ready when you are.
+        </h2>
+        <p className="mx-auto mt-3 max-w-md text-[15px] leading-relaxed text-muted">
+          Research like the institutions do — without paying like one.
+        </p>
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+          <InteractiveHoverButton href="/register" className="bg-transparent">
+            Get started — it&apos;s free
+          </InteractiveHoverButton>
+          <Link href="/market" className="group text-sm font-medium text-fg">
+            <span className="link-sweep">or browse the market</span>
+            <span className="inline-block transition-transform duration-300 group-hover:translate-x-1"> →</span>
+          </Link>
+        </div>
+      </section>
+      </Reveal>
 
     </div>
   );

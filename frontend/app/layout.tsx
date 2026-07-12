@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, IBM_Plex_Mono } from "next/font/google";
+import { Inter, IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { Nav } from "@/components/Nav";
 import { MarketBar } from "@/components/MarketBar";
@@ -23,6 +23,13 @@ const ibmMono = IBM_Plex_Mono({
   display: "swap",
   weight: ["400", "500"],
 });
+// Display face for headlines/wordmarks — the techy grotesque voice
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-display",
+  display: "swap",
+  weight: ["400", "500", "600", "700"],
+});
 
 export const metadata: Metadata = {
   title: "AEGIS — Indian Market Intelligence",
@@ -31,7 +38,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${ibmMono.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${ibmMono.variable} ${spaceGrotesk.variable}`}>
       <body suppressHydrationWarning>
         {/*
           Anti-flash: runs before body renders, sets .dark on <html> from

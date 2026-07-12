@@ -34,7 +34,7 @@ const config: Config = {
 
       fontFamily: {
         sans:    ["var(--font-sans)", "system-ui", "sans-serif"],
-        display: ["var(--font-sans)", "system-ui", "sans-serif"], /* Inter replaces Space Grotesk */
+        display: ["var(--font-display)", "var(--font-sans)", "system-ui", "sans-serif"],
         mono:    ["var(--font-mono)", "ui-monospace", "monospace"],
       },
 
@@ -88,8 +88,13 @@ const config: Config = {
       animation: {
         "background-gradient":
           "background-gradient var(--background-gradient-speed, 15s) cubic-bezier(0.445, 0.05, 0.55, 0.95) infinite",
+        aurora: "aurora 60s linear infinite",
       },
       keyframes: {
+        aurora: {
+          from: { backgroundPosition: "50% 50%, 50% 50%" },
+          to:   { backgroundPosition: "350% 50%, 350% 50%" },
+        },
         "background-gradient": {
           "0%, 100%": { transform: "translate(0, 0)" },
           "20%": { transform: "translate(calc(100% * var(--tx-1, 1)), calc(100% * var(--ty-1, 1)))" },
