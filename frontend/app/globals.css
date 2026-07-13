@@ -382,6 +382,20 @@
   background-size: 18px 18px;
 }
 
+/* ── Mobile tuning ────────────────────────────────────────────────────────────
+   Phones get a lighter, snappier motion profile: the aurora freezes into a
+   static gradient (the 60s background-position animation over a blurred layer
+   is the single most expensive effect on low-power GPUs), and scroll reveals
+   travel a shorter distance faster so content doesn't lag the thumb. */
+@media (max-width: 640px) {
+  .aurora-fx::after { animation: none !important; }
+  .aurora-fx { opacity: 0.4; }
+  .reveal {
+    transform: translateY(16px);
+    transition-duration: 0.65s;
+  }
+}
+
 /* ── Floating accent chips (uses the existing float-gentle keyframes) ── */
 .float-chip {
   animation: float-gentle var(--float-dur, 5s) ease-in-out infinite;

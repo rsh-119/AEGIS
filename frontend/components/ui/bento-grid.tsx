@@ -138,7 +138,7 @@ export function BentoGrid({ items, className }: { items: BentoItem[]; className?
               role="button"
               tabIndex={0}
               aria-haspopup="dialog"
-              className="group relative flex h-full w-full cursor-pointer flex-col justify-end overflow-hidden rounded-3xl border border-border bg-surface shadow-sm transition-shadow duration-300 hover:shadow-lg hover:shadow-black/5"
+              className="group relative flex h-full w-full cursor-pointer flex-col justify-end overflow-hidden rounded-3xl border border-border bg-surface shadow-sm transition-[box-shadow,transform] duration-300 hover:shadow-lg hover:shadow-black/5 active:scale-[0.99]"
             >
               {/* Background slot */}
               <motion.div

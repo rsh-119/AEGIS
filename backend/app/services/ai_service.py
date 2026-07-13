@@ -877,41 +877,47 @@ Respond ONLY with valid JSON:
 
 
 async def review_portfolio(context: str) -> dict:
-    """Structured portfolio review — exactly 3 typed observations rendered as
-    cards by the frontend. Strict-JSON via the same provider waterfall.
+    """Structured portfolio review — an overall verdict plus 3-4 typed
+    observations, each with a reasoned insight and a concrete action.
     Uncached — "Run again" should genuinely re-run, not replay."""
-    system = """You are a seasoned Indian equity portfolio reviewer.
+    system = """You are a seasoned Indian equity portfolio reviewer writing a short, sharp review.
 Given a retail investor's portfolio snapshot, return STRICT JSON:
-{"observations": [
+{"verdict": "<one-sentence overall read of this portfolio — honest, specific, max 25 words>",
+ "observations": [
   {"severity": "risk" | "opportunity" | "neutral",
    "title": "<the specific issue or strength, max 10 words>",
-   "action": "<one concrete next step to consider, max 22 words>"}
+   "insight": "<2-3 sentences of reasoning: WHY this matters for THIS portfolio, using its actual numbers (weights, P&L, XIRR). Max 55 words>",
+   "action": "<one concrete next step, starting with a verb, max 22 words>"}
 ]}
 RULES:
-1. Exactly 3 observations, most important first.
-2. Be specific — name stocks/sectors from the data, never generic filler.
-3. "action" must start with a verb (Trim, Review, Diversify, Set, Book, Hold…).
-4. Interpret the numbers; never merely restate them.
+1. 3 or 4 observations, most important first, covering different angles
+   (concentration, laggards, winners, benchmark gap, missing sectors...).
+2. Be specific — name stocks/sectors and quote the snapshot's numbers.
+3. Interpret, don't restate: explain consequences and trade-offs.
+4. The verdict should read like a human reviewer's opening line, not a summary of fields.
 5. No disclaimers, no extra keys, no markdown."""
-    result = await _chat_json(system, context, max_tokens=500, use_cache=False)
+    result = await _chat_json(system, context, max_tokens=900, use_cache=False)
 
+    verdict = str(result.get("verdict") or "").strip() or None
     obs = result.get("observations")
     if not isinstance(obs, list):
-        return {"observations": []}
+        return {"verdict": verdict, "observations": []}
     clean = []
-    for o in obs[:3]:
+    for o in obs[:4]:
         if not isinstance(o, dict):
             continue
         sev = o.get("severity")
         title = str(o.get("title") or "").strip()
+        insight = str(o.get("insight") or "").strip()
         action = str(o.get("action") or "").strip()
         if title and action:
             clean.append({
                 "severity": sev if sev in ("risk", "opportunity", "neutral") else "neutral",
                 "title": title,
+                "insight": insight,
                 "action": action,
             })
-    return {"observations": clean}
+    return {"verdict": verdict, "observations": clean}
 
 
 async def ask_portfolio(question: str, context: str) -> dict:

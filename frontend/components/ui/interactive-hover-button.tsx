@@ -24,7 +24,7 @@ export function InteractiveHoverButton({
   ...props
 }: InteractiveHoverButtonProps) {
   const classes = cn(
-    "group relative w-auto cursor-pointer overflow-hidden rounded-full border border-border bg-surface px-6 py-2.5 text-center text-sm font-semibold text-fg shadow-sm",
+    "group relative w-auto cursor-pointer overflow-hidden rounded-full border border-border bg-surface px-6 py-2.5 text-center text-sm font-semibold text-fg shadow-sm transition-transform active:scale-[0.97]",
     className,
   );
 

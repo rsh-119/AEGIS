@@ -39,8 +39,9 @@ type NewsItem = {
   date: string | null;
 };
 
-type Signal = { kind: "warning" | "info" | "positive"; title: string; detail: string };
-type AiObservation = { severity: "risk" | "opportunity" | "neutral"; title: string; action: string };
+type Signal = { kind: "warning" | "info" | "positive"; metric?: string; title: string; detail: string };
+type AiObservation = { severity: "risk" | "opportunity" | "neutral"; title: string; insight?: string; action: string };
+type AiReview = { verdict: string | null; observations: AiObservation[] };
 type GrowthPoint = { date: string; invested: number; value: number; nifty: number };
 type AskExchange = { q: string; a: string };
 
@@ -169,7 +170,7 @@ function AllocationCard({ title, buckets }: { title: string; buckets: Bucket[] }
                   <p className="nums text-sm text-fg">{inr(b.value)}</p>
                   <p className="nums text-[11px] text-muted">{b.alloc_pct.toFixed(1)}%</p>
                 </div>
-                <div className={clsx("nums w-20 shrink-0 text-right text-sm font-medium", signCls(b.pnl))}>
+                <div className={clsx("nums w-14 shrink-0 text-right text-sm font-medium sm:w-20", signCls(b.pnl))}>
                   {pct(b.pnl_pct)}
                 </div>
                 <ChevronDown className={clsx(
@@ -353,10 +354,10 @@ const AI_STYLE: Record<AiObservation["severity"], { icon: React.ElementType; cls
 };
 
 function InsightsCard() {
-  const { data, isLoading } = useSWR<{ empty: boolean; signals: Signal[]; ai: AiObservation[] | null }>(
+  const { data, isLoading } = useSWR<{ empty: boolean; signals: Signal[]; ai: AiReview | null }>(
     "/api/portfolio/insights", fetcher, { revalidateOnFocus: false },
   );
-  const [aiObs, setAiObs] = useState<AiObservation[] | null>(null);
+  const [aiReview, setAiReview] = useState<AiReview | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
 
@@ -365,8 +366,8 @@ function InsightsCard() {
     setAiError(null);
     try {
       const res = await fetcher("/api/portfolio/insights?ai=1");
-      if (Array.isArray(res.ai) && res.ai.length > 0) {
-        setAiObs(res.ai);
+      if (res.ai?.observations?.length > 0) {
+        setAiReview(res.ai);
       } else {
         setAiError("The reviewer had nothing to add right now — try again later.");
       }
@@ -388,6 +389,19 @@ function InsightsCard() {
           <h3 className="mt-1 font-display text-xl font-medium tracking-tight text-fg">
             What your portfolio is telling you
           </h3>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {(["warning", "positive", "info"] as const).map((kind) => {
+              const n = data.signals.filter((sg) => sg.kind === kind).length;
+              if (!n) return null;
+              const S = SIGNAL_STYLE[kind];
+              return (
+                <span key={kind} className={clsx("inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.08em] ring-1", S.cls)}>
+                  <S.icon className="h-2.5 w-2.5" />
+                  {n} {kind === "warning" ? (n > 1 ? "risks" : "risk") : kind === "positive" ? (n > 1 ? "strengths" : "strength") : (n > 1 ? "notes" : "note")}
+                </span>
+              );
+            })}
+          </div>
         </div>
         <button
           onClick={runAiReview}
@@ -395,7 +409,7 @@ function InsightsCard() {
           className="flex items-center gap-1.5 rounded-full bg-fg px-4 py-2 text-xs font-semibold text-ink shadow-sm transition-all hover:-translate-y-0.5 disabled:opacity-60"
         >
           <Sparkles className="h-3.5 w-3.5" />
-          {aiBusy ? "Reviewing…" : aiObs ? "Run again" : "Run AI review"}
+          {aiBusy ? "Reviewing…" : aiReview ? "Run again" : "Run AI review"}
         </button>
       </div>
 
@@ -403,46 +417,74 @@ function InsightsCard() {
         {data.signals.map((sig, i) => {
           const S = SIGNAL_STYLE[sig.kind];
           return (
-            <div key={i} className="flex gap-3 rounded-xl border border-border bg-raised/30 p-3.5">
-              <span className={clsx("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ring-1", S.cls)}>
+            <div
+              key={i}
+              className={clsx(
+                "flex gap-3 rounded-xl border border-border border-l-2 bg-raised/30 p-4 transition-colors hover:bg-raised/50",
+                sig.kind === "warning" && "border-l-accent/60",
+                sig.kind === "positive" && "border-l-up/60",
+                sig.kind === "info" && "border-l-saffron/60",
+              )}
+            >
+              <span className={clsx("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ring-1", S.cls)}>
                 <S.icon className="h-3.5 w-3.5" />
               </span>
               <div className="min-w-0">
-                <p className="text-sm font-semibold leading-snug text-fg">{sig.title}</p>
-                <p className="mt-1 text-xs leading-relaxed text-muted">{sig.detail}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold leading-snug text-fg">{sig.title}</p>
+                  {sig.metric && (
+                    <span className={clsx("nums shrink-0 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ring-1", S.cls)}>
+                      {sig.metric}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1.5 text-xs leading-relaxed text-muted">{sig.detail}</p>
               </div>
             </div>
           );
         })}
       </div>
 
-      {(aiObs || aiError) && (
-        <div className="mt-4 rounded-xl border border-saffron/20 bg-saffron/5 p-4">
+      {(aiReview || aiError) && (
+        <div className="mt-4 rounded-xl border border-saffron/20 bg-saffron/5 p-4 sm:p-5">
           <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-saffron">
             <Sparkles className="h-3 w-3" /> AI review
           </p>
           {aiError ? (
             <p className="mt-2 text-sm text-muted">{aiError}</p>
           ) : (
-            <div className="mt-3 grid gap-3 sm:grid-cols-3">
-              {aiObs!.map((o, i) => {
-                const S = AI_STYLE[o.severity] ?? AI_STYLE.neutral;
-                return (
-                  <div key={i} className="rounded-xl border border-border bg-surface p-3.5">
-                    <span className={clsx(
-                      "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.1em] ring-1",
-                      S.cls,
-                    )}>
-                      <S.icon className="h-3 w-3" /> {S.label}
-                    </span>
-                    <p className="mt-2.5 text-sm font-semibold leading-snug text-fg">{o.title}</p>
-                    <p className="mt-1.5 text-xs leading-relaxed text-muted">
-                      <span className="text-saffron">→ </span>{o.action}
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
+            <>
+              {aiReview!.verdict && (
+                <p className="mt-2.5 font-display text-lg font-medium leading-snug tracking-tight text-fg">
+                  &ldquo;{aiReview!.verdict}&rdquo;
+                </p>
+              )}
+              <div className={clsx(
+                "mt-4 grid gap-3",
+                aiReview!.observations.length >= 4 ? "sm:grid-cols-2" : "sm:grid-cols-3",
+              )}>
+                {aiReview!.observations.map((o, i) => {
+                  const S = AI_STYLE[o.severity] ?? AI_STYLE.neutral;
+                  return (
+                    <div key={i} className="flex flex-col rounded-xl border border-border bg-surface p-4">
+                      <span className={clsx(
+                        "inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.1em] ring-1",
+                        S.cls,
+                      )}>
+                        <S.icon className="h-3 w-3" /> {S.label}
+                      </span>
+                      <p className="mt-2.5 text-sm font-semibold leading-snug text-fg">{o.title}</p>
+                      {o.insight && (
+                        <p className="mt-1.5 flex-1 text-xs leading-relaxed text-muted">{o.insight}</p>
+                      )}
+                      <p className="mt-3 border-t border-border pt-2.5 text-xs font-medium leading-relaxed text-fg">
+                        <span className="text-saffron">→ </span>{o.action}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
       )}
@@ -471,10 +513,10 @@ function NewsCard() {
       </div>
       <div className="divide-y divide-border">
         {data.items.map((n, i) => (
-          <div key={i} className="grid grid-cols-[auto_1fr_auto] items-center gap-4 px-5 py-3.5">
+          <div key={i} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 px-4 py-3.5 sm:gap-4 sm:px-5">
             <Link
               href={`/stock/${encodeURIComponent(n.ticker)}`}
-              className="w-24 shrink-0 truncate font-mono text-xs font-semibold text-muted transition-colors hover:text-saffron"
+              className="w-16 shrink-0 truncate font-mono text-xs font-semibold text-muted transition-colors hover:text-saffron sm:w-24"
               title={n.company}
             >
               {n.ticker.replace(/\.(NS|BO)$/, "")}
@@ -624,18 +666,18 @@ function AskPortfolioCard() {
   const suggestions = followups.length > 0 ? followups : thread.length === 0 ? STARTER_QUESTIONS : [];
 
   return (
-    <section className="relative overflow-hidden rounded-[2rem] bg-fg px-5 py-10 text-ink sm:px-10">
-      {/* Same visual language as the landing CTA band */}
-      <div className="panel-dots-invert absolute inset-0 opacity-25" aria-hidden />
+    <section className="relative overflow-hidden rounded-[2rem] border border-border bg-surface px-5 py-10 shadow-sm sm:px-10">
+      {/* Light, airy: faint dot grid + a whisper of brand glow along the top */}
+      <div className="panel-dots absolute inset-0 opacity-40" aria-hidden />
       <div
         className="pointer-events-none absolute inset-x-0 top-0 h-40"
-        style={{ background: "radial-gradient(ellipse 65% 100% at 50% 0%, rgb(var(--color-saffron)/0.12), transparent 75%)" }}
+        style={{ background: "radial-gradient(ellipse 65% 100% at 50% 0%, rgb(var(--color-saffron)/0.07), transparent 75%)" }}
         aria-hidden
       />
 
       <div className="relative mx-auto max-w-2xl">
         <p className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-saffron">Ask Aegis</p>
-        <h3 className="mt-2 font-display text-2xl font-medium tracking-tight sm:text-3xl">
+        <h3 className="mt-2 font-display text-2xl font-medium tracking-tight text-fg sm:text-3xl">
           Ask anything about this portfolio.
         </h3>
 
@@ -644,29 +686,29 @@ function AskPortfolioCard() {
           <div className="mt-6 space-y-4">
             {thread.slice(-4).map((x, i) => (
               <div key={i} className="space-y-2">
-                <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm bg-ink/10 px-4 py-2 text-sm">
+                <p className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm bg-saffron/10 px-4 py-2 text-sm text-fg">
                   {x.q}
                 </p>
-                <p className="w-fit max-w-[92%] rounded-2xl rounded-bl-sm border border-ink/15 bg-ink/5 px-4 py-2.5 text-sm leading-relaxed">
+                <p className="w-fit max-w-[92%] rounded-2xl rounded-bl-sm border border-border bg-raised/60 px-4 py-2.5 text-sm leading-relaxed text-fg">
                   {x.a}
                 </p>
               </div>
             ))}
-            {busy && <p className="animate-pulse text-sm text-ink/50">Reading your portfolio…</p>}
+            {busy && <p className="animate-pulse text-sm text-muted">Reading your portfolio…</p>}
           </div>
         )}
 
         {/* Input */}
         <form
           onSubmit={(e) => { e.preventDefault(); ask(question); }}
-          className="mt-6 flex items-center gap-2 rounded-full border border-ink/20 bg-ink/5 p-1.5 pl-5 focus-within:border-saffron/60"
+          className="mt-6 flex items-center gap-2 rounded-full border border-border bg-raised/50 p-1.5 pl-5 shadow-sm focus-within:border-saffron/60"
         >
           <input
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             maxLength={500}
             placeholder="e.g. Should I be worried about my sector concentration?"
-            className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink/40"
+            className="w-full bg-transparent text-sm text-fg outline-none placeholder:text-muted/70"
           />
           <button
             type="submit"
@@ -686,7 +728,7 @@ function AskPortfolioCard() {
                 key={sq}
                 onClick={() => ask(sq)}
                 disabled={busy}
-                className="rounded-full border border-ink/20 px-3 py-1.5 text-xs text-ink/70 transition-all hover:border-saffron/60 hover:text-ink disabled:opacity-50"
+                className="rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-muted transition-all hover:border-saffron/60 hover:text-saffron disabled:opacity-50"
               >
                 {sq}
               </button>
@@ -694,7 +736,7 @@ function AskPortfolioCard() {
           </div>
         )}
 
-        <p className="mt-4 text-[11px] text-ink/40">
+        <p className="mt-4 text-[11px] text-muted/70">
           Answers are grounded in your live holdings snapshot. Not investment advice.
         </p>
       </div>

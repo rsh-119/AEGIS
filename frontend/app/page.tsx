@@ -3,13 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import clsx from "clsx";
+import useSWR from "swr";
 import { motion, useScroll, useTransform } from "framer-motion";
+import { fetcher } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
 import { Reveal, Stagger, MotionNumber } from "@/components/motion";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import { AuroraBackground } from "@/components/ui/aurora-background";
 import { BentoGrid } from "@/components/ui/bento-grid";
-import { BarChart3, Activity, Bell, Bookmark, ChevronRight } from "lucide-react";
+import { Activity, Bell, Bookmark, ChevronRight, Rocket } from "lucide-react";
 
 /* ─── Section heading — mono eyebrow + calm display title ── */
 function SectionHeading({ eyebrow, title, sub }: { eyebrow: string; title: string; sub?: string }) {
@@ -247,24 +249,84 @@ function PortfolioMock() {
 }
 
 /* ─── Bento card backgrounds — quiet decorative readouts, top-anchored ── */
-function PeerBarsBg() {
-  const bars = [
-    { t: "TCS",   w: "72%", hl: true,  v: "ROE 28%" },
-    { t: "INFY",  w: "58%", hl: false, v: "ROE 22%" },
-    { t: "WIPRO", w: "41%", hl: false, v: "ROE 16%" },
-  ];
+type IpoLite = {
+  symbol: string; name: string; status: string;
+  is_sme: boolean; listing_gains: number | null;
+};
+
+/* Live IPO preview: open issues first, then upcoming, then fresh listings */
+function useIpoPreview(count: number) {
+  const { data } = useSWR<IpoLite[]>("/api/market/ipo", fetcher, {
+    revalidateOnFocus: false,
+  });
+  const items = data ?? [];
+  return [
+    ...items.filter((i) => i.status === "open"),
+    ...items.filter((i) => i.status === "upcoming"),
+    ...items.filter((i) => i.status === "listed"),
+  ].slice(0, count);
+}
+
+function IpoStatusChip({ ipo }: { ipo: IpoLite }) {
+  if (ipo.status === "open") return <span className="text-up">● OPEN</span>;
+  if (ipo.status === "upcoming") return <span className="text-saffron">UPCOMING</span>;
+  if (ipo.listing_gains != null) {
+    return (
+      <span className={ipo.listing_gains >= 0 ? "text-up" : "text-down"}>
+        {ipo.listing_gains >= 0 ? "+" : ""}{ipo.listing_gains.toFixed(1)}%
+      </span>
+    );
+  }
+  return <span className="text-muted">LISTED</span>;
+}
+
+function IpoBg() {
+  const items = useIpoPreview(3);
   return (
-    <div className="absolute inset-x-6 top-6 space-y-3 opacity-80">
-      {bars.map((b) => (
-        <div key={b.t} className="flex items-center gap-3 font-mono text-[10px] text-muted">
-          <span className="w-12 shrink-0">{b.t}</span>
-          <div className="h-2 flex-1 overflow-hidden rounded-full bg-raised">
-            <div className={clsx("h-full origin-left rounded-full transition-transform duration-500 ease-out group-hover:scale-x-[1.06]", b.hl ? "bg-saffron/70" : "bg-border")} style={{ width: b.w }} />
+    <div className="absolute inset-x-6 top-5 divide-y divide-border/70 opacity-90 transition-transform duration-300 group-hover:translate-x-0.5">
+      {(items.length ? items : Array.from({ length: 3 })).map((it, i) => {
+        const ipo = it as IpoLite | undefined;
+        return (
+          <div key={ipo?.symbol ?? i} className="flex items-center justify-between gap-3 py-2 font-mono text-[10px]">
+            {ipo ? (
+              <>
+                <span className="truncate text-muted">{ipo.name}</span>
+                <span className="nums shrink-0"><IpoStatusChip ipo={ipo} /></span>
+              </>
+            ) : (
+              <span className="skeleton h-3 w-full rounded" />
+            )}
           </div>
-          <span className="w-14 shrink-0 text-right">{b.v}</span>
-        </div>
-      ))}
+        );
+      })}
     </div>
+  );
+}
+
+/* Modal body: real issues, every ticker clickable */
+function IpoModalContent() {
+  const items = useIpoPreview(4);
+  return (
+    <>
+      <p>
+        From first SEBI filing to listing-day pop — price bands, bidding windows,
+        lot sizes and how every mainboard and SME issue actually listed.
+      </p>
+      {items.length > 0 && (
+        <div className="space-y-2">
+          {items.map((ipo) => (
+            <Link
+              key={ipo.symbol}
+              href={ipo.status === "listed" ? `/stock/${encodeURIComponent(ipo.symbol)}.NS` : "/ipo"}
+              className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-xs transition-colors hover:border-saffron/50 hover:bg-saffron/5"
+            >
+              <span className="truncate font-medium text-fg">{ipo.name}</span>
+              <span className="nums shrink-0 font-mono text-[10px]"><IpoStatusChip ipo={ipo} /></span>
+            </Link>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -460,26 +522,14 @@ export default function Home() {
         <BentoGrid
           items={[
             {
-              Icon: BarChart3,
-              name: "Peer Comparison",
-              description: "Any stock against its sector peers on P/E, ROE and growth — with sector medians.",
-              href: "/peers",
-              cta: "Compare peers",
+              Icon: Rocket,
+              name: "IPO Watch",
+              description: "Every mainboard and SME issue — price bands, bidding dates, listing gains.",
+              href: "/ipo",
+              cta: "Track IPOs",
               className: "lg:col-span-2",
-              background: <PeerBarsBg />,
-              content: (
-                <>
-                  <p>
-                    Pick any NSE or BSE stock and Aegis lines it up against its real sector peers —
-                    P/E, ROE, revenue growth and margins — with the sector median as your baseline.
-                  </p>
-                  <p>
-                    One view tells you whether a stock is expensive for its quality, or quietly
-                    undervalued against the companies it actually competes with — no tab-hopping
-                    between screeners.
-                  </p>
-                </>
-              ),
+              background: <IpoBg />,
+              content: <IpoModalContent />,
             },
             {
               Icon: Activity,
@@ -616,7 +666,7 @@ export default function Home() {
                 <div className="min-w-0">
                   <h3 className="text-base font-semibold text-fg sm:text-lg">{step.title}</h3>
                   <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted">{step.description}</p>
-                  <span className="mt-2 inline-block text-xs font-semibold text-saffron opacity-0 transition-all duration-300 group-hover:opacity-100 sm:mt-2.5">
+                  <span className="mt-2 inline-block text-xs font-semibold text-saffron transition-all duration-300 max-sm:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:mt-2.5">
                     {step.cta} →
                   </span>
                 </div>
@@ -629,46 +679,41 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Closing CTA — inverted band: near-black in light, cream in dark ── */}
+      {/* ── Closing CTA — light, airy band with the aurora drifting behind it,
+             bookending the hero's atmosphere ── */}
       <Reveal>
-      <section className="relative overflow-hidden rounded-[2.5rem] bg-fg px-6 py-20 text-center text-ink sm:py-28">
-        {/* Inverted dot grid + saffron crown glow */}
-        <div className="panel-dots-invert absolute inset-0 opacity-25" aria-hidden />
-        <div
-          className="pointer-events-none absolute inset-x-0 top-0 h-56"
-          style={{ background: "radial-gradient(ellipse 65% 100% at 50% 0%, rgb(var(--color-saffron)/0.10), transparent 75%)" }}
-          aria-hidden
-        />
-
-        <div className="relative">
-          <p className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-saffron">Get started</p>
-          <h2 className="mt-4 font-display text-[clamp(2.25rem,5.5vw,3.75rem)] font-medium leading-[1.08] tracking-[-0.015em]">
-            Ready when you are.
-          </h2>
-          <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-ink/60">
-            Research like the institutions do — without paying like one.
-          </p>
-          <div className="mt-9 flex flex-wrap items-center justify-center gap-5">
-            <Link
-              href="/register"
-              className="btn-sheen rounded-full bg-saffron px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-saffron/25 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-saffron/40 active:scale-[0.98] active:translate-y-0"
-            >
-              Get started — it&apos;s free
-            </Link>
-            <Link href="/market" className="group text-sm font-medium text-ink/80 transition-colors hover:text-ink">
-              <span className="link-sweep">or browse the market</span>
-              <span className="inline-block transition-transform duration-300 group-hover:translate-x-1"> →</span>
-            </Link>
+      <section className="relative overflow-hidden rounded-[2.5rem] border border-border bg-surface text-center shadow-sm">
+        <AuroraBackground className="px-6 py-20 sm:py-28">
+          <div className="relative">
+            <p className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-saffron">Get started</p>
+            <h2 className="mt-4 font-display text-[clamp(2.25rem,5.5vw,3.75rem)] font-medium leading-[1.08] tracking-[-0.015em] text-fg">
+              Ready when you are.
+            </h2>
+            <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed text-muted">
+              Research like the institutions do — without paying like one.
+            </p>
+            <div className="mt-9 flex flex-wrap items-center justify-center gap-5">
+              <Link
+                href="/register"
+                className="btn-sheen rounded-full bg-saffron px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-saffron/25 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-saffron/40 active:scale-[0.98] active:translate-y-0"
+              >
+                Get started — it&apos;s free
+              </Link>
+              <Link href="/market" className="group text-sm font-medium text-fg/80 transition-colors hover:text-fg">
+                <span className="link-sweep">or browse the market</span>
+                <span className="inline-block transition-transform duration-300 group-hover:translate-x-1"> →</span>
+              </Link>
+            </div>
+            {/* Mono proofline */}
+            <div className="mt-11 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 font-mono text-[10px] uppercase tracking-[0.16em] text-muted">
+              <span>5,000 stocks deep</span>
+              <span className="h-3 w-px bg-border" aria-hidden />
+              <span>Live off the tape</span>
+              <span className="h-3 w-px bg-border" aria-hidden />
+              <span className="text-saffron">Free means free</span>
+            </div>
           </div>
-          {/* Mono proofline */}
-          <div className="mt-11 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 font-mono text-[10px] uppercase tracking-[0.16em] text-ink/40">
-            <span>5,000+ stocks</span>
-            <span className="h-3 w-px bg-ink/20" aria-hidden />
-            <span>NSE · BSE live</span>
-            <span className="h-3 w-px bg-ink/20" aria-hidden />
-            <span>₹0 forever</span>
-          </div>
-        </div>
+        </AuroraBackground>
       </section>
       </Reveal>
 

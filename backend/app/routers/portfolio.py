@@ -194,12 +194,22 @@ async def portfolio_insights(
 
     signals: list[dict] = []
 
+    def _lakh(v: float) -> str:
+        return f"₹{v:,.0f}"
+
     top_sector = sectors[0] if sectors else None
     if top_sector and top_sector["alloc_pct"] > 40:
+        names = ", ".join(h["name"] for h in top_sector["holdings"][:3])
         signals.append({
             "kind": "warning",
-            "title": f"{top_sector['label']} is {top_sector['alloc_pct']:.0f}% of your portfolio",
-            "detail": "A single sector above 40% means one bad quarter for the industry hits most of your capital. Consider spreading new buys elsewhere.",
+            "metric": f"{top_sector['alloc_pct']:.0f}% weight",
+            "title": f"{top_sector['label']} dominates your portfolio",
+            "detail": (
+                f"{_lakh(top_sector['value'])} of your {_lakh(summary['value'])} sits in one sector "
+                f"({names}). One regulatory change or bad industry quarter moves "
+                f"{top_sector['alloc_pct']:.0f}% of your capital at once — most allocators keep a single "
+                f"sector under 30–35%. Consider pointing fresh money at an uncorrelated sector."
+            ),
         })
 
     all_holdings = [i for b in sectors for i in b["holdings"]]
@@ -209,48 +219,88 @@ async def portfolio_insights(
         if weight > 30:
             signals.append({
                 "kind": "warning",
-                "title": f"{biggest['name']} alone is {weight:.0f}% of your portfolio",
-                "detail": "Single-stock concentration cuts both ways — it works until it doesn't. Most frameworks cap one position at 10–15%.",
+                "metric": f"{weight:.0f}% of book",
+                "title": f"{biggest['name']} is an outsized single position",
+                "detail": (
+                    f"{_lakh(biggest['value'])} rides on one company — a 10% move in "
+                    f"{biggest['name']} swings your whole portfolio by about {weight / 10:.1f}%. "
+                    f"Most position-sizing frameworks cap one stock at 10–15%; even trimming to 40% "
+                    f"would free {_lakh(biggest['value'] - summary['value'] * 0.4)} to redeploy."
+                ),
             })
 
     small = next((c for c in caps if c["label"] == "Small cap"), None)
     if small and small["alloc_pct"] > 50:
         signals.append({
             "kind": "warning",
-            "title": f"Small caps are {small['alloc_pct']:.0f}% of your book",
-            "detail": "Small caps swing hardest in drawdowns and dry up in liquidity crunches. Make sure the sizing matches your risk appetite.",
+            "metric": f"{small['alloc_pct']:.0f}% small cap",
+            "title": "Heavy small-cap tilt",
+            "detail": (
+                f"{_lakh(small['value'])} across {small['count']} small-cap "
+                f"name{'s' if small['count'] > 1 else ''}. Small caps fall hardest in corrections and are "
+                f"the first to lose liquidity in a crunch — fine if intentional, but make sure the sizing "
+                f"matches how much drawdown you can actually sit through."
+            ),
         })
 
     if summary["count"] < 5:
         signals.append({
             "kind": "info",
-            "title": f"Only {summary['count']} holding{'s' if summary['count'] > 1 else ''}",
-            "detail": "Under five stocks, one company's news dominates your returns. 8–15 names across sectors smooths the ride without diluting conviction.",
+            "metric": f"{summary['count']} stock{'s' if summary['count'] > 1 else ''}",
+            "title": "Thin diversification",
+            "detail": (
+                f"With {summary['count']} holding{'s' if summary['count'] > 1 else ''}, a single company's "
+                f"earnings call can set your month. Research on Indian retail portfolios suggests 8–15 names "
+                f"across 4+ sectors captures most diversification benefit without diluting conviction. "
+                f"You have room for {8 - summary['count']}–{15 - summary['count']} more."
+            ),
         })
 
     for h in all_holdings:
+        weight = h["value"] / summary["value"] * 100 if summary["value"] else 0
         if h["pnl_pct"] <= -20:
+            breakeven = (1 / (1 + h["pnl_pct"] / 100) - 1) * 100
             signals.append({
                 "kind": "warning",
-                "title": f"{h['name']} is down {abs(h['pnl_pct']):.0f}%",
-                "detail": "Re-check the original thesis. If it's broken, averaging down turns a mistake into a bigger one; if intact, volatility is the price of entry.",
+                "metric": f"{h['pnl_pct']:+.0f}%",
+                "title": f"{h['name']} is deep in drawdown",
+                "detail": (
+                    f"{_lakh(h['invested'])} in has become {_lakh(h['value'])} — and from here it needs "
+                    f"+{breakeven:.0f}% just to break even, not {abs(h['pnl_pct']):.0f}%. Re-check the "
+                    f"original thesis: if it's broken, averaging down compounds the mistake; if intact, "
+                    f"decide the level where you'd add — before the market decides for you."
+                ),
             })
         elif h["pnl_pct"] >= 40:
+            gain = h["value"] - h["invested"]
             signals.append({
                 "kind": "positive",
-                "title": f"{h['name']} is up {h['pnl_pct']:.0f}%",
-                "detail": "Winners drift into oversized positions. Consider a partial booking or a trailing stop to protect the gain without exiting the story.",
+                "metric": f"{h['pnl_pct']:+.0f}%",
+                "title": f"{h['name']} is a big winner",
+                "detail": (
+                    f"{_lakh(h['invested'])} has grown to {_lakh(h['value'])} — {_lakh(gain)} of unrealised "
+                    f"gain, now {weight:.0f}% of your book. Booking even a quarter locks in "
+                    f"{_lakh(gain * 0.25)} while keeping most of the upside; a trailing stop does the same "
+                    f"job without selling a share."
+                ),
             })
 
     if xirr is not None and nifty is not None:
         diff = xirr - nifty
         signals.append({
             "kind": "positive" if diff >= 0 else "info",
-            "title": f"You're {'beating' if diff >= 0 else 'trailing'} the Nifty by {abs(diff):.1f}% annualised",
+            "metric": f"{diff:+.1f}% vs Nifty",
+            "title": f"{'Beating' if diff >= 0 else 'Trailing'} the index, annualised",
             "detail": (
-                "Your stock picks are adding value over simply buying the index — keep doing what's working."
-                if diff >= 0 else
-                "An index fund with the same cashflows would be ahead. Worth asking which holdings earn their place."
+                f"Your money-weighted return is {xirr:+.1f}% a year against {nifty:+.1f}% for the same "
+                f"rupees in the Nifty 50. "
+                + (
+                    "That gap is your stock-picking earning its keep — protect it by not letting the "
+                    "winners above become the whole portfolio."
+                    if diff >= 0 else
+                    "An index fund with identical cashflows would currently be ahead — worth asking which "
+                    "holdings genuinely earn their place over a simple Nifty ETF."
+                )
             ),
         })
 
@@ -268,7 +318,8 @@ async def portfolio_insights(
         )
         try:
             result = await ai_service.review_portfolio(context)
-            ai_review = result.get("observations") or None
+            if result.get("observations"):
+                ai_review = {"verdict": result.get("verdict"), "observations": result["observations"]}
         except Exception:
             ai_review = None
 
@@ -367,10 +418,11 @@ def _bucketise(holdings: list[dict], key, value_total: float, top: int | None = 
             # clickable drill-down: which holdings make up this bucket
             "holdings": [
                 {
-                    "ticker":  i["ticker"],
-                    "name":    i["name"],
-                    "value":   round(i["value"], 2),
-                    "pnl_pct": round((i["value"] - i["invested"]) / i["invested"] * 100 if i["invested"] else 0, 2),
+                    "ticker":   i["ticker"],
+                    "name":     i["name"],
+                    "value":    round(i["value"], 2),
+                    "invested": round(i["invested"], 2),
+                    "pnl_pct":  round((i["value"] - i["invested"]) / i["invested"] * 100 if i["invested"] else 0, 2),
                 }
                 for i in sorted(b["items"], key=lambda x: -x["value"])[:8]
             ],
