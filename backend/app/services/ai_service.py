@@ -117,9 +117,9 @@ _GROQ_EXTRA_MODELS = [
 
 # OpenRouter free fallbacks
 _OPENROUTER_EXTRA_MODELS = [
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "google/gemma-3-27b-it:free",
-    "mistralai/mistral-small-3.2-24b-instruct:free",
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "google/gemma-4-31b-it:free",
+    "nvidia/nemotron-3-nano-30b-a3b:free",
 ]
 
 
@@ -188,10 +188,15 @@ async def _call_nvidia(system: str, user: str, max_tokens: int, model: str | Non
             temperature=0.6,
             top_p=0.95,
             max_tokens=max_tokens,
-            extra_body={"chat_template_kwargs": {"thinking": True, "reasoning_effort": "high"}},
+            # DeepSeek-only knob; GLM and other NVIDIA models reject/ignore it
+            extra_body=(
+                {"chat_template_kwargs": {"thinking": True, "reasoning_effort": "high"}}
+                if "deepseek" in (model or settings.nvidia_model)
+                else None
+            ),
             stream=False,
         ),
-        timeout=settings.ai_timeout_seconds,
+        timeout=max(settings.ai_timeout_seconds, 180),
     )
     content = resp.choices[0].message.content
     return _parse_json(content)
@@ -259,6 +264,10 @@ async def _call_openrouter(system: str, user: str, max_tokens: int, model: str |
         "temperature": 0.15,
         "max_tokens":  max_tokens,
         "response_format": {"type": "json_object"},
+        # Nemotron free models emit a separate `reasoning` stream that burns the
+        # max_tokens budget — answers truncate (finish_reason=length) or come
+        # back empty. Disable it; models without the switch simply ignore this.
+        "reasoning": {"enabled": False},
     }
     headers = {
         "Authorization": f"Bearer {settings.openrouter_api_key}",
@@ -276,7 +285,39 @@ async def _call_openrouter(system: str, user: str, max_tokens: int, model: str |
 
 # ── Unified waterfall: NVIDIA → Groq → OpenRouter ────────────────────────────
 
-async def _chat_json(system: str, user: str, max_tokens: int = 1200, use_cache: bool = True) -> dict:
+async def _openrouter_attempt(
+    system: str, user: str, max_tokens: int, use_cache: bool, errors: list[str],
+) -> dict | None:
+    """Try OpenRouter primary + free fallbacks; None if all fail."""
+    if not settings.openrouter_api_key:
+        errors.append("OpenRouter: no API key")
+        return None
+    for ormodel in [settings.openrouter_model] + _OPENROUTER_EXTRA_MODELS:
+        try:
+            logger.info("Trying OpenRouter model: %s", ormodel)
+            result = await _call_openrouter(system, user, max_tokens, ormodel)
+            result.setdefault("_provider", f"openrouter/{ormodel}")
+            if use_cache:
+                _prompt_cache.set(system, user, result)
+            return result
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                errors.append(f"OpenRouter/{ormodel}: rate-limited")
+                logger.warning("OpenRouter/%s: rate-limited — trying next model", ormodel)
+                continue
+            errors.append(f"OpenRouter/{ormodel}: HTTP {e.response.status_code}")
+            break
+        except (asyncio.TimeoutError, json.JSONDecodeError, Exception) as e:
+            errors.append(f"OpenRouter/{ormodel}: {type(e).__name__}")
+            logger.error("OpenRouter/%s error: %s", ormodel, e)
+            break
+    return None
+
+
+async def _chat_json(
+    system: str, user: str, max_tokens: int = 1200,
+    use_cache: bool = True, prefer_openrouter: bool = False,
+) -> dict:
     """
     Multi-model waterfall — Groq (primary) → NVIDIA DeepSeek → OpenRouter.
     Prompt-level cache: identical (system, user) pairs return cached result
@@ -293,12 +334,25 @@ async def _chat_json(system: str, user: str, max_tokens: int = 1200, use_cache: 
             return cached
 
     errors: list[str] = []
+    openrouter_tried = False
 
-    # ── 1. Groq: primary model then fallbacks ─────────────────────────────────
+    # ── 0.5 Preferred route: OpenRouter's Nemotron-120B leads for tasks that
+    #    want detailed, context-grounded prose (Ask AI, portfolio/document Q&A);
+    #    everything else keeps the fast Groq path. Falls through to the normal
+    #    chain on failure. ────────────────────────────────────────────────────
+    if prefer_openrouter:
+        openrouter_tried = True
+        result = await _openrouter_attempt(system, user, max_tokens, use_cache, errors)
+        if result is not None:
+            return result
+        logger.warning("Preferred OpenRouter route failed — falling back to Groq chain")
+
+    # ── 1. Groq — primary (fast path; GLM fallback is slow but capable) ──────
     if settings.groq_api_key:
         for gmodel in [settings.groq_model] + _GROQ_EXTRA_MODELS:
             try:
                 result = await _call_groq(system, user, max_tokens, gmodel)
+                result.setdefault("_provider", f"groq/{gmodel}")
                 if gmodel != settings.groq_model:
                     logger.info("Groq fallback succeeded: %s", gmodel)
                 if use_cache:
@@ -314,39 +368,20 @@ async def _chat_json(system: str, user: str, max_tokens: int = 1200, use_cache: 
                     logger.warning("Groq/%s: HTTP %s — trying next model", gmodel, status)
                 else:
                     errors.append(f"Groq/{gmodel}: HTTP {status}")
-                    logger.warning("Groq/%s: HTTP %s — trying NVIDIA", gmodel, status)
+                    logger.warning("Groq/%s: HTTP %s — trying NVIDIA/GLM", gmodel, status)
                     break
             except (asyncio.TimeoutError, json.JSONDecodeError, Exception) as e:
                 errors.append(f"Groq/{gmodel}: {type(e).__name__}")
-                logger.warning("Groq/%s: %s — trying NVIDIA", gmodel, e)
+                logger.warning("Groq/%s: %s — trying NVIDIA/GLM", gmodel, e)
                 break
     else:
         errors.append("Groq: no API key")
-
-    # ── 2. NVIDIA / DeepSeek — fallback ──────────────────────────────────────
-    if settings.nvidia_api_key:
-        try:
-            result = await _call_nvidia(system, user, max_tokens)
-            if use_cache:
-                _prompt_cache.set(system, user, result)
-            return result
-        except NvidiaRateLimitError:
-            errors.append("NVIDIA/DeepSeek: 429 rate-limited")
-            logger.warning("NVIDIA/DeepSeek: 429 rate-limited — trying OpenRouter")
-        except NvidiaAPIStatusError as e:
-            status = getattr(e, "status_code", 0)
-            errors.append(f"NVIDIA/DeepSeek: HTTP {status}")
-            logger.warning("NVIDIA/DeepSeek: HTTP %s — trying OpenRouter", status)
-        except (asyncio.TimeoutError, json.JSONDecodeError, Exception) as e:
-            errors.append(f"NVIDIA/DeepSeek: {type(e).__name__}: {e}")
-            logger.warning("NVIDIA/DeepSeek: %s — trying OpenRouter", e)
-    else:
-        errors.append("NVIDIA: no API key")
 
     # ── 3. MiniMax M2.7 via NVIDIA — separate key, 8k context ────────────────
     if settings.nvidia_minimax_api_key:
         try:
             result = await _call_minimax(system, user, max_tokens)
+            result.setdefault("_provider", "nvidia/minimax-m2.7")
             logger.info("MiniMax M2.7 succeeded")
             if use_cache:
                 _prompt_cache.set(system, user, result)
@@ -364,28 +399,33 @@ async def _chat_json(system: str, user: str, max_tokens: int = 1200, use_cache: 
     else:
         errors.append("MiniMax: no API key")
 
-    # ── 5. OpenRouter: primary then 3 free fallbacks ──────────────────────────
-    if settings.openrouter_api_key:
-        for ormodel in [settings.openrouter_model] + _OPENROUTER_EXTRA_MODELS:
-            try:
-                logger.info("Trying OpenRouter model: %s", ormodel)
-                result = await _call_openrouter(system, user, max_tokens, ormodel)
-                if use_cache:
-                    _prompt_cache.set(system, user, result)
-                return result
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:
-                    errors.append(f"OpenRouter/{ormodel}: rate-limited")
-                    logger.warning("OpenRouter/%s: rate-limited — trying next model", ormodel)
-                    continue
-                errors.append(f"OpenRouter/{ormodel}: HTTP {e.response.status_code}")
-                break
-            except (asyncio.TimeoutError, json.JSONDecodeError, Exception) as e:
-                errors.append(f"OpenRouter/{ormodel}: {type(e).__name__}")
-                logger.error("OpenRouter/%s error: %s", ormodel, e)
-                break
+    # ── 5. OpenRouter (skipped when the preferred route already tried it) ────
+    if not openrouter_tried:
+        result = await _openrouter_attempt(system, user, max_tokens, use_cache, errors)
+        if result is not None:
+            return result
+
+    # ── 6. NVIDIA (GLM-5.2) — last resort: correct output but ~2-3 min queue ─
+    if settings.nvidia_api_key:
+        try:
+            result = await _call_nvidia(system, user, max_tokens)
+            result.setdefault("_provider", f"nvidia/{settings.nvidia_model}")
+            if use_cache:
+                _prompt_cache.set(system, user, result)
+            return result
+        except NvidiaRateLimitError:
+            errors.append("NVIDIA: 429 rate-limited")
+            logger.warning("NVIDIA: 429 rate-limited — giving up")
+        except NvidiaAPIStatusError as e:
+            status = getattr(e, "status_code", 0)
+            errors.append(f"NVIDIA: HTTP {status}")
+            logger.warning("NVIDIA: HTTP %s — giving up", status)
+        except (asyncio.TimeoutError, json.JSONDecodeError, Exception) as e:
+            errors.append(f"NVIDIA: {type(e).__name__}: {e}")
+            logger.warning("NVIDIA: %s — giving up", e)
     else:
-        errors.append("OpenRouter: no API key")
+        errors.append("NVIDIA: no API key")
+
 
     summary = " | ".join(errors)
     logger.error("All AI providers exhausted: %s", summary)
@@ -769,7 +809,7 @@ Respond ONLY with JSON: { "answer": "string", "confidence": "High | Medium | Low
 Confidence: High = direct data available. Medium = partial data + training. Low = mostly training/inference."""
 
     user = json.dumps({"question": question, "context": grounding}, default=str)
-    return await _chat_json(system, user, max_tokens=900)
+    return await _chat_json(system, user, max_tokens=900, prefer_openrouter=True)
 
 
 # ── 4. Document analysis ──────────────────────────────────────────────────────
@@ -873,7 +913,7 @@ Respond ONLY with valid JSON:
         "question": question,
         "document": text,
     }, default=str)
-    return await _chat_json(system, user, max_tokens=900)
+    return await _chat_json(system, user, max_tokens=900, prefer_openrouter=True)
 
 
 async def review_portfolio(context: str) -> dict:
@@ -929,14 +969,14 @@ You will get PORTFOLIO SNAPSHOT (the investor's real holdings) and QUESTION.
 Return STRICT JSON: {"answer": "<answer>", "followups": ["<q1>", "<q2>"]}
 RULES:
 1. Ground every claim in the snapshot — quote its exact numbers (₹, %, weights).
-2. Answer the question directly in 2-5 sentences. Specific > generic.
+2. Answer the question directly and thoroughly in 3-7 sentences. Specific > generic; explain the why, not just the what.
 3. If the snapshot can't answer it, say exactly what data is missing, then
    answer what you can from general Indian-market knowledge, clearly labelled.
 4. Indian conventions: ₹, lakh/crore, NSE/BSE, LTCG/STCG where relevant.
 5. "followups": 2 short natural next questions THIS investor would ask (max 8 words each).
 6. No markdown, no disclaimers."""
     user = f"PORTFOLIO SNAPSHOT:\n{context}\n\nQUESTION: {question}"
-    result = await _chat_json(system, user, max_tokens=700, use_cache=False)
+    result = await _chat_json(system, user, max_tokens=900, use_cache=False, prefer_openrouter=True)
     answer = str(result.get("answer") or "").strip()
     followups = [str(f).strip() for f in (result.get("followups") or []) if str(f).strip()][:2]
     if not answer:

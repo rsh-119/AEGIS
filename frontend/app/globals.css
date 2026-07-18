@@ -292,34 +292,23 @@
 }
 
 /* ── Hero search bar ─────────────────────────────────────────────────────────── */
-@property --hero-angle {
-  syntax: "<angle>";
-  initial-value: 0deg;
-  inherits: false;
-}
-@keyframes hero-border-spin { 100% { --hero-angle: 360deg; } }
-
+/* Professional, quiet search shell: hairline border, soft depth, saffron
+   focus ring — no gradient/spinner theatrics. */
 .hero-search-outer {
   position: relative;
   border-radius: 9999px;
-  padding: 1.5px;
-  background: conic-gradient(
-    from var(--hero-angle),
-    rgb(var(--color-border))  0%,
-    rgb(var(--color-saffron)) 18%,
-    rgb(var(--color-border))  36%,
-    rgb(var(--color-border))  100%
-  );
-  animation: hero-border-spin 4s linear infinite paused;
+  padding: 1px;
+  background: rgb(var(--color-border));
   box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.3s ease;
+  transition: box-shadow 0.25s ease, background-color 0.25s ease;
 }
-.hero-search-outer:hover,
+.hero-search-outer:hover {
+  box-shadow: var(--shadow-md);
+}
 .hero-search-outer:focus-within {
-  animation-play-state: running;
-  box-shadow: 0 0 0 4px rgba(0,82,255,0.10), 0 8px 32px rgba(0,82,255,0.14);
+  background: rgb(var(--color-saffron) / 0.55);
+  box-shadow: 0 0 0 4px rgb(var(--color-saffron) / 0.10), var(--shadow-md);
 }
-.hero-search-outer:focus-within { animation-duration: 1.8s; }
 .hero-search-inner {
   background: rgb(var(--color-surface));
   border-radius: 9999px;
@@ -394,6 +383,11 @@
     transform: translateY(16px);
     transition-duration: 0.65s;
   }
+  /* Static headline: the per-word blur stagger janks on weak GPUs */
+  .hero-word { animation: none !important; opacity: 1 !important; transform: none !important; filter: none !important; }
+  /* gradient-flow repaints the clipped headline text every frame — static on mobile */
+  .hero-gradient-text { animation: none !important; }
+  .tick-pulse { animation: none !important; }
 }
 
 /* ── Floating accent chips (uses the existing float-gentle keyframes) ── */
@@ -626,6 +620,5 @@
   .hero-chip,
   .orb,
   .animate-marquee,
-  .hero-search-outer { animation: none !important; }
   .hero-gradient-text { animation: none !important; }
 }

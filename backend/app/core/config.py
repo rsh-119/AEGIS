@@ -31,7 +31,7 @@ class Settings(BaseSettings):
         return keys
 
     openrouter_api_key: str = ""
-    openrouter_model: str = "openai/gpt-oss-120b:free"
+    openrouter_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
 
     redis_url: str = "redis://localhost:6379"
     indianapi_key: str = ""

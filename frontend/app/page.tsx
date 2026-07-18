@@ -84,15 +84,20 @@ function spotlightMove(e: React.MouseEvent<HTMLElement>) {
 }
 
 /* Scroll parallax: drifts children vertically as the element crosses the
-   viewport. Transform-only (composited) so it stays smooth. */
+   viewport. Transform-only (composited); disabled on small screens where
+   scroll-linked motion reads as jitter rather than depth. */
 function Parallax({ amount = 26, className, children }: {
   amount?: number; className?: string; children: React.ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [enabled, setEnabled] = useState(false);
+  useEffect(() => {
+    setEnabled(window.matchMedia("(min-width: 1024px)").matches);
+  }, []);
   const { scrollYProgress } = useScroll({ target: ref, offset: ["start end", "end start"] });
   const y = useTransform(scrollYProgress, [0, 1], [amount, -amount]);
   return (
-    <motion.div ref={ref} style={{ y }} className={className}>
+    <motion.div ref={ref} style={enabled ? { y } : undefined} className={className}>
       {children}
     </motion.div>
   );
