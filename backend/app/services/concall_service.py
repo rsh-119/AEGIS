@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from urllib.parse import quote_plus
@@ -205,9 +206,12 @@ You have TWO sources of truth per quarter:
 1. FINANCIAL DATA — actual audited numbers (revenue, profit, margins, cashflow, YoY changes)
 2. EARNINGS NEWS HEADLINES — real articles from the results week capturing management quotes, analyst reactions, forward guidance
 
+NON-NEGOTIABLE: return EXACTLY one summary object for EACH quarter provided in the input — if 4 quarters are given, "summaries" must contain 4 objects. Never skip a quarter.
+
 YOUR MOST IMPORTANT TASK: Extract specific commitments and promises management made on the concall (from news headlines). These are promises like revenue targets, margin improvement timelines, capex plans, debt reduction pledges, new product launches, capacity additions, or geographic expansion. Retail investors need to track whether management delivered on promises.
 
 For each quarter produce these fields:
+- "label": copy the quarter label EXACTLY as given in the input (e.g. "Q2 FY25") — never prepend the company name or reformat it
 - "headline": One sharp sentence capturing the quarter's story (numbers first, e.g. "Revenue +18% YoY but PAT margin compressed 200bps to 12.3%")
 - "summary": 5-7 sentences. Must cite exact numbers from data. Cover: topline growth %, PAT trend, margin direction with bps change, cashflow quality, and what drove results. Reference news headlines where they add context.
 - "key_numbers": object with exactly 4 most important metrics {"Revenue": "₹X Cr", "PAT": "₹Y Cr", "PAT Margin": "Z%", "Revenue YoY": "+X%"}
@@ -228,11 +232,27 @@ Respond ONLY with valid JSON (no markdown fences):
         {"company": company, "sector": sector, "quarters": quarters},
         default=str,
     )
-    result = await _chat_json(system, user, max_tokens=4000)
-    if "error" in result:
-        logger.warning("Concall AI error: %s", result["error"])
-        return []
-    return result.get("summaries", [])
+    async def _run(use_cache: bool) -> list[dict]:
+        result = await _chat_json(system, user, max_tokens=4000, use_cache=use_cache)
+        if "error" in result:
+            logger.warning("Concall AI error: %s", result["error"])
+            return []
+        out = result.get("summaries", [])
+        return out if isinstance(out, list) else []
+
+    summaries = await _run(use_cache=True)
+    # Models intermittently return fewer summaries than quarters — one fresh
+    # retry (bypassing the prompt cache, which may hold the lazy response)
+    # usually recovers the full set.
+    if len(summaries) < len(quarters):
+        logger.warning(
+            "Concall summaries short (%d/%d) — retrying once uncached",
+            len(summaries), len(quarters),
+        )
+        retry = await _run(use_cache=False)
+        if len(retry) > len(summaries):
+            summaries = retry
+    return summaries
 
 
 # ── public API ────────────────────────────────────────────────────────────────
@@ -257,10 +277,20 @@ async def get_concall_summary(ticker: str) -> dict:
     # 2. Generate AI summaries using financial data + real news context
     summaries = await _ai_summarise(data["company"], data["sector"], data["quarters"], news_map)
 
-    # Merge AI summaries back into quarter data
-    summary_map = {s["label"]: s for s in summaries if isinstance(s, dict)}
+    # Merge AI summaries back into quarter data. Models occasionally rewrite
+    # labels ("TCS Q1 FY27", "Q1FY27") — normalise both sides to "Qx FYxx"
+    # so a cosmetic rewrite doesn't drop the whole summary.
+    def _norm_label(raw) -> str:
+        m = re.search(r"Q\s*([1-4])\s*FY\s*(\d{2,4})", str(raw), re.I)
+        return f"Q{m.group(1)} FY{m.group(2)[-2:]}" if m else str(raw).strip().upper()
+
+    summary_map = {
+        _norm_label(s["label"]): s
+        for s in summaries
+        if isinstance(s, dict) and s.get("label")
+    }
     for q in data["quarters"]:
-        ai = summary_map.get(q["label"], {})
+        ai = summary_map.get(_norm_label(q["label"]), {})
         q["headline"] = ai.get("headline")
         q["summary"] = ai.get("summary")
         q["key_numbers"] = ai.get("key_numbers", {})
@@ -273,6 +303,16 @@ async def get_concall_summary(ticker: str) -> dict:
         q["news_headlines"] = news_map.get(q["label"], [])
 
     result = {"company": data["company"], "sector": data["sector"], "quarters": data["quarters"]}
-    # Persist to DB — next call within 20h skips AI entirely
-    await cache_service.set(key, result, model="groq-waterfall")
+    # Persist to DB — next call within 20h skips AI entirely. ONLY cache runs
+    # where the AI actually produced summaries: caching a failed run pins
+    # "Summary unavailable" on the ticker for the whole TTL even after the
+    # provider recovers.
+    matched = sum(1 for q in data["quarters"] if q.get("headline"))
+    if matched == len(data["quarters"]):
+        await cache_service.set(key, result, model="groq-waterfall")
+    else:
+        logger.warning(
+            "Concall summaries incomplete for %s (%d/%d quarters) — returning uncached so next request retries",
+            ticker, matched, len(data["quarters"]),
+        )
     return result
