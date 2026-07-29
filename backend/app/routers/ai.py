@@ -27,3 +27,14 @@ async def ask(body: AskRequest):
 
     result = await ai_service.answer(body.question, quote, hist, articles)
     return {"question": body.question, **result}
+
+
+@router.get("/diagnostics")
+async def diagnostics():
+    """Waterfall observability — which provider is actually serving AI calls,
+    average latency, and how often schema validation needed a repair retry.
+    Process-lifetime in-memory counters, not persisted across restarts."""
+    return {
+        "providers": ai_service.get_provider_stats(),
+        "schema_repairs": ai_service.get_repair_counts(),
+    }

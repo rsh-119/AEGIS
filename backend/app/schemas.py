@@ -1,6 +1,7 @@
 """Pydantic request/response schemas."""
 
 from datetime import date
+from typing import Literal
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -81,3 +82,57 @@ class WatchCreate(BaseModel):
 class AskRequest(BaseModel):
     question: str
     ticker: str | None = None
+
+
+# ── AI response validation ────────────────────────────────────────────────────
+# These validate the model's own JSON output (analyse_stock/diagnose_health/
+# answer) before it ever reaches the frontend — catching a truncated or
+# malformed response as a structural error rather than shipping broken JSON.
+# Deliberately loose on list lengths (min_length=1, not the prompt's exact
+# counts): the goal is to catch genuinely broken output, not to burn a
+# repair round-trip because the model wrote 7 key_metrics instead of 8.
+
+class KeyMetric(BaseModel):
+    label: str
+    value: str
+    context: str
+    signal: Literal["good", "warn", "bad", "neutral"]
+    explanation: str
+
+
+class AnalysisResponse(BaseModel):
+    verdict: str
+    verdict_reason: str
+    confidence: str
+    valuation_grade: str
+    plain_summary: str
+    valuation: str
+    key_metrics: list[KeyMetric] = Field(min_length=1)
+    risks: list[str] = Field(min_length=1)
+    positives: list[str] = Field(min_length=1)
+    bull_case: str
+    bear_case: str
+    outlook: str
+    what_to_watch: list[str] = Field(min_length=1)
+
+
+class HealthResponse(BaseModel):
+    status: str
+    status_reason: str
+    financial_health_score: int = Field(ge=1, le=10)
+    summary: str
+    concerns: list[str] = Field(min_length=1)
+    positives: list[str] = []
+    red_flags: list[str] = []
+
+
+class AskResponse(BaseModel):
+    answer: str
+    confidence: Literal["High", "Medium", "Low"]
+    # True only if every specific fact/number in `answer` came from the injected
+    # grounding data (or document text); False if the model drew on general/
+    # training knowledge for any part of it. Required (not defaulted) so a
+    # model that omits it trips the Task-4 repair-retry instead of silently
+    # passing as "grounded" — lets the frontend flag recalled content instead
+    # of presenting it with the same authority as live data.
+    answered_from_facts: bool

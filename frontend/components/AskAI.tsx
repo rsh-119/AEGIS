@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 
-type Msg = { role: "user" | "ai"; text: string; confidence?: string; source?: string; error?: boolean };
+type Msg = { role: "user" | "ai"; text: string; confidence?: string; source?: string; error?: boolean; fromFacts?: boolean };
 
 const CONFIDENCE_COLOR: Record<string, string> = {
   High: "text-up",
@@ -73,14 +73,20 @@ export function AskAI({ ticker }: { ticker: string }) {
           text: data.answer,
           confidence: data.confidence,
           source: data.source_context,
+          fromFacts: data.answered_from_facts,
         }]);
       } else {
         // Normal stock Q&A mode
-        const res = await post<{ answer: string; confidence: string }>("/api/ai/ask", {
+        const res = await post<{ answer: string; confidence: string; answered_from_facts?: boolean }>("/api/ai/ask", {
           question: text,
           ticker,
         });
-        setMsgs((m) => [...m, { role: "ai", text: res.answer, confidence: res.confidence }]);
+        setMsgs((m) => [...m, {
+          role: "ai",
+          text: res.answer,
+          confidence: res.confidence,
+          fromFacts: res.answered_from_facts,
+        }]);
       }
     } catch (e) {
       setMsgs((m) => [...m, { role: "ai", text: (e as Error).message, error: true }]);
@@ -202,6 +208,11 @@ export function AskAI({ ticker }: { ticker: string }) {
                 {m.confidence && (
                   <p className={`pl-1 text-micro-cap font-medium ${CONFIDENCE_COLOR[m.confidence] ?? "text-muted"}`}>
                     Confidence: {m.confidence}
+                    {m.fromFacts === false && (
+                      <span className="ml-1.5 text-muted font-normal">
+                        · includes general knowledge, not live data
+                      </span>
+                    )}
                   </p>
                 )}
                 {m.source && (

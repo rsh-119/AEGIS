@@ -136,13 +136,19 @@ async def insights(ticker: str):
             return {"available": False, "reason": hist_2y.get("error", "No history available")}
         return await _forecast_async(candles_2y, 30, model)
 
+    # Sector-median comparison, precomputed once and handed to both AI calls —
+    # so "premium to sector" claims cite a real number instead of the model
+    # guessing a plausible-sounding range.
+    peer_data = await peer_service.get_peer_comparison(ticker, quote.get("sector", ""), quote.get("industry"))
+    peer_avg = peer_data.get("sector_avg", {})
+
     # News + AI + all 3 forecasts genuinely in parallel — forecasts run on a
     # thread pool (see _forecast_async) so they don't block each other or the
     # event loop.
     news_data, ai_analysis, health, fc_holt, fc_xgb, fc_lgbm = await asyncio.gather(
         news_service.get_news_and_sentiment(ticker, company),
-        ai_service.analyse_stock(quote, signals, hist, {}),  # sentiment injected below after news
-        ai_service.diagnose_health(quote, hist, {}, []),
+        ai_service.analyse_stock(quote, signals, hist, {}, peer_avg),  # sentiment injected below after news
+        ai_service.diagnose_health(quote, hist, {}, [], peer_avg),
         _run_forecast("holt"),
         _run_forecast("xgboost"),
         _run_forecast("lgbm"),
