@@ -25,6 +25,7 @@ type Message = {
   loading?: boolean;
   suggestions?: string[];
   stocks?: StockSnippet[];
+  answeredFromFacts?: boolean;
 };
 
 /* ─── Markdown-lite renderer ─────────────────────── */
@@ -181,7 +182,10 @@ function MessageBubble({ msg, onSuggest }: { msg: Message; onSuggest: (q: string
           ) : (
             <div>
               <Markdown text={msg.content} />
-              <div className="mt-2 flex justify-end">
+              <div className="mt-2 flex items-center justify-between">
+                {msg.answeredFromFacts === false ? (
+                  <p className="text-[10px] text-muted">Includes general knowledge, not live data</p>
+                ) : <span />}
                 <CopyButton text={msg.content} />
               </div>
             </div>
@@ -281,6 +285,7 @@ export default function AskPage() {
                 loading:     false,
                 suggestions: data.suggestions ?? [],
                 stocks:      data.stocks ?? [],
+                answeredFromFacts: data.answered_from_facts,
               }
             : m
         )
@@ -318,7 +323,7 @@ export default function AskPage() {
           </div>
           <div>
             <h1 className="font-display text-2xl font-bold">Ask AEGIS AI</h1>
-            <p className="text-xs text-muted">Indian stock market expert · Powered by Groq</p>
+            <p className="text-xs text-muted">Indian stock market expert · Grounded in live data</p>
           </div>
         </div>
         {!isEmpty && (

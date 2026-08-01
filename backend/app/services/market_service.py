@@ -21,7 +21,7 @@ import requests as _requests
 
 from app.core.cache import cache
 from app.services import indianapi_service
-from app.services.stock_service import _clean, _TTL
+from app.services.stock_service import _clean, _TTL, cap_type_for
 
 logger = logging.getLogger(__name__)
 _pool = ThreadPoolExecutor(max_workers=32)
@@ -339,10 +339,6 @@ _SMALL_CAP_TICKERS = [
     "OIL.NS","MRPL.NS","CASTROLIND.NS","GSPL.NS","MGL.NS","IGL.NS",
 ]
 
-# Market-cap thresholds in INR (used to classify unknown tickers by market cap)
-_LARGE_CAP = 200_000_000_000   # ≥ ₹20,000 Cr
-_MID_CAP   =  10_000_000_000   # ≥ ₹1,000 Cr
-
 _MOVERS_POOL = _LARGE_CAP_TICKERS + _MID_CAP_TICKERS + _SMALL_CAP_TICKERS
 
 # Predefined cap tier (used only internally for /cap endpoint)
@@ -411,11 +407,7 @@ async def _fetch_sector_quote(ticker: str) -> dict | None:
         "net_income":     parsed.get("net_income"),
         "debt_to_equity": parsed.get("debt_to_equity"),
         "dividend_yield": parsed.get("dividend_yield"),
-        "cap_type": (
-            "large" if mc and mc >= _LARGE_CAP
-            else "mid"   if mc and mc >= _MID_CAP
-            else "small"
-        ),
+        "cap_type": cap_type_for(mc),
     })
 
 

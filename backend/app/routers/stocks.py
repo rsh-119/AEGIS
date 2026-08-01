@@ -4,7 +4,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, HTTPException, Query
 
-from app.services import stock_service, news_service, ai_service, forecast_service, concall_service, peer_service, shareholding_service
+from app.services import stock_service, news_service, ai_service, forecast_service, concall_service, peer_service, shareholding_service, financials_service
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
 
@@ -128,27 +128,30 @@ async def insights(ticker: str):
     # get_history(ticker, "2y") independently via asyncio.gather, and since
     # none of them had landed in cache yet, all 3 raced and fired 3 separate
     # IndianAPI requests for identical data instead of 1.
-    hist_2y = await stock_service.get_history(ticker, "2y")
+    # News/peer data are independent of each other and of the history fetch,
+    # so they load concurrently — but must land BEFORE the AI calls below,
+    # since analyse_stock/diagnose_health need the real sentiment/articles.
+    hist_2y, peer_data, news_data = await asyncio.gather(
+        stock_service.get_history(ticker, "2y"),
+        peer_service.get_peer_comparison(ticker, quote.get("sector", ""), quote.get("industry")),
+        news_service.get_news_and_sentiment(ticker, company),
+    )
     candles_2y = hist_2y.get("candles", []) if "error" not in hist_2y else []
+    peer_avg = peer_data.get("sector_avg", {})
+    sentiment = news_data["sentiment"]
+    articles  = news_data["articles"]
 
     async def _run_forecast(model: str) -> dict:
         if not candles_2y:
             return {"available": False, "reason": hist_2y.get("error", "No history available")}
         return await _forecast_async(candles_2y, 30, model)
 
-    # Sector-median comparison, precomputed once and handed to both AI calls —
-    # so "premium to sector" claims cite a real number instead of the model
-    # guessing a plausible-sounding range.
-    peer_data = await peer_service.get_peer_comparison(ticker, quote.get("sector", ""), quote.get("industry"))
-    peer_avg = peer_data.get("sector_avg", {})
-
-    # News + AI + all 3 forecasts genuinely in parallel — forecasts run on a
+    # AI + all 3 forecasts genuinely in parallel — forecasts run on a
     # thread pool (see _forecast_async) so they don't block each other or the
     # event loop.
-    news_data, ai_analysis, health, fc_holt, fc_xgb, fc_lgbm = await asyncio.gather(
-        news_service.get_news_and_sentiment(ticker, company),
-        ai_service.analyse_stock(quote, signals, hist, {}, peer_avg),  # sentiment injected below after news
-        ai_service.diagnose_health(quote, hist, {}, [], peer_avg),
+    ai_analysis, health, fc_holt, fc_xgb, fc_lgbm = await asyncio.gather(
+        ai_service.analyse_stock(quote, signals, hist, sentiment, peer_avg),
+        ai_service.diagnose_health(quote, hist, sentiment, articles, peer_avg),
         _run_forecast("holt"),
         _run_forecast("xgboost"),
         _run_forecast("lgbm"),
@@ -211,6 +214,15 @@ async def concall_summary(ticker: str):
     return data
 
 
+@router.get("/{ticker}/financials")
+async def stock_financials(ticker: str):
+    """Screener-style financial statements: quarterly results, P&L, balance sheet, cash flow, ratios."""
+    data = await financials_service.get_financials(ticker)
+    if "error" in data:
+        raise HTTPException(status_code=404, detail=data["error"])
+    return data
+
+
 @router.get('/{ticker}/shareholding-history')
 async def shareholding_history(ticker: str):
     """Quarterly shareholding pattern history (SEBI-mandated public disclosure) via IndianAPI."""
@@ -223,7 +235,7 @@ async def shareholding_history(ticker: str):
 async def analyst_targets(ticker: str):
     """Analyst price targets and recommendations from IndianAPI."""
     from app.services.indianapi_service import get_stock_target_price
-    bare = ticker.upper().replace(".NS", "").replace(".BO", "")
+    bare = stock_service.bare_ticker(ticker)
     data = await get_stock_target_price(bare)
     if not data:
         raise HTTPException(status_code=404, detail="No analyst target data available")
@@ -234,7 +246,7 @@ async def analyst_targets(ticker: str):
 async def analyst_forecasts(ticker: str):
     """Analyst revenue and EPS forecasts from IndianAPI."""
     from app.services.indianapi_service import get_stock_forecasts
-    bare = ticker.upper().replace(".NS", "").replace(".BO", "")
+    bare = stock_service.bare_ticker(ticker)
     data = await get_stock_forecasts(bare)
     if not data:
         raise HTTPException(status_code=404, detail="No forecast data available")
@@ -245,7 +257,7 @@ async def analyst_forecasts(ticker: str):
 async def stock_announcements(ticker: str):
     """Corporate announcements (BSE/NSE filings) from IndianAPI."""
     from app.services.indianapi_service import get_recent_announcements
-    bare = ticker.upper().replace(".NS", "").replace(".BO", "")
+    bare = stock_service.bare_ticker(ticker)
     data = await get_recent_announcements(bare)
     return data or []
 
@@ -254,7 +266,7 @@ async def stock_announcements(ticker: str):
 async def stock_corporate_actions(ticker: str):
     """Dividends, splits, and bonus history from IndianAPI."""
     from app.services.indianapi_service import get_corporate_actions
-    bare = ticker.upper().replace(".NS", "").replace(".BO", "")
+    bare = stock_service.bare_ticker(ticker)
     return await get_corporate_actions(bare) or []
 
 
@@ -262,7 +274,7 @@ async def stock_corporate_actions(ticker: str):
 async def stock_credit_ratings(ticker: str):
     """CRISIL/ICRA/CARE credit ratings from IndianAPI."""
     from app.services.indianapi_service import get_credit_ratings
-    bare = ticker.upper().replace(".NS", "").replace(".BO", "")
+    bare = stock_service.bare_ticker(ticker)
     return await get_credit_ratings(bare) or []
 
 
@@ -270,15 +282,24 @@ async def stock_credit_ratings(ticker: str):
 async def stock_annual_reports(ticker: str):
     """Annual report download links from IndianAPI."""
     from app.services.indianapi_service import get_annual_reports
-    bare = ticker.upper().replace(".NS", "").replace(".BO", "")
+    bare = stock_service.bare_ticker(ticker)
     return await get_annual_reports(bare) or []
+
+
+@router.get("/{ticker}/concall-transcripts")
+async def stock_concall_transcripts(ticker: str):
+    """Raw earnings call transcript/PPT links from IndianAPI (distinct from the
+    AI-synthesized /concall-summary, which is built from financials + news)."""
+    from app.services.indianapi_service import get_concalls
+    bare = stock_service.bare_ticker(ticker)
+    return await get_concalls(bare) or []
 
 
 @router.get("/{ticker}/logo")
 async def stock_logo(ticker: str):
     """Company logo as a data: URI, from IndianAPI."""
     from app.services.indianapi_service import get_logo
-    bare = ticker.upper().replace(".NS", "").replace(".BO", "")
+    bare = stock_service.bare_ticker(ticker)
     logo = await get_logo(stock_name=bare)
     if not logo:
         raise HTTPException(status_code=404, detail="No logo available")

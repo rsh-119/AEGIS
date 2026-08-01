@@ -168,9 +168,11 @@ async def cache_stats():
 @app.delete("/api/cache", include_in_schema=False)
 async def cache_flush(prefix: str = "", x_admin_key: str | None = None):
     from fastapi import HTTPException
-    # Require an admin key in production to prevent cache-flooding DoS
-    admin_key = settings.jwt_secret_key  # reuse — same secret, no extra config needed
-    if _is_prod and x_admin_key != admin_key:
+    # Require an admin key in production to prevent cache-flooding DoS.
+    # Deliberately NOT settings.jwt_secret_key — that secret signs every
+    # user's session token, so reusing it here would mean a leak of this
+    # header is a full auth bypass, not just a cache-flush leak.
+    if _is_prod and (not settings.admin_api_key or x_admin_key != settings.admin_api_key):
         raise HTTPException(status_code=403, detail="Forbidden")
     cache.flush(prefix)
     return {"flushed": True, "prefix": prefix or "*"}

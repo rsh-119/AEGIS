@@ -4,7 +4,7 @@ import { useState } from "react";
 // useSWRConfig().mutate, not the bare `mutate` export — the app runs on a
 // custom SWR cache provider, and the global mutate doesn't reach it.
 import useSWR, { useSWRConfig } from "swr";
-import { fetcher, inr, pct, del, post, patch } from "@/lib/api";
+import { fetcher, inr, pct, deleteTolerant404, post, patch } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
 import { Bell, BellOff, Pencil, Trash2, Plus, CheckCircle2 } from "lucide-react";
 import clsx from "clsx";
@@ -73,15 +73,10 @@ export default function AlertsPage() {
       destructive: true,
     });
     if (!ok) return;
-    try {
-      await del(`${ALERTS_URL}/${id}`);
-    } catch (e) {
-      // 404 = already gone (stale list, double-click, etc.) — the desired
-      // end state is already true, so just refresh instead of erroring out.
-      if (!(e instanceof Error) || !e.message.includes("404")) {
-        toast({ variant: "error", title: "Couldn't delete alert", description: (e as Error).message });
-        return;
-      }
+    const result = await deleteTolerant404(`${ALERTS_URL}/${id}`);
+    if (!result.ok) {
+      toast({ variant: "error", title: "Couldn't delete alert", description: result.message });
+      return;
     }
     mutate(ALERTS_URL);
     toast({ variant: "success", title: "Alert deleted" });

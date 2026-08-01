@@ -3,11 +3,12 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { fetcher, inrCompact, inr, num } from "@/lib/api";
-import { Users, ArrowUpRight, Star, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Users, ArrowUpRight, Star } from "lucide-react";
 import Link from "next/link";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { SortIcon, type SortDir } from "@/components/ui/sort-icon";
 
 type Peer = {
   ticker: string;
@@ -25,16 +26,7 @@ type Peer = {
 };
 
 type SectorAvg = Record<string, number | null>;
-type SortDir = "asc" | "desc" | null;
 type SortKey = keyof Peer | null;
-
-// ─── Small sort icon ──────────────────────────────────────────────────────────
-function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
-  if (!active || dir === null) return <ArrowUpDown className="h-3 w-3 text-muted/40" />;
-  return dir === "asc"
-    ? <ArrowUp className="h-3 w-3 text-saffron" />
-    : <ArrowDown className="h-3 w-3 text-saffron" />;
-}
 
 function Cell({ val, good, bad }: { val: string; good?: boolean; bad?: boolean }) {
   return (

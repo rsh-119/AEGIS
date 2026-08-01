@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StockLogo } from "@/components/StockLogo";
 import { SECTORS } from "@/lib/sectors";
+import { PERIODS_BASIC as PERIODS } from "@/lib/periods";
 
 /* ─── Types ──────────────────────────────────────── */
 type Candle = { date: string; close: number; ma20: number | null; ma50: number | null };
@@ -21,16 +22,6 @@ type SectorStock = {
   revenue_growth?: number; net_margin?: number; website?: string | null;
 };
 type OverviewData = { gainers: SectorStock[]; losers: SectorStock[]; fetched_at?: number };
-
-/* ─── Period selector ────────────────────────────── */
-const PERIODS = [
-  { label: "1M", value: "1mo" },
-  { label: "3M", value: "3mo" },
-  { label: "6M", value: "6mo" },
-  { label: "1Y", value: "1y"  },
-  { label: "2Y", value: "2y"  },
-  { label: "5Y", value: "5y"  },
-];
 
 
 /* ─── Index chart card ───────────────────────────── */

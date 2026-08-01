@@ -4,16 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 // useSWRConfig().mutate, not the bare `mutate` export — the app runs on a
 // custom SWR cache provider, and the global mutate doesn't reach it.
 import useSWR, { useSWRConfig } from "swr";
-import { fetcher, num, pct, signCls, del } from "@/lib/api";
+import { fetcher, num, pct, signCls, deleteTolerant404 } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
 import { LoginPrompt } from "@/components/LoginPrompt";
 import { useAuth } from "@/lib/auth";
-import { Trash2, ArrowUpDown, ArrowUp, ArrowDown, Download, SlidersHorizontal } from "lucide-react";
+import { Trash2, Download, SlidersHorizontal, Newspaper } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { SortIcon } from "@/components/ui/sort-icon";
 
 type ColKey =
   | "pe_ratio" | "market_cap" | "dividend_yield"
@@ -35,13 +36,6 @@ const COLUMNS: { key: ColKey; label: string }[] = [
 ];
 
 const STORAGE_KEY = "aegis_watchlist_columns";
-
-function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
-  if (!active) return <ArrowUpDown className="h-3 w-3 text-muted/40 shrink-0" />;
-  return dir === "asc"
-    ? <ArrowUp className="h-3 w-3 text-saffron shrink-0" />
-    : <ArrowDown className="h-3 w-3 text-saffron shrink-0" />;
-}
 
 // market_cap arrives in raw INR (matches the rest of the app) — this table
 // shows Rs. Crore like Screener, so divide down for display only.
@@ -112,15 +106,10 @@ export default function WatchlistPage() {
       destructive: true,
     });
     if (!ok) return;
-    try {
-      await del(`/api/watchlist/${id}`);
-    } catch (e) {
-      // 404 = already gone (stale list, double-click, etc.) — the desired
-      // end state is already true, so just refresh instead of erroring out.
-      if (!(e instanceof Error) || !e.message.includes("404")) {
-        toast({ variant: "error", title: "Couldn't remove item", description: (e as Error).message });
-        return;
-      }
+    const result = await deleteTolerant404(`/api/watchlist/${id}`);
+    if (!result.ok) {
+      toast({ variant: "error", title: "Couldn't remove item", description: result.message });
+      return;
     }
     mutate("/api/watchlist");
     toast({ variant: "success", title: "Removed from watchlist" });
@@ -243,7 +232,25 @@ export default function WatchlistPage() {
                 <tr key={it.id} className="[&>td]:px-4 [&>td]:py-3 hover:bg-raised/40">
                   <td className="text-muted">{i + 1}</td>
                   <td>
-                    <a href={`/stock/${it.ticker}`} className="font-medium hover:text-saffron">{it.company_name || it.ticker}</a>
+                    <div className="flex items-center gap-1.5">
+                      <a href={`/stock/${it.ticker}`} className="font-medium hover:text-saffron">{it.company_name || it.ticker}</a>
+                      {it.latest_news_title && (
+                        <a
+                          href={it.latest_news_link || `/stock/${it.ticker}`}
+                          target="_blank"
+                          rel="noopener"
+                          title={it.latest_news_title}
+                          className="relative shrink-0 text-muted hover:text-saffron transition-colors"
+                        >
+                          <Newspaper className="h-3.5 w-3.5" />
+                          {it.news_count > 1 && (
+                            <span className="absolute -right-1.5 -top-1.5 grid h-3.5 min-w-[14px] place-items-center rounded-full bg-saffron px-[3px] text-[8px] font-bold leading-none text-white">
+                              {it.news_count > 9 ? "9+" : it.news_count}
+                            </span>
+                          )}
+                        </a>
+                      )}
+                    </div>
                     <div className="text-xs text-muted">{it.ticker.replace(".NS", "").replace(".BO", "")}</div>
                   </td>
                   <td className="nums text-right">{num(it.current_price, 2)}</td>

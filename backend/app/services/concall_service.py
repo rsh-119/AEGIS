@@ -218,7 +218,7 @@ For each quarter produce these fields:
 - "highlights": 4-5 specific positives (numbers mandatory — e.g. "Gross margin expanded 180bps QoQ to 38.2% driven by product mix")
 - "concerns": 3-4 specific concerns (numbers mandatory — e.g. "D/E at 1.8x elevated; interest cost up 22% YoY to ₹340 Cr")
 - "management_commentary": 2-3 sentences on what management said. PRIORITIZE direct quotes or paraphrased comments from news headlines. Cover what they attributed results to.
-- "management_promises": Array of 3-5 specific forward commitments management made. FORMAT: "By [when]: [what was promised] — [source/context]". Examples: "By Q2 FY26: Revenue target of ₹5,000 Cr", "FY27: EBITDA margin target of 22%+", "Next quarter: ₹800 Cr capex for new plant". If news doesn't mention promises, infer logical guidance from data trends.
+- "management_promises": Array of 0-5 specific forward commitments management ACTUALLY made, found in the news headlines — never invent or infer one from the financial data alone. FORMAT: "By [when]: [what was promised] — [source/context]". Examples: "By Q2 FY26: Revenue target of ₹5,000 Cr", "FY27: EBITDA margin target of 22%+", "Next quarter: ₹800 Cr capex for new plant". If the headlines don't mention any forward commitment for this quarter, return an empty array — do not fabricate one from data trends.
 - "guidance_note": One sentence on what to watch in the next quarter (specific metric + threshold)
 - "analyst_view": One sentence on how analysts/market reacted (from news, or null if unavailable)
 

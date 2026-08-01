@@ -34,7 +34,102 @@ const SUGGESTED_DOC = [
   "What capex or expansion plans were discussed?",
 ];
 
-export function AskAI({ ticker }: { ticker: string }) {
+// Per-metric question templates, keyed by the signal's "type" (how ratio_signals
+// in stock_service.py classifies it). Reading the actual signal that fired for
+// THIS stock — instead of always showing the same 8 generic chips — means the
+// first question a user sees is already about whatever is unusual here.
+const SIGNAL_QUESTIONS: Record<string, Partial<Record<"positive" | "negative" | "warning", string>>> = {
+  "P/E Ratio": {
+    positive: "The P/E looks low — value opportunity or red flag?",
+    negative: "Is the high P/E justified by growth expectations?",
+    warning: "Is the current valuation rich compared to peers?",
+  },
+  "P/B Ratio": {
+    warning: "What does the Price-to-Book ratio say about this stock?",
+  },
+  "ROE": {
+    positive: "What's driving the strong ROE?",
+    negative: "Why is ROE negative right now?",
+    warning: "Why is ROE below industry standards?",
+  },
+  "D/E Ratio": {
+    positive: "How does being nearly debt-free help this company?",
+    negative: "Is the high debt level a serious risk?",
+    warning: "Should I be concerned about the debt levels?",
+  },
+  "Revenue Growth": {
+    positive: "What's fueling the strong revenue growth?",
+    negative: "What's behind the revenue decline?",
+    warning: "Why is revenue growth slowing?",
+  },
+  "Earnings Growth": {
+    positive: "What's driving the earnings acceleration?",
+    negative: "Why are earnings falling?",
+  },
+  "Net Margin": {
+    positive: "How is the company maintaining such high margins?",
+    negative: "Why is the company losing money?",
+    warning: "Why are margins so thin?",
+  },
+  "Dividend Yield": {
+    positive: "Is the dividend yield sustainable?",
+  },
+  "Beta": {
+    positive: "Why does this stock move less than the broader market?",
+    warning: "Why is this stock more volatile than the market?",
+  },
+};
+
+export type StockAskContext = {
+  dayChangePct?: number | null;
+  signals?: { metric: string; type: "positive" | "negative" | "warning"; severity?: string }[];
+  latestNewsTitle?: string | null;
+  corpActionType?: string | null;
+  analystMeanTarget?: number | null;
+  currentPrice?: number | null;
+};
+
+function _truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n).trimEnd() + "…" : s;
+}
+
+/** Builds a ranked list of stock-specific questions from live page data —
+ * highest-severity ratio signals first, then price move / news / corporate
+ * action / analyst-target context, each only included when actually present. */
+function buildDynamicQuestions(ctx: StockAskContext): string[] {
+  const out: string[] = [];
+
+  const bySeverity = [...(ctx.signals ?? [])].sort((a, b) =>
+    (b.severity === "high" ? 1 : 0) - (a.severity === "high" ? 1 : 0)
+  );
+  for (const s of bySeverity) {
+    const q = SIGNAL_QUESTIONS[s.metric]?.[s.type];
+    if (q && !out.includes(q)) out.push(q);
+  }
+
+  if (typeof ctx.dayChangePct === "number" && Math.abs(ctx.dayChangePct) >= 3) {
+    const dir = ctx.dayChangePct > 0 ? "up" : "down";
+    out.push(`Why did the stock move ${dir} ${Math.abs(ctx.dayChangePct).toFixed(1)}% today?`);
+  }
+
+  if (ctx.latestNewsTitle) {
+    out.push(`What does "${_truncate(ctx.latestNewsTitle, 50)}" mean for the stock?`);
+  }
+
+  if (ctx.corpActionType) {
+    out.push(`What does the recent ${ctx.corpActionType.toLowerCase()} mean for shareholders?`);
+  }
+
+  if (typeof ctx.analystMeanTarget === "number" && typeof ctx.currentPrice === "number" && ctx.currentPrice > 0) {
+    const gap = (ctx.analystMeanTarget - ctx.currentPrice) / ctx.currentPrice;
+    if (gap > 0.1) out.push(`Analysts see upside to ₹${ctx.analystMeanTarget.toFixed(0)} — what's the bull case?`);
+    else if (gap < -0.1) out.push(`Analyst targets are below the current price — why?`);
+  }
+
+  return out;
+}
+
+export function AskAI({ ticker, context }: { ticker: string; context?: StockAskContext }) {
   const { toast } = useToast();
   const [q, setQ] = useState("");
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -142,7 +237,10 @@ export function AskAI({ ticker }: { ticker: string }) {
   }
 
   const bare = ticker.replace(/\.(NS|BO)$/, "");
-  const suggested = docText ? SUGGESTED_DOC : SUGGESTED;
+  const dynamicQs = context ? buildDynamicQuestions(context) : [];
+  const suggested = docText
+    ? SUGGESTED_DOC
+    : [...dynamicQs, ...SUGGESTED.filter((s) => !dynamicQs.includes(s))].slice(0, 8);
 
   // Follow-up suggestions after the AI's last answer — questions not yet
   // asked this session, so the chips stay useful past the first exchange
@@ -181,16 +279,24 @@ export function AskAI({ ticker }: { ticker: string }) {
               <span className="text-saffron/80">Or upload a PDF to chat with it.</span>
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {suggested.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => send(s)}
-                  disabled={busy}
-                  className="rounded-full border border-border px-2.5 py-1 text-xs text-muted transition hover:border-saffron/50 hover:text-fg"
-                >
-                  {s}
-                </button>
-              ))}
+              {suggested.map((s) => {
+                const isPersonalized = dynamicQs.includes(s);
+                return (
+                  <button
+                    key={s}
+                    onClick={() => send(s)}
+                    disabled={busy}
+                    title={isPersonalized ? "Based on this stock's current signals" : undefined}
+                    className={
+                      isPersonalized
+                        ? "rounded-full border border-saffron/30 bg-saffron/8 px-2.5 py-1 text-xs text-saffron/90 transition hover:border-saffron/60 hover:bg-saffron/15"
+                        : "rounded-full border border-border px-2.5 py-1 text-xs text-muted transition hover:border-saffron/50 hover:text-fg"
+                    }
+                  >
+                    {s}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

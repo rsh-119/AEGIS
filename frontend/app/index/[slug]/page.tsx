@@ -10,16 +10,7 @@ import clsx from "clsx";
 import { ChartCard } from "@/components/ui/animated-card-chart";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-
-const PERIODS = [
-  { label: "1M", value: "1mo" },
-  { label: "3M", value: "3mo" },
-  { label: "6M", value: "6mo" },
-  { label: "1Y", value: "1y" },
-  { label: "2Y", value: "2y" },
-  { label: "5Y", value: "5y" },
-  { label: "All", value: "max" },
-];
+import { PERIODS } from "@/lib/periods";
 
 const INDEX_META: Record<string, { name: string; desc: string; exchange: string }> = {
   nifty50:     { name: "Nifty 50", desc: "Top 50 companies by free-float market cap listed on NSE", exchange: "NSE" },

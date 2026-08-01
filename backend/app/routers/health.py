@@ -19,10 +19,27 @@ from app.core.circuit_breaker import all_statuses as cb_statuses
 from app.core.config import get_settings
 from app.core.database import engine
 from app.core.metrics import registry
+from app.services.indianapi_service import indianapi_backoff_remaining, indianapi_blocked
 
 router  = APIRouter(tags=["health"])
 logger  = logging.getLogger(__name__)
 _START  = time.time()
+
+
+def _all_circuit_statuses() -> list[dict]:
+    """The generic circuit_breaker registry (app/core/circuit_breaker.py) has
+    no callers anywhere in this codebase — IndianAPI's real 429 backoff lives
+    in its own module-level `_blocked_until` instead. Fold that real state in
+    here so readiness/status actually reflect it, under the "indianapi" name
+    both endpoints already expect."""
+    statuses = cb_statuses()
+    if indianapi_blocked():
+        statuses = [s for s in statuses if s["name"] != "indianapi"]
+        statuses.append({
+            "name": "indianapi", "state": "open", "failures": 0,
+            "total_trips": 0, "seconds_until_retry": indianapi_backoff_remaining(),
+        })
+    return statuses
 
 
 # ── Liveness probe ────────────────────────────────────────────────────────────
@@ -82,7 +99,7 @@ async def readiness():
         checks["redis"] = {"status": "memory_fallback", "note": "Redis not configured"}
 
     # ── Circuit breakers ──────────────────────────────────────────────────────
-    cb_all  = cb_statuses()
+    cb_all  = _all_circuit_statuses()
     cb_open = [s["name"] for s in cb_all if s["state"] == "open"]
     checks["circuit_breakers"] = {
         "total":      len(cb_all),
@@ -111,13 +128,13 @@ async def readiness():
 async def full_status(request: Request):
     """
     Human/ops-readable system status.
-    In production, requires X-Admin-Key header matching JWT_SECRET_KEY.
+    In production, requires X-Admin-Key header matching ADMIN_API_KEY.
     """
     from fastapi import HTTPException
     settings = get_settings()
     if settings.app_env == "production":
         key = request.headers.get("x-admin-key", "")
-        if key != settings.jwt_secret_key:
+        if not settings.admin_api_key or key != settings.admin_api_key:
             raise HTTPException(status_code=403, detail="Forbidden")
     return {
         "service":  "aegis-api",
@@ -132,7 +149,7 @@ async def full_status(request: Request):
             "nvidia_key": bool(settings.nvidia_api_key),
         },
         "cache":            cache.stats(),
-        "circuit_breakers": cb_statuses(),
+        "circuit_breakers": _all_circuit_statuses(),
     }
 
 

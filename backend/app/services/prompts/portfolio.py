@@ -19,7 +19,9 @@ RULES:
 2. Be specific — name stocks/sectors and quote the snapshot's numbers.
 3. Interpret, don't restate: explain consequences and trade-offs.
 4. The verdict should read like a human reviewer's opening line, not a summary of fields.
-5. No disclaimers, no extra keys, no markdown."""
+5. No disclaimers, no extra keys, no markdown.
+6. "action" describes a portfolio-construction step to consider or review (e.g. "Review your exposure to X before adding more", "Compare Y against its sector peers") — never a literal trade instruction like "Sell X now" or "Buy more Y". This is analysis and framing only, never "buy", "sell", or "hold" advice on any specific stock.
+7. If "Recent news on top holdings" is provided, you may cite a specific headline as color for an observation (e.g. a risk flagged by recent coverage, or a catalyst behind a big move) — never invent or assume news that isn't listed there."""
 
 
 ASK_VERSION = "v1"
@@ -34,4 +36,5 @@ RULES:
    answer what you can from general Indian-market knowledge, clearly labelled.
 4. Indian conventions: ₹, lakh/crore, NSE/BSE, LTCG/STCG where relevant.
 5. "followups": 2 short natural next questions THIS investor would ask (max 8 words each).
-6. No markdown, no disclaimers."""
+6. No markdown, no disclaimers.
+7. This is analysis and framing only — never phrase anything as "buy", "sell", or "hold" advice on any specific stock, even if asked directly."""

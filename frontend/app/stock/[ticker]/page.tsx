@@ -1,7 +1,9 @@
 "use client";
 
 import { use, useRef, useState } from "react";
-import useSWR, { mutate as globalMutate } from "swr";
+// useSWRConfig().mutate, not the bare `mutate` export — the app runs on a
+// custom SWR cache provider, and the global mutate doesn't reach it.
+import useSWR, { useSWRConfig } from "swr";
 import { useRouter } from "next/navigation";
 import { fetcher, inr, inrCompact, pct, num, signCls, post } from "@/lib/api";
 import { useRealtimePrice } from "@/lib/useRealtimePrice";
@@ -11,30 +13,22 @@ import { VolumeChart } from "@/components/VolumeChart";
 import { ValuationChart } from "@/components/ValuationChart";
 import { HealthCard } from "@/components/HealthCard";
 import { ForecastCard } from "@/components/ForecastCard";
-import { AskAI } from "@/components/AskAI";
+import { AskAI, type StockAskContext } from "@/components/AskAI";
 import { ConcallCard } from "@/components/ConcallCard";
 import { PeerComparison } from "@/components/PeerComparison";
 import { ShareholdingPie } from "@/components/ShareholdingPie";
+import { FinancialsTables } from "@/components/FinancialsTables";
 import { TechnicalsCard } from "@/components/TechnicalsCard";
 import { ChartCard } from "@/components/ui/animated-card-chart";
 import Link from "next/link";
-import { Plus, ExternalLink, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, BarChart3, CheckCircle2, AlertTriangle, AlertCircle, Info, Newspaper, Target, Eye, Zap, Bell, Calendar, ArrowUpRight, Gift, ShieldCheck, FileText } from "lucide-react";
+import { Plus, ExternalLink, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, BarChart3, CheckCircle2, AlertTriangle, AlertCircle, Info, Newspaper, Target, Eye, Zap, Bell, Calendar, ArrowUpRight, Gift, ShieldCheck, FileText, Mic2 } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
-
-const PERIODS = [
-  { label: "1M", value: "1mo" },
-  { label: "3M", value: "3mo" },
-  { label: "6M", value: "6mo" },
-  { label: "1Y", value: "1y" },
-  { label: "2Y", value: "2y" },
-  { label: "5Y", value: "5y" },
-  { label: "All", value: "max" },
-];
+import { PERIODS } from "@/lib/periods";
 
 // Clearbit (free, domain-based) first since it costs no IndianAPI quota;
 // falls back to the IndianAPI /logo endpoint (already fetched by the page)
@@ -71,6 +65,7 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
   const { user } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
+  const { mutate } = useSWRConfig();
   const [period, setPeriod]           = useState("6mo");
   const [chartTab, setChartTab]       = useState<"price" | "volume">("price");
   const [valuationTab, setValuationTab] = useState<"pe" | "pb">("pe");
@@ -127,6 +122,11 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
     fetcher,
     { revalidateOnFocus: false }
   );
+  const { data: concallTranscripts } = useSWR(
+    core ? `/api/stocks/${symbol}/concall-transcripts` : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
   const { data: logoData } = useSWR(
     core ? `/api/stocks/${symbol}/logo` : null,
     fetcher,
@@ -157,7 +157,7 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
     }
     try {
       await post("/api/watchlist", { ticker: symbol });
-      globalMutate("/api/watchlist");
+      mutate("/api/watchlist");
       toast({ variant: "success", title: "Added to watchlist", description: symbol });
     } catch (e) {
       toast({ variant: "error", title: "Couldn't add to watchlist", description: (e as Error).message });
@@ -542,14 +542,18 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
       {/* ── Peer Comparison ── */}
       <PeerComparison ticker={symbol} selfName={q.company_name} selfData={q} />
 
+      {/* ── Financials (Quarterly / P&L / Balance Sheet / Cash Flow / Ratios) ── */}
+      <FinancialsTables ticker={symbol} />
+
       {/* ── Concall Summary ── */}
       <ConcallCard ticker={symbol} />
 
-      {/* ── Credit Ratings + Annual Reports + Announcements ── */}
-      {(creditRatings?.length > 0 || annualReports?.length > 0 || announcements?.length > 0) && (
-        <div className="grid gap-4 lg:grid-cols-3">
+      {/* ── Credit Ratings + Annual Reports + Concall Transcripts + Announcements ── */}
+      {(creditRatings?.length > 0 || annualReports?.length > 0 || concallTranscripts?.length > 0 || announcements?.length > 0) && (
+        <div className="grid gap-4 lg:grid-cols-4">
           <CreditRatingsCard items={creditRatings ?? []} />
           <AnnualReportsCard items={annualReports ?? []} />
+          <ConcallTranscriptsCard items={concallTranscripts ?? []} />
           <AnnouncementsCard items={announcements ?? []} />
         </div>
       )}
@@ -566,7 +570,17 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
       }
 
       {/* ── Ask AI (full width, bottom) ── */}
-      <AskAI ticker={symbol} />
+      <AskAI
+        ticker={symbol}
+        context={{
+          dayChangePct: change,
+          signals: core.signals,
+          latestNewsTitle: ins?.news?.[0]?.title ?? null,
+          corpActionType: corpActions?.[0]?.type ?? corpActions?.[0]?.action_type ?? corpActions?.[0]?.corporate_action_type ?? null,
+          analystMeanTarget: analystTargets?.mean_target ?? null,
+          currentPrice: displayPrice,
+        } as StockAskContext}
+      />
     </div>
   );
 }
@@ -1171,6 +1185,108 @@ function AnnualReportsCard({ items }: { items: any[] }) {
             <ExternalLink className="h-3 w-3" /> {r.year ?? "Report"}
           </a>
         ))}
+      </div>
+    </Card>
+  );
+}
+
+function ConcallTranscriptItem({ c }: { c: any }) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl border border-border bg-raised p-3 shrink-0 min-w-0">
+      <div className="flex-1 min-w-0">
+        {c.date && (
+          <div className="flex items-center gap-1">
+            <Calendar className="h-3 w-3 shrink-0 text-muted" />
+            <span className="text-[10px] text-muted">{c.date}</span>
+          </div>
+        )}
+      </div>
+      {c.transcript && (
+        <a
+          href={c.transcript}
+          target="_blank"
+          rel="noopener"
+          className="flex items-center gap-1 text-xs text-fg/90 hover:text-saffron transition-colors shrink-0"
+        >
+          Transcript <ExternalLink className="h-3 w-3" />
+        </a>
+      )}
+      {c.ppt && (
+        <a
+          href={c.ppt}
+          target="_blank"
+          rel="noopener"
+          className="flex items-center gap-1 text-xs text-muted hover:text-saffron transition-colors shrink-0"
+        >
+          PPT <ExternalLink className="h-3 w-3" />
+        </a>
+      )}
+    </div>
+  );
+}
+
+function ConcallTranscriptsCard({ items }: { items: any[] }) {
+  const ref = useRef<HTMLDivElement>(null);
+  if (!items.length) return null;
+
+  const mobileTop5 = items.slice(0, 5);
+  const mobileRest = items.slice(5);
+
+  function scroll(dir: "up" | "down") {
+    if (!ref.current) return;
+    ref.current.scrollBy({ top: dir === "up" ? -110 : 110, behavior: "smooth" });
+  }
+
+  return (
+    <Card className="p-5 space-y-3 min-w-0">
+      <div className="flex items-center gap-2">
+        <Mic2 className="h-4 w-4 text-saffron" />
+        <h3 className="font-semibold text-sm">Concall Transcripts</h3>
+        <span className="text-xs text-muted ml-auto">{items.length} calls</span>
+      </div>
+
+      {/* Mobile — top 5 stacked, remainder in a horizontal slider */}
+      <div className="space-y-2 sm:hidden">
+        {mobileTop5.map((c: any, i: number) => <ConcallTranscriptItem key={i} c={c} />)}
+        {mobileRest.length > 0 && (
+          <div
+            className="flex gap-2.5 overflow-x-auto scroll-smooth pb-1"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
+            {mobileRest.map((c: any, i: number) => (
+              <div key={i} className="w-56 shrink-0">
+                <ConcallTranscriptItem c={c} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* sm+ — full vertical list with scroll arrows */}
+      <div className="relative hidden sm:block">
+        <button
+          onClick={() => scroll("up")}
+          className="absolute -top-1 left-1/2 z-10 -translate-x-1/2 grid h-5 w-8 place-items-center rounded-full bg-surface border border-border shadow-sm text-muted hover:text-fg transition"
+          aria-label="Scroll up"
+        >
+          <ChevronUp className="h-3.5 w-3.5" />
+        </button>
+
+        <div
+          ref={ref}
+          className="flex flex-col gap-2 overflow-y-auto scroll-smooth"
+          style={{ maxHeight: "340px", scrollbarWidth: "none", msOverflowStyle: "none" }}
+        >
+          {items.map((c: any, i: number) => <ConcallTranscriptItem key={i} c={c} />)}
+        </div>
+
+        <button
+          onClick={() => scroll("down")}
+          className="absolute -bottom-1 left-1/2 z-10 -translate-x-1/2 grid h-5 w-8 place-items-center rounded-full bg-surface border border-border shadow-sm text-muted hover:text-fg transition"
+          aria-label="Scroll down"
+        >
+          <ChevronDown className="h-3.5 w-3.5" />
+        </button>
       </div>
     </Card>
   );

@@ -87,6 +87,19 @@ export async function del(url: string) {
   return r.json();
 }
 
+/** DELETE that treats a 404 as an already-achieved success (stale list,
+ * double-click, etc.) instead of an error — the desired end state (item
+ * gone) is already true. Returns an error message only for genuine failures. */
+export async function deleteTolerant404(url: string): Promise<{ ok: true } | { ok: false; message: string }> {
+  try {
+    await del(url);
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("404")) return { ok: true };
+    return { ok: false, message: e instanceof Error ? e.message : "Request failed" };
+  }
+}
+
 // ── formatters (INR-first) ────────────────────────────────────────────────────
 
 export const inr = (v: number | null | undefined) =>

@@ -10,7 +10,7 @@ from app.core.auth import get_current_user_id
 from app.core.database import get_db
 from app.models import Holding
 from app.schemas import HoldingCreate
-from app.services import ai_service, news_service, stock_service
+from app.services import ai_service, news_service, stock_service, indianapi_service
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -60,21 +60,12 @@ async def list_holdings(
     }
 
 
-@router.get("/analysis")
-async def portfolio_analysis(
-    user_id: int = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    """Groww-style analysis: XIRR vs a Nifty-50 benchmark (same cashflows,
-    same dates, invested into the index instead), plus market-cap and sector
-    allocation buckets. Everything derives from live quotes + buy dates —
-    no stored history needed."""
-    rows = (
-        await db.execute(select(Holding).where(Holding.user_id == user_id))
-    ).scalars().all()
-    if not rows:
-        return {"empty": True, "summary": _empty_summary()}
-
+async def _compute_analysis(rows, include_growth: bool) -> dict:
+    """Core portfolio analysis: XIRR, Nifty benchmark, cap/sector buckets —
+    computed from live quotes + buy dates, no stored history needed.
+    `include_growth` controls whether the growth-vs-Nifty chart (a full 5y
+    history fetch per holding, on top of the Nifty fetch) is also computed —
+    callers that only need the numeric summary skip that cost entirely."""
     quotes = await asyncio.gather(*[stock_service.get_quote(h.ticker) for h in rows])
 
     today = date.today()
@@ -99,12 +90,20 @@ async def portfolio_analysis(
     flows.append((today, value_total))
 
     xirr = _xirr(flows)
-    nifty_xirr = await _nifty_benchmark_xirr(flows)
-    growth = await _growth_series(rows)
 
-    return {
+    # Nifty 5y history feeds both the benchmark XIRR and (optionally) the
+    # growth chart — fetch and parse it once, share the candles between them,
+    # instead of each independently re-fetching and re-parsing the same data.
+    try:
+        nifty_hist = await stock_service._history_from_indianapi("NIFTY", "5y")
+        nifty_closes = _closes_map(nifty_hist)
+    except Exception:
+        nifty_closes = []
+    nifty_xirr = _nifty_benchmark_xirr(flows, nifty_closes)
+    growth = await _growth_series(rows, nifty_closes) if include_growth else None
+
+    result = {
         "empty": False,
-        "growth": growth,
         "summary": {
             "invested": round(invested_total, 2),
             "value":    round(value_total, 2),
@@ -121,6 +120,26 @@ async def portfolio_analysis(
         "sector_buckets": _bucketise(holdings, lambda x: x["sector"], value_total, top=6),
         "as_of": today.isoformat(),
     }
+    if include_growth:
+        result["growth"] = growth
+    return result
+
+
+@router.get("/analysis")
+async def portfolio_analysis(
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Groww-style analysis: XIRR vs a Nifty-50 benchmark (same cashflows,
+    same dates, invested into the index instead), plus market-cap and sector
+    allocation buckets. Everything derives from live quotes + buy dates —
+    no stored history needed."""
+    rows = (
+        await db.execute(select(Holding).where(Holding.user_id == user_id))
+    ).scalars().all()
+    if not rows:
+        return {"empty": True, "summary": _empty_summary()}
+    return await _compute_analysis(rows, include_growth=True)
 
 
 @router.get("/news")
@@ -182,9 +201,14 @@ async def portfolio_insights(
     """Decision support: deterministic health signals computed from the
     portfolio (always), plus an optional LLM review (?ai=1 — on demand so a
     tab visit never spends model tokens)."""
-    analysis = await portfolio_analysis(user_id, db)
-    if analysis.get("empty"):
+    rows = (
+        await db.execute(select(Holding).where(Holding.user_id == user_id))
+    ).scalars().all()
+    if not rows:
         return {"empty": True, "signals": [], "ai": None}
+    # No growth chart here — this view never reads it, so skip its 5y
+    # per-holding history fetch entirely.
+    analysis = await _compute_analysis(rows, include_growth=False)
 
     summary = analysis["summary"]
     caps = analysis["cap_buckets"]
@@ -306,15 +330,34 @@ async def portfolio_insights(
 
     ai_review = None
     if ai:
+        ranked = sorted(all_holdings, key=lambda x: -x["value"])
         table = "\n".join(
             f"- {h['name']} ({h['ticker']}): {h['value'] / summary['value'] * 100:.1f}% weight, P&L {h['pnl_pct']:+.1f}%"
-            for h in sorted(all_holdings, key=lambda x: -x["value"])
+            for h in ranked
         )
         sector_line = ", ".join(f"{s['label']} {s['alloc_pct']:.0f}%" for s in sectors)
+
+        # Recent headlines for the top 5 holdings by weight — gives the AI real
+        # events to reference instead of reasoning from P&L numbers alone.
+        top5 = ranked[:5]
+        news_lists = await asyncio.gather(
+            *[indianapi_service.get_company_news(stock_service.bare_ticker(h["ticker"])) for h in top5],
+            return_exceptions=True,
+        )
+        news_lines = []
+        for h, news in zip(top5, news_lists):
+            if isinstance(news, Exception) or not news:
+                continue
+            headlines = [n.get("title", "").strip() for n in news[:3] if n.get("title")]
+            if headlines:
+                news_lines.append(f"- {h['name']}: " + " | ".join(headlines))
+        news_block = "\n".join(news_lines)
+
         context = (
             f"Holdings:\n{table}\n\nSector mix: {sector_line}\n"
             f"Portfolio XIRR: {xirr}% vs Nifty 50 {nifty}% (same cashflows).\n"
             f"Total P&L: {summary['pnl_pct']}%."
+            + (f"\n\nRecent news on top holdings:\n{news_block}" if news_block else "")
         )
         try:
             result = await ai_service.review_portfolio(context)
@@ -337,9 +380,13 @@ async def ask_portfolio(
     if not question or len(question) > 500:
         raise HTTPException(400, "Question must be 1-500 characters")
 
-    analysis = await portfolio_analysis(user_id, db)
-    if analysis.get("empty"):
+    rows = (
+        await db.execute(select(Holding).where(Holding.user_id == user_id))
+    ).scalars().all()
+    if not rows:
         return {"answer": "Your portfolio is empty — add a holding first and I'll have something to talk about.", "followups": []}
+    # No growth chart here either — this Q&A never reads it.
+    analysis = await _compute_analysis(rows, include_growth=False)
 
     summary = analysis["summary"]
     sectors = analysis["sector_buckets"]
@@ -370,16 +417,10 @@ def _cap_label(h: dict) -> str:
     cap = (h.get("cap_type") or "").lower()
     if cap in {"large", "mid", "small"}:
         return f"{cap.capitalize()} cap"
-    # Fallback thresholds (₹): SEBI-ish proxy — 100th company ≈ ₹67k Cr,
-    # 250th ≈ ₹22k Cr.
     mcap = h.get("market_cap")
     if not mcap:
         return "Uncategorised"
-    if mcap >= 6.7e11:
-        return "Large cap"
-    if mcap >= 2.2e11:
-        return "Mid cap"
-    return "Small cap"
+    return f"{stock_service.cap_type_for(mcap).capitalize()} cap"
 
 
 def _bucketise(holdings: list[dict], key, value_total: float, top: int | None = None) -> list[dict]:
@@ -487,20 +528,18 @@ def _close_at(closes: list[tuple[date, float]], d: date) -> float | None:
     return best
 
 
-async def _growth_series(rows) -> list[dict]:
+async def _growth_series(rows, nifty_closes: list[tuple[date, float]]) -> list[dict]:
     """Portfolio value vs 'same cashflows into the Nifty' over time — the
     Groww-style growth chart. Reconstructed from per-holding price history
     (shares x close, each holding entering on its buy date), sampled weekly.
+    `nifty_closes` is fetched once by the caller and shared with
+    _nifty_benchmark_xirr, rather than each independently re-fetching it.
     Returns [] when history is unavailable."""
     try:
         today = date.today()
-        nifty_hist, *stock_hists = await asyncio.gather(
-            stock_service._history_from_indianapi("NIFTY", "5y"),
-            *[stock_service.get_history(h.ticker, "5y") for h in rows],
-        )
-        nifty_closes = _closes_map(nifty_hist)
         if len(nifty_closes) < 5:
             return []
+        stock_hists = await asyncio.gather(*[stock_service.get_history(h.ticker, "5y") for h in rows])
         stock_closes = [_closes_map(sh if isinstance(sh, dict) else None) for sh in stock_hists]
 
         start = min((h.buy_date or today) for h in rows)
@@ -538,38 +577,20 @@ async def _growth_series(rows) -> list[dict]:
         return []
 
 
-async def _nifty_benchmark_xirr(flows: list[tuple[date, float]]) -> float | None:
+def _nifty_benchmark_xirr(flows: list[tuple[date, float]], nifty_closes: list[tuple[date, float]]) -> float | None:
     """What the same rupees on the same dates would have earned in the
     Nifty 50: buy index units at each cashflow date's close, value them at the
-    latest close, then run the identical XIRR."""
+    latest close, then run the identical XIRR. `nifty_closes` is fetched once
+    by the caller (shared with _growth_series) via _closes_map, rather than
+    this function independently re-fetching and re-parsing the same candles."""
     try:
-        hist = await stock_service._history_from_indianapi("NIFTY", "5y")
-        candles = (hist or {}).get("candles") or []
-        closes: list[tuple[date, float]] = []
-        for c in candles:
-            try:
-                closes.append((datetime.strptime(str(c["date"])[:10], "%Y-%m-%d").date(), float(c["close"])))
-            except Exception:
-                continue
-        if len(closes) < 5:
+        if len(nifty_closes) < 5:
             return None
-        closes.sort()
-
-        def close_on(d: date) -> float:
-            # nearest candle at or before d; clamp to first candle for older buys
-            best = closes[0][1]
-            for cd, cv in closes:
-                if cd <= d:
-                    best = cv
-                else:
-                    break
-            return best
-
-        last_date, last_close = closes[-1]
+        last_date, last_close = nifty_closes[-1]
         units = 0.0
         bench_flows: list[tuple[date, float]] = []
         for d, amt in flows[:-1]:              # buys only (negative amounts)
-            units += -amt / close_on(d)
+            units += -amt / _close_at(nifty_closes, d)
             bench_flows.append((d, amt))
         bench_flows.append((last_date, units * last_close))
         return _xirr(bench_flows)

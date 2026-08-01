@@ -48,6 +48,29 @@ def normalise_ticker(ticker: str) -> str:
     return f"{t}.NS"
 
 
+def bare_ticker(ticker: str) -> str:
+    """Strip the Indian exchange suffix — the inverse of normalise_ticker."""
+    return ticker.upper().replace(".NS", "").replace(".BO", "")
+
+
+# SEBI-proxy market-cap tier boundaries in INR — canonical source shared by
+# market_service and the portfolio router, which previously each hardcoded
+# their own (disagreeing by ~3x) thresholds. Used only as a fallback when a
+# stock's real cap_type isn't already provided by the data source (IndianAPI's
+# own "cappedType" field, when present, always takes priority over this).
+LARGE_CAP_THRESHOLD = 6.7e11   # ₹67,000 Cr — approx. 100th company by mkt cap
+MID_CAP_THRESHOLD   = 2.2e11   # ₹22,000 Cr — approx. 250th company by mkt cap
+
+
+def cap_type_for(market_cap: float | None) -> str:
+    """Fallback "large" | "mid" | "small" classification by market cap."""
+    if market_cap and market_cap >= LARGE_CAP_THRESHOLD:
+        return "large"
+    if market_cap and market_cap >= MID_CAP_THRESHOLD:
+        return "mid"
+    return "small"
+
+
 def _clean(obj):
     """Recursively replace NaN/inf with None so JSON is valid."""
     if isinstance(obj, dict):

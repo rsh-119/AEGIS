@@ -585,7 +585,7 @@ function UploadSection({ symbol, company: initialCompany }: { symbol?: string; c
         <div className="space-y-3">
           {[
             { label: mode === "loading-pdf" ? "Extracting text from PDF…" : "Text extracted ✓", done: mode !== "loading-pdf" },
-            { label: mode === "loading-analysis" ? `Analyzing with ${aiModel === "deepseek" ? "Qwen3-32B (reasoning)" : aiModel === "minimax" ? "Llama 4 Scout" : "Llama 3.3 70B"} — parsing financials, margins, promises…` : "Pending", done: false },
+            { label: mode === "loading-analysis" ? `Analyzing with ${aiModel === "deepseek" ? "Qwen3-32B (reasoning)" : aiModel === "minimax" ? "Llama 3.1 8B" : "Llama 3.3 70B"} — parsing financials, margins, promises…` : "Pending", done: false },
           ].map((step, i) => (
             <div key={i} className="flex items-center gap-3 text-left">
               <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${step.done ? "bg-up/20" : "bg-saffron/20"}`}>
@@ -632,12 +632,12 @@ function UploadSection({ symbol, company: initialCompany }: { symbol?: string; c
     },
     {
       id: "minimax" as const,
-      name: "Llama 4 Scout",
+      name: "Llama 3.1 8B",
       badge: "Standard",
       badgeColor: "bg-saffron/10 text-saffron",
       icon: "⚖️",
-      time: "~3s",
-      desc: "Newer Llama 4 model — full 17-field analysis with margin breakdowns and management quotes",
+      time: "~2s",
+      desc: "Fast, low-latency model — full 17-field analysis with margin breakdowns and management quotes",
     },
     {
       id: "deepseek" as const,

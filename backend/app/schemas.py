@@ -136,3 +136,43 @@ class AskResponse(BaseModel):
     # passing as "grounded" — lets the frontend flag recalled content instead
     # of presenting it with the same authority as live data.
     answered_from_facts: bool
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    suggestions: list[str] = []
+    tickers: list[str] = []
+    answered_from_facts: bool
+
+
+class MarginAnalysis(BaseModel):
+    gross_margin: str
+    ebitda_margin: str
+    pat_margin: str
+    margin_commentary: str
+
+
+class ManagementPromise(BaseModel):
+    commitment: str
+    timeline: str
+    metric: str
+
+
+class DocumentAnalysisResponse(BaseModel):
+    executive_summary: str
+    document_type: str
+    company_name: str | None = None
+    period: str
+    key_themes: list[str] = Field(min_length=1)
+    financial_highlights: list[str] = Field(min_length=1)
+    margin_analysis: MarginAnalysis
+    revenue_breakdown: list[str] = []
+    key_management_quotes: list[str] = []
+    management_promises: list[ManagementPromise] = []
+    risks_and_concerns: list[str] = Field(min_length=1)
+    strategic_initiatives: list[str] = []
+    guidance: str | None = None
+    capex_guidance: str | None = None
+    sentiment: str
+    sentiment_reason: str
+    suggested_questions: list[str] = Field(min_length=1)

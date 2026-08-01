@@ -9,7 +9,7 @@ from app.core.auth import get_current_user_id
 from app.core.database import get_db
 from app.models import WatchItem
 from app.schemas import WatchCreate
-from app.services import stock_service
+from app.services import stock_service, indianapi_service
 
 router = APIRouter(prefix="/api/watchlist", tags=["watchlist"])
 
@@ -28,12 +28,18 @@ async def list_watch(
     ).scalars().all()
     if not rows:
         return {"items": []}
-    quotes, headlines = await asyncio.gather(
+    quotes, headlines, news = await asyncio.gather(
         asyncio.gather(*[stock_service.get_quote(r.ticker) for r in rows]),
         asyncio.gather(*[stock_service.get_quarterly_headline(r.ticker) for r in rows]),
+        asyncio.gather(
+            *[indianapi_service.get_company_news(stock_service.bare_ticker(r.ticker)) for r in rows],
+            return_exceptions=True,
+        ),
     )
     items = []
-    for r, q, h in zip(rows, quotes, headlines):
+    for r, q, h, n in zip(rows, quotes, headlines, news):
+        news_list = n if isinstance(n, list) else []
+        top = news_list[0] if news_list else None
         items.append({
             **r.to_dict(),
             "current_price": q.get("current_price") if "error" not in q else None,
@@ -46,6 +52,10 @@ async def list_watch(
             "roce":           q.get("roce"),
             "industry":       q.get("industry"),
             **h,
+            "news_count":        len(news_list),
+            "latest_news_title": top.get("title") if top else None,
+            "latest_news_link":  top.get("article_link") if top else None,
+            "latest_news_date":  top.get("published") if top else None,
         })
     return {"items": items}
 

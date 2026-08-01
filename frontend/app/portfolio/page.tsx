@@ -7,11 +7,11 @@ import { useState } from "react";
 // useSWRConfig().mutate is bound to the active provider.
 import useSWR, { useSWRConfig } from "swr";
 import { useRouter } from "next/navigation";
-import { fetcher, inr, pct, signCls, post, del } from "@/lib/api";
+import { fetcher, inr, pct, signCls, post, deleteTolerant404 } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
 import { LoginPrompt } from "@/components/LoginPrompt";
 import { useAuth } from "@/lib/auth";
-import { Trash2, Plus, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Trash2, Plus } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { AnalysisPanel } from "./AnalysisPanel";
@@ -20,16 +20,10 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { SortIcon } from "@/components/ui/sort-icon";
 
 type SortKey = "ticker" | "shares" | "avg_price" | "current_price" | "current_value" | "pnl_pct";
 type SortDir = "asc" | "desc";
-
-function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
-  if (!active) return <ArrowUpDown className="h-3 w-3 text-muted/40 shrink-0" />;
-  return dir === "asc"
-    ? <ArrowUp className="h-3 w-3 text-saffron shrink-0" />
-    : <ArrowDown className="h-3 w-3 text-saffron shrink-0" />;
-}
 
 export default function PortfolioPage() {
   const { user, isLoading: authLoading } = useAuth();
@@ -93,15 +87,10 @@ export default function PortfolioPage() {
       destructive: true,
     });
     if (!ok) return;
-    try {
-      await del(`/api/portfolio/${id}`);
-    } catch (e) {
-      // 404 = already gone (stale list, double-click, etc.) — the desired
-      // end state is already true, so just refresh instead of erroring out.
-      if (!(e instanceof Error) || !e.message.includes("404")) {
-        toast({ variant: "error", title: "Couldn't remove holding", description: (e as Error).message });
-        return;
-      }
+    const result = await deleteTolerant404(`/api/portfolio/${id}`);
+    if (!result.ok) {
+      toast({ variant: "error", title: "Couldn't remove holding", description: result.message });
+      return;
     }
     mutate("/api/portfolio");
     toast({ variant: "success", title: "Holding removed" });

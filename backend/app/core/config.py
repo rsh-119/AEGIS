@@ -12,10 +12,6 @@ class Settings(BaseSettings):
     nvidia_api_key: str = ""
     nvidia_model: str = "deepseek-ai/deepseek-v4-flash"
 
-    # MiniMax M2.7 — separate NVIDIA key, used as waterfall step between DeepSeek and OpenRouter
-    nvidia_minimax_api_key: str = ""
-    nvidia_minimax_model: str = "minimaxai/minimax-m2.7"
-
     groq_api_key: str = ""
     groq_api_key_2: str = ""   # optional 2nd Groq key — doubles token budget
     groq_api_key_3: str = ""   # optional 3rd Groq key — triples token budget
@@ -40,6 +36,13 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "change-me-in-production-use-openssl-rand-hex-32"
     jwt_access_expire_minutes: int = 60          # 1 h access token
     jwt_refresh_expire_days: int = 30            # 30 d refresh token
+
+    # Separate from jwt_secret_key on purpose — that secret signs every user's
+    # session token, so reusing it as a bearer "admin key" means any leak of
+    # this header (logs, a proxy, browser devtools) is equivalent to a full
+    # auth bypass, not just an ops-panel leak. Empty by default: admin
+    # endpoints fail closed in production until this is explicitly set.
+    admin_api_key: str = ""
 
     app_env: str = "development"
     cors_origins: str = "http://localhost:3000"

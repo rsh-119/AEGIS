@@ -6,7 +6,6 @@ import Link from "next/link";
 import { fetcher, inr, inrCompact, num } from "@/lib/api";
 import {
   TrendingUp, TrendingDown, ChevronLeft, BarChart3, Building2,
-  ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
 import clsx from "clsx";
 import { PriceChart } from "@/components/PriceChart";
@@ -14,15 +13,8 @@ import { ChartCard } from "@/components/ui/animated-card-chart";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { findSectorCfg } from "@/lib/sectors";
-
-const PERIODS = [
-  { label: "1M", value: "1mo" },
-  { label: "3M", value: "3mo" },
-  { label: "6M", value: "6mo" },
-  { label: "1Y", value: "1y"  },
-  { label: "2Y", value: "2y"  },
-  { label: "5Y", value: "5y"  },
-];
+import { PERIODS_BASIC as PERIODS } from "@/lib/periods";
+import { SortIcon } from "@/components/ui/sort-icon";
 
 type Stock = {
   ticker: string;
@@ -94,14 +86,6 @@ function sortStocks(stocks: Stock[], key: SortKey, dir: SortDir): Stock[] {
       ? (av as number) - (bv as number)
       : (bv as number) - (av as number);
   });
-}
-
-// ─── Sort icon ────────────────────────────────────────────────────────────────
-function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
-  if (!active) return <ArrowUpDown className="h-3 w-3 text-muted/40 shrink-0" />;
-  return dir === "asc"
-    ? <ArrowUp className="h-3 w-3 text-saffron shrink-0" />
-    : <ArrowDown className="h-3 w-3 text-saffron shrink-0" />;
 }
 
 // ─── Cell renderers ───────────────────────────────────────────────────────────

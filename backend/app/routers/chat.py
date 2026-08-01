@@ -3,71 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
 
 from fastapi import APIRouter
 from pydantic import BaseModel
-from groq import AsyncGroq
 
-from app.core.config import get_settings
+from app.services import ai_service, stock_service
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 router = APIRouter(prefix="/api/chat", tags=["chat"])
-
-_client: AsyncGroq | None = None
-
-
-def _get_client() -> AsyncGroq | None:
-    global _client
-    if not settings.groq_api_key:
-        return None
-    if _client is None:
-        _client = AsyncGroq(api_key=settings.groq_api_key)
-    return _client
-
-
-_SYSTEM = """\
-You are Aegis AI — an expert Indian stock market analyst and financial research assistant.
-
-Your deep knowledge covers:
-- NSE (National Stock Exchange) and BSE (Bombay Stock Exchange) listed companies
-- All major Indian indices: Nifty 50, Sensex, Bank Nifty, Nifty IT, Nifty Pharma, Nifty Midcap, Nifty Smallcap
-- SEBI regulations, RBI monetary policy, Indian budget impacts
-- FII/DII flows, promoter holdings, institutional activity
-- Indian taxation: STCG (15%), LTCG (10% above ₹1 lakh), STT, dividend tax
-- IPOs, QIPs, rights issues, buybacks in Indian markets
-- Sector rotation, global macro impact on Indian markets
-- Fundamental analysis: P/E, P/B, ROE, ROCE, D/E for Indian companies
-- Technical analysis: support/resistance, moving averages, RSI, MACD
-- Mutual funds, index ETFs (Nifty BeES, Sensex ETF), SIPs
-- Corporate governance, concall insights, promoter pledging
-- Top Indian companies across Technology, Banking, FMCG, Pharma, Auto, Infra, Energy
-
-Response guidelines:
-- Be direct, concise, and data-driven
-- Use ₹ for Indian Rupee amounts
-- Use bullet points and **bold** for section titles — do NOT use # ## ### heading syntax
-- Distinguish between facts and analysis/opinion
-- For stock-specific advice, remind users this is educational, not financial advice
-- When asked about specific stocks, give balanced bull/bear perspectives
-- Cite approximate figures when exact real-time data isn't available
-- Keep responses conversational — avoid document-style structure with multiple heading levels
-
-You MUST respond ONLY with a valid JSON object (no markdown fences, no extra text):
-{
-  "reply": "<your full markdown-formatted answer>",
-  "suggestions": ["<follow-up question 1>", "<follow-up question 2>", "<follow-up question 3>"],
-  "tickers": ["<NSE_SYMBOL.NS>"]
-}
-
-Rules for the JSON fields:
-- "reply": your complete answer in markdown
-- "suggestions": exactly 3 natural follow-up questions the user might ask next, based on your reply
-- "tickers": NSE symbols (e.g. "HDFCBANK.NS", "INFY.NS") for any specific stocks you mentioned — max 6, empty array if none
-"""
 
 # Common company name → NSE ticker mapping for fast resolution
 _NAME_TO_TICKER: dict[str, str] = {
@@ -111,43 +56,70 @@ _NAME_TO_TICKER: dict[str, str] = {
     "indusind bank": "INDUSINDBK.NS",
 }
 
+_TICKER_RE = re.compile(r"\b([A-Z][A-Z0-9&-]{1,14})\.(NS|BO)\b")
 
-def _lookup_stocks(tickers: list[str]) -> list[dict]:
-    """Fetch stock data from cache for tickers mentioned in the reply."""
-    from app.core.cache import cache
 
-    results = []
-    seen: set[str] = set()
+def _extract_tickers(text: str) -> list[str]:
+    """Find stock tickers in the user's own message — used to fetch live
+    grounding data BEFORE generation, so the model has real numbers to cite
+    instead of reaching for "approximate" ones from memory."""
+    found: list[str] = []
+    for m in _TICKER_RE.finditer(text):
+        t = f"{m.group(1)}.{m.group(2)}"
+        if t not in found:
+            found.append(t)
+    lower = text.lower()
+    for name, ticker in _NAME_TO_TICKER.items():
+        if name in lower and ticker not in found:
+            found.append(ticker)
+    return found[:3]
 
-    for ticker in tickers[:6]:
-        if ticker in seen:
+
+def _change_pct(q: dict) -> float | None:
+    price, prev = q.get("current_price"), q.get("previous_close")
+    if isinstance(price, (int, float)) and isinstance(prev, (int, float)) and prev:
+        return round((price - prev) / prev * 100, 2)
+    return None
+
+
+async def _fetch_grounding(tickers: list[str]) -> dict[str, dict]:
+    """Live quote data for tickers mentioned in the current message."""
+    if not tickers:
+        return {}
+    quotes = await asyncio.gather(*[stock_service.get_quote(t) for t in tickers], return_exceptions=True)
+    out: dict[str, dict] = {}
+    for ticker, q in zip(tickers, quotes):
+        if isinstance(q, BaseException) or ("error" in q and "current_price" not in q):
             continue
-        seen.add(ticker)
+        out[ticker] = {
+            "company_name": q.get("company_name"),
+            "sector": q.get("sector"),
+            "current_price_inr": q.get("current_price"),
+            "change_pct": _change_pct(q),
+            "week52_high_inr": q.get("week52_high"),
+            "week52_low_inr": q.get("week52_low"),
+            "pe_ratio": q.get("pe_ratio"),
+            "pb_ratio": q.get("pb_ratio"),
+            "roe": q.get("roe"),
+            "debt_to_equity": q.get("debt_to_equity"),
+            "market_cap_inr": q.get("market_cap"),
+        }
+    return out
 
-        # Try quote cache
-        cached_q = cache.get(f"quote:{ticker}")
-        if cached_q and isinstance(cached_q, dict):
-            results.append({
-                "ticker":     ticker,
-                "symbol":     ticker.replace(".NS", "").replace(".BO", ""),
-                "name":       cached_q.get("company_name", ""),
-                "price":      cached_q.get("current_price"),
-                "change_pct": cached_q.get("change_pct"),
-                "pe":         cached_q.get("pe_ratio"),
-                "source":     "cache",
-            })
-            continue
 
-        # No data available — include ticker stub so frontend can link to stock page
-        results.append({
+def _stock_card(ticker: str, quote: dict | None) -> dict:
+    symbol = ticker.replace(".NS", "").replace(".BO", "")
+    if quote:
+        return {
             "ticker": ticker,
-            "symbol": ticker.replace(".NS", "").replace(".BO", ""),
-            "price":  None,
-            "change_pct": None,
-            "source": "stub",
-        })
-
-    return results
+            "symbol": symbol,
+            "name": quote.get("company_name", ""),
+            "price": quote.get("current_price_inr"),
+            "change_pct": quote.get("change_pct"),
+            "pe": quote.get("pe_ratio"),
+            "source": "live",
+        }
+    return {"ticker": ticker, "symbol": symbol, "price": None, "source": "stub"}
 
 
 class ChatMessage(BaseModel):
@@ -162,63 +134,26 @@ class ChatRequest(BaseModel):
 
 @router.post("")
 async def chat(req: ChatRequest):
-    client = _get_client()
-    if client is None:
-        return {"reply": "AI is not configured. Please set GROQ_API_KEY.", "error": True}
+    tickers = _extract_tickers(req.message)
+    grounding = await _fetch_grounding(tickers)
 
-    messages: list[dict] = [{"role": "system", "content": _SYSTEM}]
-    for msg in req.history[-12:]:
-        messages.append({"role": msg.role, "content": msg.content})
-    messages.append({"role": "user", "content": req.message})
+    history_lines = [
+        f"{'User' if msg.role == 'user' else 'Assistant'}: {msg.content}"
+        for msg in req.history[-12:]
+    ]
+    result = await ai_service.chat(req.message, "\n".join(history_lines), grounding)
 
-    try:
-        resp = await asyncio.wait_for(
-            client.chat.completions.create(
-                model=settings.groq_model,
-                messages=messages,
-                temperature=0.4,
-                max_tokens=2000,
-                response_format={"type": "json_object"},
-            ),
-            timeout=30,
-        )
-        raw = resp.choices[0].message.content or "{}"
-
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            # Fallback: extract reply from raw text if JSON is malformed
-            parsed = {"reply": raw, "suggestions": [], "tickers": []}
-
-        reply       = parsed.get("reply") or parsed.get("text") or raw
-        suggestions = parsed.get("suggestions") or []
-        tickers     = parsed.get("tickers") or []
-
-        # Clamp to 3 suggestions, strip empty strings
-        suggestions = [s for s in suggestions if isinstance(s, str) and s.strip()][:3]
-
-        # Resolve any tickers that are just company names
-        resolved: list[str] = []
-        for t in tickers:
-            if isinstance(t, str):
-                t = t.strip()
-                if t.endswith(".NS") or t.endswith(".BO"):
-                    resolved.append(t)
-                else:
-                    mapped = _NAME_TO_TICKER.get(t.lower())
-                    if mapped:
-                        resolved.append(mapped)
-
-        stocks = _lookup_stocks(resolved) if resolved else []
-
-        return {
-            "reply":       reply,
-            "suggestions": suggestions,
-            "stocks":      stocks,
-        }
-
-    except asyncio.TimeoutError:
-        return {"reply": "Request timed out. Please try again.", "error": True}
-    except Exception as exc:
-        logger.error("Chat error: %s", exc)
+    if "error" in result:
         return {"reply": "Sorry, I encountered an error. Please try again shortly.", "error": True}
+
+    reply_tickers = [t for t in result.get("tickers", []) if t not in grounding][:6]
+    extra = await _fetch_grounding(reply_tickers)
+    stocks = [_stock_card(t, grounding[t]) for t in grounding]
+    stocks += [_stock_card(t, extra.get(t)) for t in reply_tickers]
+
+    return {
+        "reply": result["reply"],
+        "suggestions": result.get("suggestions", []),
+        "stocks": stocks,
+        "answered_from_facts": result.get("answered_from_facts"),
+    }

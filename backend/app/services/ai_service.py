@@ -1,18 +1,24 @@
 """
 ai_service.py — Multi-provider AI for Indian stock analysis.
 
-Provider chain (automatic waterfall — each step tried only if prior step fails):
+Provider chain (automatic waterfall — each step tried only if prior step fails).
+`prefer_openrouter=True` tasks (Ask AI, portfolio/document Q&A) try step 5 FIRST,
+then fall through to the same chain from step 1 on failure:
   0. Prompt cache (20h TTL) — returns instantly for repeated calls
-  1. Groq    llama-3.3-70b-versatile        (primary — 100k TPD free, low latency)
-  2. Groq    llama-3.1-8b-instant           (fallback #1 — 500k TPD)
-  3. Groq    llama-3.3-70b-specdec          (fallback #2)
-  4. Groq    meta-llama/llama-4-scout       (fallback #3)
-  5. NVIDIA  deepseek-ai/deepseek-v4-flash  (fallback #4 — chain-of-thought, rate-limited)
-  6. NVIDIA  minimaxai/minimax-m2.7         (fallback #5 — 8k context, separate key)
-  7. OpenRouter  settings.openrouter_model  (fallback #6 — paid key)
-  8. OpenRouter  meta-llama/llama-3.3-70b-instruct:free
-  9. OpenRouter  google/gemma-3-27b-it:free
- 10. OpenRouter  mistralai/mistral-small-3.2-24b-instruct:free
+  1. Groq    llama-3.3-70b-versatile              (primary — 100k TPD free, low latency)
+  2. Groq    llama-3.1-8b-instant                 (fallback #1 — 500k TPD)
+  5. OpenRouter  settings.openrouter_model         (nvidia/nemotron-3-super-120b-a12b:free)
+     OpenRouter  nvidia/nemotron-3-ultra-550b-a55b:free
+     OpenRouter  google/gemma-4-31b-it:free
+     OpenRouter  nvidia/nemotron-3-nano-30b-a3b:free
+  6. NVIDIA  settings.nvidia_model (z-ai/glm-5.2)  (last resort — correct but ~1-3 min queue)
+
+Verified 2026-08-01 by direct per-model test (see /api/health or ask Claude to
+re-run it): GLM-5.2 is the most groundedness-accurate but far slower (~80s)
+than Groq's primary model (~4s, nearly as accurate) — Groq staying primary is
+the right call. Previously-listed "Groq specdec / llama-4-scout" and "NVIDIA
+MiniMax M2.7" fallback steps were removed — all three now return hard errors
+(decommissioned / 404 / EOL) from their providers, not real fallback capacity.
 
 Four capabilities:
   • analyse_stock()    — valuation, risks, outlook (structured, data-cited)
@@ -41,6 +47,7 @@ from app.core.config import get_settings
 from app.services.prompts import analysis as _p_analysis
 from app.services.prompts import health as _p_health
 from app.services.prompts import ask as _p_ask
+from app.services.prompts import chat as _p_chat
 from app.services.prompts import document as _p_document
 from app.services.prompts import portfolio as _p_portfolio
 
@@ -96,7 +103,6 @@ def get_repair_counts() -> dict:
 
 _groq_client:     AsyncGroq   | None = None
 _nvidia_client:   AsyncOpenAI | None = None
-_minimax_client:  AsyncOpenAI | None = None
 
 # ── Groq key pool — round-robins across all configured keys ──────────────────
 _groq_key_index: int = 0
@@ -165,8 +171,10 @@ _NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 # Groq fallback models — each has a separate daily quota
 _GROQ_EXTRA_MODELS = [
     "llama-3.1-8b-instant",
-    "llama-3.3-70b-specdec",
-    "meta-llama/llama-4-scout-17b-16e-instruct",
+    # "llama-3.3-70b-specdec" and "meta-llama/llama-4-scout-17b-16e-instruct"
+    # were removed 2026-08-01 — both now hard-fail (decommissioned / 404) on
+    # every call, verified by direct per-model test. Don't re-add a model here
+    # without confirming it still resolves on Groq's console first.
 ]
 
 # OpenRouter free fallbacks
@@ -199,18 +207,6 @@ def _get_nvidia() -> AsyncOpenAI | None:
             api_key=settings.nvidia_api_key,
         )
     return _nvidia_client
-
-
-def _get_minimax() -> AsyncOpenAI | None:
-    global _minimax_client
-    if not settings.nvidia_minimax_api_key:
-        return None
-    if _minimax_client is None:
-        _minimax_client = AsyncOpenAI(
-            base_url=_NVIDIA_BASE_URL,
-            api_key=settings.nvidia_minimax_api_key,
-        )
-    return _minimax_client
 
 
 def _parse_json(raw: str | None) -> dict:
@@ -255,29 +251,6 @@ async def _call_nvidia(system: str, user: str, max_tokens: int, model: str | Non
     content = resp.choices[0].message.content
     return _parse_json(content)
 
-
-# ── MiniMax M2.7 call (via NVIDIA endpoint, separate key) ────────────────────
-
-async def _call_minimax(system: str, user: str, max_tokens: int, model: str | None = None, temperature: float | None = None) -> dict:
-    client = _get_minimax()
-    if client is None:
-        raise RuntimeError("NVIDIA_MINIMAX_API_KEY not configured")
-    resp = await asyncio.wait_for(
-        client.chat.completions.create(
-            model=settings.nvidia_minimax_model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user",   "content": user},
-            ],
-            temperature=temperature if temperature is not None else _TEMP_STRUCTURED,
-            top_p=0.95,
-            max_tokens=min(max_tokens, 8192),
-            stream=False,
-        ),
-        timeout=settings.ai_timeout_seconds,
-    )
-    content = resp.choices[0].message.content
-    return _parse_json(content)
 
 
 # ── Groq call ─────────────────────────────────────────────────────────────────
@@ -481,37 +454,14 @@ async def _chat_json(
     else:
         errors.append("Groq: no API key")
 
-    # ── 3. MiniMax M2.7 via NVIDIA — separate key, 8k context ────────────────
-    if settings.nvidia_minimax_api_key:
-        try:
-            result = await _call_validated(_call_minimax, system, user, max_tokens, schema, temperature)
-            result.setdefault("_provider", "nvidia/minimax-m2.7")
-            logger.info("MiniMax M2.7 succeeded")
-            if use_cache:
-                _prompt_cache.set(system, user, result)
-            _record_call(result["_provider"], time.monotonic() - t0)
-            return result
-        except NvidiaRateLimitError:
-            errors.append("MiniMax/M2.7: 429 rate-limited")
-            logger.warning("MiniMax/M2.7: 429 rate-limited — trying OpenRouter")
-        except NvidiaAPIStatusError as e:
-            status = getattr(e, "status_code", 0)
-            errors.append(f"MiniMax/M2.7: HTTP {status}")
-            logger.warning("MiniMax/M2.7: HTTP %s — trying OpenRouter", status)
-        except (asyncio.TimeoutError, json.JSONDecodeError, ValidationError, Exception) as e:
-            errors.append(f"MiniMax/M2.7: {type(e).__name__}: {e}")
-            logger.warning("MiniMax/M2.7: %s — trying OpenRouter", e)
-    else:
-        errors.append("MiniMax: no API key")
-
-    # ── 5. OpenRouter (skipped when the preferred route already tried it) ────
+    # ── OpenRouter (skipped when the preferred route already tried it) ───────
     if not openrouter_tried:
         result = await _openrouter_attempt(system, user, max_tokens, use_cache, errors, schema, temperature)
         if result is not None:
             _record_call(result.get("_provider", "openrouter"), time.monotonic() - t0)
             return result
 
-    # ── 6. NVIDIA (GLM-5.2) — last resort: correct output but ~2-3 min queue ─
+    # ── NVIDIA (GLM-5.2) — last resort: correct output but ~2-3 min queue ────
     if settings.nvidia_api_key:
         try:
             result = await _call_validated(_call_nvidia, system, user, max_tokens, schema, temperature)
@@ -868,6 +818,23 @@ async def answer(
     return await _chat_json(_p_ask.ANSWER_SYSTEM, user, max_tokens=900, prefer_openrouter=True, schema=AskResponse)
 
 
+# ── 3b. Free-form chat (no ticker required) ──────────────────────────────────
+
+async def chat(message: str, history_text: str, grounding: dict) -> dict:
+    """Free-form Indian stock-market chat. Grounded in live data for any stock
+    mentioned in the current message (via `grounding`); conversational for
+    general market questions that cite no stock-specific numbers."""
+    parts = []
+    if history_text:
+        parts.append(f"CONVERSATION SO FAR:\n{history_text}")
+    if grounding:
+        parts.append(f"LIVE DATA (INR, use for any stock-specific numbers):\n{json.dumps(grounding, default=str)}")
+    parts.append(f"CURRENT MESSAGE: {message}")
+    user = "\n\n".join(parts)
+    from app.schemas import ChatResponse
+    return await _chat_json(_p_chat.SYSTEM, user, max_tokens=2000, prefer_openrouter=True, schema=ChatResponse)
+
+
 # ── 4. Document analysis ──────────────────────────────────────────────────────
 
 _DOC_CACHE_TTL = 4 * 3600  # 4 hours — same PDF content returns cached result
@@ -880,6 +847,7 @@ def _doc_cache_key(text: str, model: str) -> str:
 async def analyze_document(text: str, company: str | None = None, model: str = "deepseek") -> dict:
     """Deep analysis of an uploaded concall transcript / annual report / investor presentation."""
     model = model.lower()
+    t0 = time.monotonic()
 
     # ── Redis doc cache — same PDF + model → instant result, no API call ────
     cache_key = _doc_cache_key(text, model)
@@ -894,16 +862,20 @@ async def analyze_document(text: str, company: str | None = None, model: str = "
 
     # ── Semaphore — queue excess concurrent requests, never let them all pile ─
     async with _doc_semaphore():
+        from app.schemas import DocumentAnalysisResponse
         user = f"Company context: {company or 'Extract from document'}\n\n--- DOCUMENT START ---\n{text[:9000]}\n--- DOCUMENT END ---"
         system = _p_document.SYSTEM
 
-        # In-process prompt cache (same request within 20h window)
-        cached = _prompt_cache.get(system, user)
+        # In-process prompt cache — keyed on (system, user + model) so the two
+        # named quality tiers can't collide and silently return each other's
+        # cached result for the same document.
+        cache_lookup_key = user + model
+        cached = _prompt_cache.get(system, cache_lookup_key)
         if cached is not None:
             return cached
 
         def _save(result: dict) -> dict:
-            _prompt_cache.set(system, user, result)
+            _prompt_cache.set(system, cache_lookup_key, result)
             try:
                 from app.core.cache import cache as _rc
                 _rc.set(cache_key, result, ttl=_DOC_CACHE_TTL)
@@ -915,23 +887,32 @@ async def analyze_document(text: str, company: str | None = None, model: str = "
         if model == "deepseek":
             try:
                 logger.info("analyze_document: Qwen3-32B (reasoning)")
-                result = await _call_groq(system, user, max_tokens=3500, model="qwen/qwen3-32b", temperature=_TEMP_STRUCTURED)
+                call_fn = functools.partial(_call_groq, model="qwen/qwen3-32b")
+                result = await _call_validated(call_fn, system, user, 3500, DocumentAnalysisResponse, _TEMP_STRUCTURED)
+                result.setdefault("_provider", "groq/qwen/qwen3-32b")
+                _record_call(result["_provider"], time.monotonic() - t0)
                 return _save(result)
             except Exception as e:
                 logger.warning("analyze_document: Qwen3-32B failed (%s) — falling back", e)
 
-        # ── Standard: Llama-4-Scout — fast, newer model ──────────────────────
+        # ── Standard: Llama-3.1-8B — fast, low-latency ───────────────────────
+        # "minimax" is a legacy tier id (frontend still sends it) — it never
+        # actually called NVIDIA MiniMax. It previously called Groq's
+        # llama-4-scout, which Groq has since dropped (404 on every call);
+        # swapped for a model confirmed live 2026-08-01.
         elif model == "minimax":
             try:
-                logger.info("analyze_document: Llama-4-Scout (standard)")
-                result = await _call_groq(system, user, max_tokens=3000,
-                                          model="meta-llama/llama-4-scout-17b-16e-instruct", temperature=_TEMP_STRUCTURED)
+                logger.info("analyze_document: Llama-3.1-8B (standard)")
+                call_fn = functools.partial(_call_groq, model="llama-3.1-8b-instant")
+                result = await _call_validated(call_fn, system, user, 3000, DocumentAnalysisResponse, _TEMP_STRUCTURED)
+                result.setdefault("_provider", "groq/llama-3.1-8b-instant")
+                _record_call(result["_provider"], time.monotonic() - t0)
                 return _save(result)
             except Exception as e:
-                logger.warning("analyze_document: Llama-4-Scout failed (%s) — falling back", e)
+                logger.warning("analyze_document: Llama-3.1-8B failed (%s) — falling back", e)
 
-        # ── Quick / fallback: llama-3.3-70b ──────────────────────────────────
-        result = await _chat_json(system, user, max_tokens=3000)
+        # ── Quick / fallback: llama-3.3-70b (full waterfall) ─────────────────
+        result = await _chat_json(system, user, max_tokens=3000, schema=DocumentAnalysisResponse)
         if "error" not in result:
             _save(result)
         return result

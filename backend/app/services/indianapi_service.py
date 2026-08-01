@@ -76,6 +76,10 @@ def indianapi_blocked() -> bool:
     return time.time() < _blocked_until
 
 
+def indianapi_backoff_remaining() -> int:
+    return max(0, int(_blocked_until - time.time()))
+
+
 # ── value parsers ─────────────────────────────────────────────────────────────
 
 def _f(v) -> float | None:
