@@ -41,7 +41,8 @@ type NewsItem = {
 
 type Signal = { kind: "warning" | "info" | "positive"; metric?: string; title: string; detail: string };
 type AiObservation = { severity: "risk" | "opportunity" | "neutral"; title: string; insight?: string; action: string };
-type AiReview = { verdict: string | null; observations: AiObservation[] };
+type HoldingSentiment = { ticker: string; sentiment: "positive" | "negative" | "neutral"; headline: string; reason: string };
+type AiReview = { verdict: string | null; observations: AiObservation[]; holdings_sentiment?: HoldingSentiment[] };
 type GrowthPoint = { date: string; invested: number; value: number; nifty: number };
 type AskExchange = { q: string; a: string };
 
@@ -484,6 +485,45 @@ function InsightsCard() {
                   );
                 })}
               </div>
+
+              {aiReview!.holdings_sentiment && aiReview!.holdings_sentiment.length > 0 && (
+                <div className="mt-4 border-t border-border pt-4">
+                  <p className="mb-2.5 flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-saffron">
+                    <Newspaper className="h-3 w-3" /> News sentiment on your holdings
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {aiReview!.holdings_sentiment.map((hs, i) => {
+                      const sentCls =
+                        hs.sentiment === "positive" ? "text-up bg-up/10 ring-up/20" :
+                        hs.sentiment === "negative" ? "text-down bg-down/10 ring-down/20" :
+                        "text-saffron bg-saffron/10 ring-saffron/20";
+                      const SentIcon = hs.sentiment === "positive" ? TrendingUp : hs.sentiment === "negative" ? TrendingDown : Info;
+                      return (
+                        <div key={i} className="flex items-start gap-2.5 rounded-xl border border-border bg-surface p-3">
+                          <span className={clsx("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full ring-1", sentCls)}>
+                            <SentIcon className="h-3 w-3" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <Link
+                                href={`/stock/${encodeURIComponent(hs.ticker)}`}
+                                className="font-mono text-xs font-semibold text-fg hover:text-saffron transition-colors"
+                              >
+                                {hs.ticker.replace(/\.(NS|BO)$/, "")}
+                              </Link>
+                              <span className={clsx("rounded-full px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wide ring-1", sentCls)}>
+                                {hs.sentiment}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs leading-snug text-fg/90">{hs.headline}</p>
+                            {hs.reason && <p className="mt-0.5 text-[11px] text-muted">{hs.reason}</p>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>

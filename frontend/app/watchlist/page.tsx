@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { SortIcon } from "@/components/ui/sort-icon";
+import { StockNewsModal } from "@/components/StockNewsModal";
 
 type ColKey =
   | "pe_ratio" | "market_cap" | "dividend_yield"
@@ -55,6 +56,7 @@ export default function WatchlistPage() {
   const [industry, setIndustry] = useState<string>("all");
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(new Set(COLUMNS.map((c) => c.key)));
   const [colsOpen, setColsOpen] = useState(false);
+  const [newsFor, setNewsFor] = useState<{ ticker: string; name: string } | null>(null);
 
   useEffect(() => {
     try {
@@ -235,11 +237,9 @@ export default function WatchlistPage() {
                     <div className="flex items-center gap-1.5">
                       <a href={`/stock/${it.ticker}`} className="font-medium hover:text-saffron">{it.company_name || it.ticker}</a>
                       {it.latest_news_title && (
-                        <a
-                          href={it.latest_news_link || `/stock/${it.ticker}`}
-                          target="_blank"
-                          rel="noopener"
-                          title={it.latest_news_title}
+                        <button
+                          onClick={() => setNewsFor({ ticker: it.ticker, name: it.company_name || it.ticker })}
+                          title={`${it.latest_news_title} — click to see all news`}
                           className="relative shrink-0 text-muted hover:text-saffron transition-colors"
                         >
                           <Newspaper className="h-3.5 w-3.5" />
@@ -248,7 +248,7 @@ export default function WatchlistPage() {
                               {it.news_count > 9 ? "9+" : it.news_count}
                             </span>
                           )}
-                        </a>
+                        </button>
                       )}
                     </div>
                     <div className="text-xs text-muted">{it.ticker.replace(".NS", "").replace(".BO", "")}</div>
@@ -279,6 +279,13 @@ export default function WatchlistPage() {
           </tbody>
         </table>
       </Card>
+
+      <StockNewsModal
+        ticker={newsFor?.ticker ?? ""}
+        companyName={newsFor?.name}
+        open={!!newsFor}
+        onClose={() => setNewsFor(null)}
+      />
     </div>
   );
 }

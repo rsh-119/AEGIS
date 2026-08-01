@@ -138,6 +138,28 @@ class AskResponse(BaseModel):
     answered_from_facts: bool
 
 
+class PortfolioObservation(BaseModel):
+    severity: Literal["risk", "opportunity", "neutral"]
+    title: str
+    insight: str
+    action: str
+
+
+class HoldingSentiment(BaseModel):
+    ticker: str
+    sentiment: Literal["positive", "negative", "neutral"]
+    headline: str   # the specific news headline (or short synthesis) driving this read
+    reason: str      # one line — why this headline matters for the stock
+
+
+class PortfolioReviewResponse(BaseModel):
+    verdict: str
+    observations: list[PortfolioObservation] = Field(min_length=1)
+    # One entry per holding that had usable news — never fabricated for
+    # holdings with no headlines in the injected data (see prompt rules).
+    holdings_sentiment: list[HoldingSentiment] = []
+
+
 class ChatResponse(BaseModel):
     reply: str
     suggestions: list[str] = []

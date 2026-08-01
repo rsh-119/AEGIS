@@ -330,39 +330,78 @@ async def portfolio_insights(
 
     ai_review = None
     if ai:
-        ranked = sorted(all_holdings, key=lambda x: -x["value"])
-        table = "\n".join(
-            f"- {h['name']} ({h['ticker']}): {h['value'] / summary['value'] * 100:.1f}% weight, P&L {h['pnl_pct']:+.1f}%"
-            for h in ranked
-        )
         sector_line = ", ".join(f"{s['label']} {s['alloc_pct']:.0f}%" for s in sectors)
 
-        # Recent headlines for the top 5 holdings by weight — gives the AI real
-        # events to reference instead of reasoning from P&L numbers alone.
-        top5 = ranked[:5]
-        news_lists = await asyncio.gather(
-            *[indianapi_service.get_company_news(stock_service.bare_ticker(h["ticker"])) for h in top5],
-            return_exceptions=True,
+        # Full financial ratios, pre-computed red/green flags, and news for
+        # EVERY holding — not just the top few — so the reviewer can actually
+        # cite the numbers/flags behind its calls instead of reasoning from
+        # weight/P&L alone. Capped at 25 defensively; real retail portfolios
+        # rarely exceed that.
+        holding_rows = list(rows)[:25]
+        quotes, news_lists = await asyncio.gather(
+            asyncio.gather(*[stock_service.get_quote(h.ticker) for h in holding_rows], return_exceptions=True),
+            asyncio.gather(
+                *[indianapi_service.get_company_news(stock_service.bare_ticker(h.ticker)) for h in holding_rows],
+                return_exceptions=True,
+            ),
         )
-        news_lines = []
-        for h, news in zip(top5, news_lists):
-            if isinstance(news, Exception) or not news:
+
+        def _pct(v):
+            return f"{v * 100:.1f}%" if isinstance(v, (int, float)) else "N/A"
+
+        def _num(v):
+            return f"{v:.2f}" if isinstance(v, (int, float)) else "N/A"
+
+        holding_lines: list[str] = []
+        news_lines: list[str] = []
+        for h, q, news in zip(holding_rows, quotes, news_lists):
+            if isinstance(q, Exception) or not isinstance(q, dict) or "error" in q:
                 continue
-            headlines = [n.get("title", "").strip() for n in news[:3] if n.get("title")]
-            if headlines:
-                news_lines.append(f"- {h['name']}: " + " | ".join(headlines))
+            price = q.get("current_price") or h.avg_price
+            invested = h.shares * h.avg_price
+            value = h.shares * price
+            weight = value / summary["value"] * 100 if summary["value"] else 0
+            pnl_pct = (value - invested) / invested * 100 if invested else 0
+
+            flags = stock_service.ratio_signals(q)
+            green = [s["title"] for s in flags if s["type"] == "positive"]
+            red = [s["title"] for s in flags if s["type"] in ("negative", "warning")]
+
+            line = (
+                f"- {q.get('company_name') or h.ticker} ({h.ticker}): {weight:.1f}% weight, P&L {pnl_pct:+.1f}%, "
+                f"P/E {_num(q.get('pe_ratio'))}, D/E {_num(q.get('debt_to_equity'))}, "
+                f"ROE {_pct(q.get('roe'))}, Revenue Growth {_pct(q.get('revenue_growth'))}, "
+                f"Net Margin {_pct(q.get('profit_margin'))}"
+            )
+            if green:
+                line += f" | Green flags: {'; '.join(green)}"
+            if red:
+                line += f" | Red flags: {'; '.join(red)}"
+            holding_lines.append(line)
+
+            if not isinstance(news, Exception) and news:
+                headlines = [n.get("title", "").strip() for n in news[:3] if n.get("title")]
+                if headlines:
+                    news_lines.append(f"- {h.ticker}: " + " | ".join(headlines))
+
+        holdings_block = "\n".join(holding_lines)
         news_block = "\n".join(news_lines)
 
         context = (
-            f"Holdings:\n{table}\n\nSector mix: {sector_line}\n"
+            f"Holdings (live financial ratios + pre-computed green/red flags):\n{holdings_block}\n\n"
+            f"Sector mix: {sector_line}\n"
             f"Portfolio XIRR: {xirr}% vs Nifty 50 {nifty}% (same cashflows).\n"
             f"Total P&L: {summary['pnl_pct']}%."
-            + (f"\n\nRecent news on top holdings:\n{news_block}" if news_block else "")
+            + (f"\n\nRecent news per holding:\n{news_block}" if news_block else "")
         )
         try:
             result = await ai_service.review_portfolio(context)
             if result.get("observations"):
-                ai_review = {"verdict": result.get("verdict"), "observations": result["observations"]}
+                ai_review = {
+                    "verdict": result.get("verdict"),
+                    "observations": result["observations"],
+                    "holdings_sentiment": result.get("holdings_sentiment", []),
+                }
         except Exception:
             ai_review = None
 

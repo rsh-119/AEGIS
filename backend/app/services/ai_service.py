@@ -930,31 +930,56 @@ async def ask_document(text: str, question: str, company: str | None = None) -> 
 
 
 async def review_portfolio(context: str) -> dict:
-    """Structured portfolio review — an overall verdict plus 3-4 typed
-    observations, each with a reasoned insight and a concrete action.
-    Uncached — "Run again" should genuinely re-run, not replay."""
-    result = await _chat_json(_p_portfolio.REVIEW_SYSTEM, context, max_tokens=900, use_cache=False, temperature=_TEMP_CONVERSATIONAL)
+    """Structured portfolio review — an overall verdict, 3-4 typed observations
+    (each with a reasoned insight and a concrete action), and a per-holding
+    news sentiment read (green/red flag friendly). Leads with Nemotron via
+    OpenRouter (prefer_openrouter=True) for the more detailed, context-heavy
+    prose this now requires — falls back through the normal Groq/GLM chain on
+    failure. Uncached — "Run again" should genuinely re-run, not replay."""
+    from app.schemas import PortfolioReviewResponse
+    result = await _chat_json(
+        _p_portfolio.REVIEW_SYSTEM, context, max_tokens=1800, use_cache=False,
+        prefer_openrouter=True, temperature=_TEMP_CONVERSATIONAL, schema=PortfolioReviewResponse,
+    )
 
     verdict = str(result.get("verdict") or "").strip() or None
     obs = result.get("observations")
-    if not isinstance(obs, list):
-        return {"verdict": verdict, "observations": []}
-    clean = []
-    for o in obs[:4]:
-        if not isinstance(o, dict):
-            continue
-        sev = o.get("severity")
-        title = str(o.get("title") or "").strip()
-        insight = str(o.get("insight") or "").strip()
-        action = str(o.get("action") or "").strip()
-        if title and action:
-            clean.append({
-                "severity": sev if sev in ("risk", "opportunity", "neutral") else "neutral",
-                "title": title,
-                "insight": insight,
-                "action": action,
-            })
-    return {"verdict": verdict, "observations": clean}
+    clean: list[dict] = []
+    if isinstance(obs, list):
+        for o in obs[:4]:
+            if not isinstance(o, dict):
+                continue
+            sev = o.get("severity")
+            title = str(o.get("title") or "").strip()
+            insight = str(o.get("insight") or "").strip()
+            action = str(o.get("action") or "").strip()
+            if title and action:
+                clean.append({
+                    "severity": sev if sev in ("risk", "opportunity", "neutral") else "neutral",
+                    "title": title,
+                    "insight": insight,
+                    "action": action,
+                })
+
+    sentiment: list[dict] = []
+    raw_sentiment = result.get("holdings_sentiment")
+    if isinstance(raw_sentiment, list):
+        for s in raw_sentiment:
+            if not isinstance(s, dict):
+                continue
+            ticker = str(s.get("ticker") or "").strip()
+            sent = s.get("sentiment")
+            headline = str(s.get("headline") or "").strip()
+            reason = str(s.get("reason") or "").strip()
+            if ticker and headline:
+                sentiment.append({
+                    "ticker": ticker,
+                    "sentiment": sent if sent in ("positive", "negative", "neutral") else "neutral",
+                    "headline": headline,
+                    "reason": reason,
+                })
+
+    return {"verdict": verdict, "observations": clean, "holdings_sentiment": sentiment}
 
 
 async def ask_portfolio(question: str, context: str) -> dict:
