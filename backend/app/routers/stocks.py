@@ -2,9 +2,10 @@
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime
 from fastapi import APIRouter, HTTPException, Query
 
-from app.services import stock_service, news_service, ai_service, forecast_service, concall_service, peer_service, shareholding_service, financials_service
+from app.services import stock_service, news_service, ai_service, forecast_service, concall_service, peer_service, shareholding_service, financials_service, finance_math
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
 
@@ -66,6 +67,85 @@ async def history(ticker: str, period: str = "6mo"):
     if "error" in data and "candles" not in data:
         data["candles"] = []
     return data
+
+
+@router.get("/{ticker}/calculator")
+async def returns_calculator(
+    ticker: str,
+    mode: str = "sip",       # "sip" | "lumpsum"
+    amount: float = 5000,
+    start_date: str = "",    # YYYY-MM-DD; defaults to earliest available price if blank
+):
+    """What-if returns calculator for this specific stock — SIP (one purchase
+    per calendar month) or lumpsum (single purchase), from start_date to the
+    latest available price. Reuses the same XIRR math as the portfolio page
+    (app.services.finance_math) rather than a separate implementation."""
+    if mode not in ("sip", "lumpsum"):
+        raise HTTPException(status_code=400, detail="mode must be 'sip' or 'lumpsum'")
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="amount must be positive")
+
+    hist = await stock_service.get_history(ticker, "max")
+    if "error" in hist:
+        raise HTTPException(status_code=404, detail="No price history available for this stock")
+    closes = finance_math.closes_map(hist)
+    if len(closes) < 2:
+        raise HTTPException(status_code=404, detail="Not enough price history to calculate returns")
+
+    earliest, latest = closes[0][0], closes[-1][0]
+    if start_date:
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="start_date must be YYYY-MM-DD")
+    else:
+        start = earliest
+    start = max(start, earliest)
+    if start >= latest:
+        raise HTTPException(status_code=400, detail="start_date must be before the latest available price date")
+
+    current_price = closes[-1][1]
+
+    if mode == "lumpsum":
+        entry_price = finance_math.close_at(closes, start)
+        units = amount / entry_price if entry_price else 0.0
+        invested = amount
+        current_value = units * current_price
+        flows: list[tuple[date, float]] = [(start, -amount), (latest, current_value)]
+    else:  # sip — one purchase per calendar month, start_date through latest
+        flows = []
+        units = 0.0
+        invested = 0.0
+        d = start
+        while d <= latest:
+            px = finance_math.close_at(closes, d)
+            if px:
+                units += amount / px
+                invested += amount
+                flows.append((d, -amount))
+            month = d.month + 1
+            year = d.year + (month - 1) // 12
+            month = (month - 1) % 12 + 1
+            day = min(d.day, 28)   # sidesteps month-length overflow (e.g. Jan 31 -> Feb 31)
+            d = date(year, month, day)
+        current_value = units * current_price
+        flows.append((latest, current_value))
+
+    xirr_pct = finance_math.xirr(flows)
+    absolute_return_pct = round((current_value - invested) / invested * 100, 2) if invested else None
+
+    return {
+        "mode": mode,
+        "ticker": stock_service.normalise_ticker(ticker),
+        "start_date": start.isoformat(),
+        "as_of": latest.isoformat(),
+        "invested": round(invested, 2),
+        "current_value": round(current_value, 2),
+        "units": round(units, 4),
+        "current_price": current_price,
+        "absolute_return_pct": absolute_return_pct,
+        "xirr_pct": xirr_pct,
+    }
 
 
 @router.get("/{ticker}/news")

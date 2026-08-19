@@ -132,6 +132,10 @@ class ChatRequest(BaseModel):
     history: list[ChatMessage] = []
 
 
+class StocksRequest(BaseModel):
+    tickers: list[str]
+
+
 @router.post("")
 async def chat(req: ChatRequest):
     tickers = _extract_tickers(req.message)
@@ -146,10 +150,14 @@ async def chat(req: ChatRequest):
     if "error" in result:
         return {"reply": "Sorry, I encountered an error. Please try again shortly.", "error": True}
 
+    # Stock cards for tickers already grounded before generation are free (no
+    # extra fetch). Tickers the *reply* mentions but weren't grounded yet are
+    # returned as bare tickers — the client resolves those via POST
+    # /api/chat/stocks in the background so a cache-miss quote lookup never
+    # blocks the reply itself from reaching the user.
     reply_tickers = [t for t in result.get("tickers", []) if t not in grounding][:6]
-    extra = await _fetch_grounding(reply_tickers)
     stocks = [_stock_card(t, grounding[t]) for t in grounding]
-    stocks += [_stock_card(t, extra.get(t)) for t in reply_tickers]
+    stocks += [_stock_card(t, None) for t in reply_tickers]
 
     return {
         "reply": result["reply"],
@@ -157,3 +165,13 @@ async def chat(req: ChatRequest):
         "stocks": stocks,
         "answered_from_facts": result.get("answered_from_facts"),
     }
+
+
+@router.post("/stocks")
+async def chat_stocks(req: StocksRequest):
+    """Resolve stock cards for tickers a chat reply mentioned. Split out from
+    the main /api/chat call so a slow/cache-miss quote lookup never blocks
+    the reply text from reaching the user (see chat() above)."""
+    tickers = req.tickers[:6]
+    grounding = await _fetch_grounding(tickers)
+    return {"stocks": [_stock_card(t, grounding.get(t)) for t in tickers]}

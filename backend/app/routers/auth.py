@@ -14,7 +14,7 @@ from app.core.auth import (
 )
 from app.core.database import get_db
 from app.models import User
-from app.schemas import RefreshRequest, TokenResponse, UserLogin, UserRegister
+from app.schemas import PasswordChange, RefreshRequest, TokenResponse, UserLogin, UserRegister, UserUpdate
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -32,6 +32,7 @@ async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email or username already registered",
+            
         )
     user = User(
         email=body.email,
@@ -82,6 +83,57 @@ async def me(user_id: int = Depends(get_current_user_id), db: AsyncSession = Dep
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user.to_dict()
+
+
+@router.patch("/me")
+async def update_me(
+    body: UserUpdate,
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if body.username is not None and body.username != user.username:
+        clash = (
+            await db.execute(select(User).where(User.username == body.username, User.id != user_id))
+        ).scalar_one_or_none()
+        if clash:
+            raise HTTPException(status_code=409, detail="Username already taken")
+        user.username = body.username
+
+    if body.email is not None and body.email != user.email:
+        # Email is the account-recovery channel — require the current
+        # password so a stolen/leaked access token alone can't redirect it
+        # and then use "forgot password" to take over the account.
+        if not body.current_password or not verify_password(body.current_password, user.hashed_password):
+            raise HTTPException(status_code=401, detail="Current password is required to change your email")
+        clash = (
+            await db.execute(select(User).where(User.email == body.email, User.id != user_id))
+        ).scalar_one_or_none()
+        if clash:
+            raise HTTPException(status_code=409, detail="Email already registered")
+        user.email = body.email
+
+    await db.flush()
+    return user.to_dict()
+
+
+@router.post("/me/password")
+async def change_password(
+    body: PasswordChange,
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not verify_password(body.current_password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    user.hashed_password = hash_password(body.new_password)
+    await db.flush()
+    return {"detail": "Password updated"}
 
 
 @router.post("/logout")

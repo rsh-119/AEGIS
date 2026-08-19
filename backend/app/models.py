@@ -2,7 +2,7 @@
 
 from datetime import datetime, date
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Float, Date, DateTime, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Float, Date, DateTime, JSON, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -106,6 +106,37 @@ class PriceAlert(Base):
             "is_active": self.is_active,
             "triggered_at": self.triggered_at.isoformat() if self.triggered_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class PortfolioReview(Base):
+    """One row per generated AI portfolio review — full history, not just
+    latest, so a future "past reviews"/trend feature needs no schema change."""
+
+    __tablename__ = "portfolio_reviews"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    verdict: Mapped[str | None] = mapped_column(Text, nullable=True)
+    observations: Mapped[list] = mapped_column(JSON)
+    holdings_sentiment: Mapped[list] = mapped_column(JSON, default=list)
+    truncated: Mapped[bool] = mapped_column(Boolean, default=False)
+    shown_holdings: Mapped[int] = mapped_column(Integer)
+    total_holdings: Mapped[int] = mapped_column(Integer)
+    incomplete_holdings: Mapped[list] = mapped_column(JSON, default=list)
+    fingerprint: Mapped[str] = mapped_column(String(24), index=True)   # matches the Redis cache-key hash
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    def to_dict(self) -> dict:
+        return {
+            "verdict": self.verdict,
+            "observations": self.observations,
+            "holdings_sentiment": self.holdings_sentiment,
+            "truncated": self.truncated,
+            "shown_holdings": self.shown_holdings,
+            "total_holdings": self.total_holdings,
+            "incomplete_holdings": self.incomplete_holdings,
+            "generated_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 

@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { SearchBox } from "./SearchBox";
-import { Sun, Moon, Menu, X, Bell, LogIn, LogOut, UserCircle } from "lucide-react";
+import { Sun, Moon, Menu, X, Bell, LogIn, LogOut, UserCircle, Settings } from "lucide-react";
 import clsx from "clsx";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ const links = [
   { href: "/",          label: "Home"      },
   { href: "/market",    label: "Market"    },
   { href: "/mf",        label: "MF & ETF"  },
+  { href: "/pricing",   label: "Pricing"   },
   { href: "/portfolio", label: "Portfolio" },
   { href: "/watchlist", label: "Watchlist" },
   { href: "/alerts",    label: "Alerts"    },
@@ -152,12 +153,15 @@ export function Nav() {
                       <div className="px-3 py-2 border-b border-border">
                         <p className="text-xs text-muted truncate">{user.email}</p>
                       </div>
+                      <Link href="/account" className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-raised" onClick={() => setUserMenu(false)}>
+                        <Settings className="h-3.5 w-3.5" /> Edit profile
+                      </Link>
                       <Link href="/alerts" className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-raised" onClick={() => setUserMenu(false)}>
                         <Bell className="h-3.5 w-3.5" /> Alerts
                       </Link>
                       <button
                         onClick={() => { logout(); setUserMenu(false); router.push("/login"); }}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-down hover:bg-raised"
+                        className="flex w-full items-center gap-2 px-3 py-2 text-sm text-down hover:bg-raised border-t border-border"
                       >
                         <LogOut className="h-3.5 w-3.5" /> Sign out
                       </button>
@@ -216,6 +220,13 @@ export function Nav() {
             {user ? (
               <>
                 <p className="text-xs text-muted">{user.email}</p>
+                <Link
+                  href="/account"
+                  className="flex items-center gap-2 text-sm text-muted hover:text-fg"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <Settings className="h-3.5 w-3.5" /> Edit profile
+                </Link>
                 <button
                   onClick={() => { logout(); router.push("/login"); setMobileOpen(false); }}
                   className="flex items-center gap-2 text-sm text-down"

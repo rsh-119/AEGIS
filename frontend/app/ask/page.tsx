@@ -243,6 +243,7 @@ export default function AskPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    if (messages.length === 0) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
@@ -275,6 +276,7 @@ export default function AskPage() {
         body:    JSON.stringify({ message: q, history }),
       });
       const data = await res.json();
+      const stocks: StockSnippet[] = data.stocks ?? [];
 
       setMessages((prev) =>
         prev.map((m) =>
@@ -284,12 +286,38 @@ export default function AskPage() {
                 content:     data.reply ?? "Sorry, I couldn't get a response.",
                 loading:     false,
                 suggestions: data.suggestions ?? [],
-                stocks:      data.stocks ?? [],
+                stocks,
                 answeredFromFacts: data.answered_from_facts,
               }
             : m
         )
       );
+
+      // Stocks the reply mentioned but weren't already priced come back as
+      // stubs (price: null) so the reply text isn't held up on a cache-miss
+      // quote lookup. Resolve those in the background and merge them in
+      // once ready — the message is already on screen either way.
+      const unresolved = stocks.filter((s) => s.price == null).map((s) => s.ticker);
+      if (unresolved.length > 0) {
+        fetch("/api/chat/stocks", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ tickers: unresolved }),
+        })
+          .then((r) => r.json())
+          .then((extra: { stocks?: StockSnippet[] }) => {
+            const resolved = extra.stocks ?? [];
+            if (!resolved.length) return;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === loadMsg.id
+                  ? { ...m, stocks: m.stocks?.map((s) => resolved.find((r) => r.ticker === s.ticker) ?? s) }
+                  : m
+              )
+            );
+          })
+          .catch(() => {});
+      }
     } catch {
       setMessages((prev) =>
         prev.map((m) =>
@@ -314,51 +342,51 @@ export default function AskPage() {
   const isEmpty = messages.length === 0;
 
   return (
-    <div className="flex h-[calc(100vh-130px)] flex-col animate-fade-up">
-      {/* Header */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-saffron/10 ring-2 ring-saffron/20">
-            <Sparkles className="h-5 w-5 text-saffron" />
+    <div className="flex h-[calc(100dvh-9.5rem)] min-h-[420px] flex-col animate-fade-up">
+      {/* Header — compact, stays out of the chat panel's way */}
+      <div className="mb-3 flex shrink-0 items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-saffron/10 ring-1 ring-saffron/20">
+            <Sparkles className="h-4 w-4 text-saffron" />
           </div>
           <div>
-            <h1 className="font-display text-2xl font-bold">Ask AEGIS AI</h1>
-            <p className="text-xs text-muted">Indian stock market expert · Grounded in live data</p>
+            <h1 className="font-display text-lg font-bold leading-tight">Ask AEGIS AI</h1>
+            <p className="text-[11px] text-muted">Indian stock market expert · Grounded in live data</p>
           </div>
         </div>
         {!isEmpty && (
           <button
             onClick={reset}
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs text-muted ring-1 ring-border hover:bg-raised hover:text-fg transition-all"
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted ring-1 ring-border hover:bg-raised hover:text-fg transition-all"
           >
             <RefreshCw className="h-3 w-3" /> New chat
           </button>
         )}
       </div>
 
-      {/* Chat area */}
-      <div className="relative flex flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-surface/60 backdrop-blur-sm">
+      {/* Chat area — fills whatever's left; input row never scrolls out of view */}
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border bg-surface/60 backdrop-blur-sm">
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-5" style={{ scrollbarWidth: "thin" }}>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4 sm:p-5" style={{ scrollbarWidth: "thin" }}>
           {isEmpty ? (
             <div className="flex h-full flex-col items-center justify-center">
-              <div className="mb-6 text-center">
-                <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-saffron/10 ring-2 ring-saffron/20">
-                  <Sparkles className="h-8 w-8 text-saffron" />
+              <div className="mb-5 text-center">
+                <div className="mx-auto mb-2.5 flex h-12 w-12 items-center justify-center rounded-2xl bg-saffron/10 ring-2 ring-saffron/20">
+                  <Sparkles className="h-6 w-6 text-saffron" />
                 </div>
-                <h2 className="font-display text-xl font-bold">Ask me anything</h2>
-                <p className="mt-1 text-sm text-muted">
+                <h2 className="font-display text-lg font-bold">Ask me anything</h2>
+                <p className="mt-1 text-xs text-muted">
                   About Indian stocks, sectors, SEBI rules, IPOs, taxation, and more
                 </p>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 w-full max-w-2xl">
+              <div className="grid w-full max-w-2xl gap-2 sm:grid-cols-2">
                 {SUGGESTIONS.map((s, i) => (
                   <button
                     key={i}
                     onClick={() => send(s.text)}
-                    className="flex items-center gap-3 rounded-xl bg-raised p-3 text-left ring-1 ring-border hover:ring-saffron/40 hover:bg-saffron/5 transition-all group"
+                    className="flex items-center gap-2.5 rounded-xl bg-raised px-3 py-2.5 text-left ring-1 ring-border hover:ring-saffron/40 hover:bg-saffron/5 transition-all group"
                   >
-                    <s.icon className="h-4 w-4 shrink-0 text-saffron" />
+                    <s.icon className="h-3.5 w-3.5 shrink-0 text-saffron" />
                     <span className="text-xs text-fg/80 group-hover:text-fg transition-colors leading-snug">{s.text}</span>
                   </button>
                 ))}
@@ -372,44 +400,43 @@ export default function AskPage() {
           <div ref={bottomRef} />
         </div>
 
-        <div className="border-t border-border" />
-
-        <div className="flex items-end gap-3 p-4">
-          <div className="relative flex-1">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={onKey}
-              placeholder="Ask about any Indian stock, sector, or market concept…"
-              rows={1}
+        <div className="shrink-0 border-t border-border bg-surface/80 p-3">
+          <div className="flex items-end gap-2">
+            <div className="relative flex-1">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={onKey}
+                placeholder="Ask about any Indian stock, sector, or market concept…"
+                rows={1}
+                className={clsx(
+                  "w-full resize-none rounded-xl bg-raised px-4 py-2.5 text-sm text-fg outline-none",
+                  "placeholder-muted/50 ring-1 ring-border transition-all duration-200",
+                  "focus:ring-saffron/50 focus:bg-surface max-h-32 leading-relaxed"
+                )}
+                style={{ scrollbarWidth: "thin" }}
+                disabled={loading}
+              />
+            </div>
+            <button
+              onClick={() => send(input)}
+              disabled={!input.trim() || loading}
               className={clsx(
-                "w-full resize-none rounded-xl bg-raised px-4 py-3 text-sm text-fg outline-none",
-                "placeholder-muted/50 ring-1 ring-border transition-all duration-200",
-                "focus:ring-saffron/50 focus:bg-surface max-h-44 leading-relaxed"
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all duration-200",
+                input.trim() && !loading
+                  ? "bg-saffron text-white shadow-lg shadow-saffron/30 hover:bg-saffron/90 hover:scale-105"
+                  : "bg-raised text-muted ring-1 ring-border cursor-not-allowed"
               )}
-              style={{ scrollbarWidth: "thin" }}
-              disabled={loading}
-            />
+              aria-label="Send"
+            >
+              <Send className="h-4 w-4" />
+            </button>
           </div>
-          <button
-            onClick={() => send(input)}
-            disabled={!input.trim() || loading}
-            className={clsx(
-              "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all duration-200",
-              input.trim() && !loading
-                ? "bg-saffron text-white shadow-lg shadow-saffron/30 hover:bg-saffron/90 hover:scale-105"
-                : "bg-raised text-muted ring-1 ring-border cursor-not-allowed"
-            )}
-            aria-label="Send"
-          >
-            <Send className="h-4 w-4" />
-          </button>
+          <p className="mt-2 text-center text-[10px] text-muted">
+            For educational purposes only · Not financial advice · Data may be delayed
+          </p>
         </div>
-
-        <p className="px-4 pb-3 text-center text-[10px] text-muted">
-          For educational purposes only · Not financial advice · Data may be delayed
-        </p>
       </div>
     </div>
   );

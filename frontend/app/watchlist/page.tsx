@@ -8,14 +8,13 @@ import { fetcher, num, pct, signCls, deleteTolerant404 } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
 import { LoginPrompt } from "@/components/LoginPrompt";
 import { useAuth } from "@/lib/auth";
-import { Trash2, Download, SlidersHorizontal, Newspaper } from "lucide-react";
+import { Trash2, Download, SlidersHorizontal, Newspaper, Eye } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { SortIcon } from "@/components/ui/sort-icon";
-import { StockNewsModal } from "@/components/StockNewsModal";
 
 type ColKey =
   | "pe_ratio" | "market_cap" | "dividend_yield"
@@ -56,7 +55,6 @@ export default function WatchlistPage() {
   const [industry, setIndustry] = useState<string>("all");
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(new Set(COLUMNS.map((c) => c.key)));
   const [colsOpen, setColsOpen] = useState(false);
-  const [newsFor, setNewsFor] = useState<{ ticker: string; name: string } | null>(null);
 
   useEffect(() => {
     try {
@@ -144,8 +142,8 @@ export default function WatchlistPage() {
   if (authLoading) return null;
   if (!user) {
     return (
-      <div className="space-y-6 animate-fade-up">
-        <h1 className="font-display text-3xl font-semibold">Watchlist</h1>
+      <div className="mx-auto max-w-3xl space-y-6 animate-fade-up">
+        <PageHeader />
         <LoginPrompt what="your watchlist" />
       </div>
     );
@@ -153,11 +151,31 @@ export default function WatchlistPage() {
 
   const visibleColList = COLUMNS.filter((c) => visibleCols.has(c.key));
   const colCount = 3 + visibleColList.length + 1; // S.No + Name + CMP + toggleable + remove
+  const isEmpty = items.length === 0;
+
+  if (isEmpty) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6 animate-fade-up">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <PageHeader />
+          <div className="w-full max-w-xs">
+            <SearchBox placeholder="Add a stock…" />
+          </div>
+        </div>
+        <Card className="p-12 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-raised ring-1 ring-border">
+            <Eye className="h-5 w-5 text-muted" />
+          </div>
+          <p className="text-sm text-muted">Your watchlist is empty — search above to add NSE/BSE stocks.</p>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-up">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="font-display text-3xl font-semibold">Watchlist</h1>
+        <PageHeader />
         <div className="w-full max-w-xs">
           <SearchBox placeholder="Add a stock…" />
         </div>
@@ -226,7 +244,7 @@ export default function WatchlistPage() {
           <tbody className="divide-y divide-border">
             {sortedItems.length === 0 ? (
               <tr><td colSpan={colCount} className="px-5 py-10 text-center text-muted">
-                Watchlist is empty. Use search above to add NSE/BSE stocks.
+                No stocks in the {industry} industry filter.
               </td></tr>
             ) : sortedItems.map((it: any, i: number) => {
               const roe = roeOf(it);
@@ -235,20 +253,15 @@ export default function WatchlistPage() {
                   <td className="text-muted">{i + 1}</td>
                   <td>
                     <div className="flex items-center gap-1.5">
-                      <a href={`/stock/${it.ticker}`} className="font-medium hover:text-saffron">{it.company_name || it.ticker}</a>
+                      <a href={`/stock/${it.ticker}/preview`} className="font-medium hover:text-saffron">{it.company_name || it.ticker}</a>
                       {it.latest_news_title && (
-                        <button
-                          onClick={() => setNewsFor({ ticker: it.ticker, name: it.company_name || it.ticker })}
+                        <a
+                          href={`/stock/${it.ticker}/preview`}
                           title={`${it.latest_news_title} — click to see all news`}
-                          className="relative shrink-0 text-muted hover:text-saffron transition-colors"
+                          className="shrink-0 text-muted hover:text-saffron transition-colors"
                         >
                           <Newspaper className="h-3.5 w-3.5" />
-                          {it.news_count > 1 && (
-                            <span className="absolute -right-1.5 -top-1.5 grid h-3.5 min-w-[14px] place-items-center rounded-full bg-saffron px-[3px] text-[8px] font-bold leading-none text-white">
-                              {it.news_count > 9 ? "9+" : it.news_count}
-                            </span>
-                          )}
-                        </button>
+                        </a>
                       )}
                     </div>
                     <div className="text-xs text-muted">{it.ticker.replace(".NS", "").replace(".BO", "")}</div>
@@ -279,13 +292,17 @@ export default function WatchlistPage() {
           </tbody>
         </table>
       </Card>
+    </div>
+  );
+}
 
-      <StockNewsModal
-        ticker={newsFor?.ticker ?? ""}
-        companyName={newsFor?.name}
-        open={!!newsFor}
-        onClose={() => setNewsFor(null)}
-      />
+function PageHeader() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-saffron/10 ring-1 ring-saffron/20">
+        <Eye className="h-4 w-4 text-saffron" />
+      </div>
+      <h1 className="font-display text-2xl font-semibold tracking-tight">Watchlist</h1>
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { use, useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import {
   ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Building2,
-  Layers, BarChart3, AlertTriangle, Loader2,
+  Layers, BarChart3, AlertTriangle, Loader2, Info, Star,
 } from "lucide-react";
 import { inrCompact } from "@/lib/api";
 import clsx from "clsx";
@@ -30,6 +30,12 @@ type MFDetail = {
   return_5y: number | null;
   chart: { date: string; nav: number }[];
   chart_start: string | null;
+  isin_growth: string | null;
+  isin_div_reinvestment: string | null;
+  inception_date: string | null;
+  return_since_inception: number | null;
+  aum: number | null;
+  star_rating: number | null;
 };
 
 type ETFDetail = {
@@ -257,6 +263,16 @@ function MFDetailView({ code }: { code: number }) {
               {data.scheme_category && (
                 <span className="rounded-lg bg-saffron/10 px-2.5 py-1 text-xs font-medium text-saffron ring-1 ring-saffron/20">{data.scheme_category}</span>
               )}
+              {data.aum != null && (
+                <span className="rounded-lg bg-raised px-2.5 py-1 text-xs text-muted ring-1 ring-border">
+                  AUM {inrCompact(data.aum)}
+                </span>
+              )}
+              {data.star_rating != null && (
+                <span className="flex items-center gap-1 rounded-lg bg-raised px-2.5 py-1 text-xs text-muted ring-1 ring-border">
+                  <Star className="h-3 w-3 fill-saffron text-saffron" /> {data.star_rating}/5
+                </span>
+              )}
             </div>
           </div>
           {data.nav && (
@@ -281,7 +297,8 @@ function MFDetailView({ code }: { code: number }) {
 
       {/* Comparison chart + Fund holdings, side by side on larger screens
           (holdings are best-effort — only ~251 funds match IndianAPI's
-          internal list — so the chart takes full width when absent) */}
+          internal list — so a Fund Details card fills that slot instead,
+          using data mfapi.in already provides, when holdings aren't found) */}
       {holdings && holdings.length > 0 ? (
         <div className="grid gap-4 lg:grid-cols-5">
           {fundPts.length > 0 && (
@@ -300,15 +317,22 @@ function MFDetailView({ code }: { code: number }) {
           </div>
         </div>
       ) : (
-        fundPts.length > 0 && (
-          <CompareChart
-            fundPts={fundPts}
-            niftyPts={niftyPts}
-            fundLabel={data.name.split("-")[0].trim()}
-            period={period}
-            setPeriod={setPeriod}
-          />
-        )
+        <div className="grid gap-4 lg:grid-cols-5">
+          {fundPts.length > 0 && (
+            <div className="lg:col-span-3">
+              <CompareChart
+                fundPts={fundPts}
+                niftyPts={niftyPts}
+                fundLabel={data.name.split("-")[0].trim()}
+                period={period}
+                setPeriod={setPeriod}
+              />
+            </div>
+          )}
+          <div className={fundPts.length > 0 ? "lg:col-span-2" : "lg:col-span-5"}>
+            <FundDetailsCard data={data} />
+          </div>
+        </div>
       )}
 
       {/* Similar funds — same scheme category, deduped by core fund name */}
@@ -317,7 +341,7 @@ function MFDetailView({ code }: { code: number }) {
   );
 }
 
-type Holding = { name: string; allocation: string };
+type Holding = { name: string; allocation: string; ticker: string | null };
 
 function useFundHoldings(code: number): Holding[] | null {
   const [holdings, setHoldings] = useState<Holding[] | null>(null);
@@ -340,10 +364,58 @@ function FundHoldingsCard({ holdings }: { holdings: Holding[] }) {
       <div className="divide-y divide-border">
         {holdings.slice(0, 15).map((h, i) => (
           <div key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
-            <span className="truncate text-fg/90">{h.name}</span>
+            {h.ticker ? (
+              <Link href={`/stock/${h.ticker}`} className="truncate text-fg/90 hover:text-saffron transition-colors">
+                {h.name}
+              </Link>
+            ) : (
+              <span className="truncate text-fg/90">{h.name}</span>
+            )}
             <span className="nums shrink-0 font-semibold text-fg">{h.allocation}%</span>
           </div>
         ))}
+      </div>
+    </Card>
+  );
+}
+
+// ── Fund Details fallback — shown in place of holdings when IndianAPI has no
+//    best-effort match (most funds). Surfaces what mfapi.in genuinely has:
+//    AMC/owner, scheme type/category, ISIN codes, and since-inception
+//    performance — deliberately no fund-manager name or AMC company profile,
+//    since neither integrated data source (mfapi.in, IndianAPI) exposes it. ──
+
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-2 text-sm">
+      <span className="text-muted">{label}</span>
+      <span className="font-medium text-fg text-right">{value}</span>
+    </div>
+  );
+}
+
+function FundDetailsCard({ data }: { data: MFDetail }) {
+  const v = data.return_since_inception;
+  return (
+    <Card className="p-5">
+      <h2 className="mb-3 flex items-center gap-2 font-semibold"><Info className="h-4 w-4 text-saffron" /> Fund Details</h2>
+      <div className="divide-y divide-border">
+        <DetailRow label="AMC / Fund House" value={data.fund_house || "—"} />
+        <DetailRow label="Scheme Type" value={data.scheme_type || "—"} />
+        <DetailRow label="Scheme Category" value={data.scheme_category || "—"} />
+        <DetailRow label="ISIN (Growth)" value={data.isin_growth || "—"} />
+        <DetailRow label="ISIN (IDCW)" value={data.isin_div_reinvestment || "—"} />
+        <DetailRow label="Inception Date" value={data.inception_date || "—"} />
+        <DetailRow
+          label="Return Since Inception"
+          value={
+            v == null ? "—" : (
+              <span className={clsx("nums font-semibold", v >= 0 ? "text-up" : "text-down")}>
+                {v >= 0 ? "+" : ""}{v.toFixed(2)}%
+              </span>
+            )
+          }
+        />
       </div>
     </Card>
   );

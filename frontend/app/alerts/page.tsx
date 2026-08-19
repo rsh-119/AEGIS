@@ -9,7 +9,7 @@ import { SearchBox } from "@/components/SearchBox";
 import { Bell, BellOff, Pencil, Trash2, Plus, CheckCircle2 } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
-import { Input, inputBaseClasses } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -100,59 +100,89 @@ export default function AlertsPage() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-up">
-      <div className="flex items-center gap-2">
-        <Bell className="h-5 w-5 text-saffron" />
-        <h1 className="font-display text-3xl font-semibold">Price Alerts</h1>
+    <div className="mx-auto max-w-3xl space-y-8 animate-fade-up">
+      <div>
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-saffron/10 ring-1 ring-saffron/20">
+            <Bell className="h-4 w-4 text-saffron" />
+          </div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Price Alerts</h1>
+        </div>
+        <p className="mt-2 pl-[46px] text-sm text-muted">
+          Get notified the moment a stock crosses the price you're watching.
+        </p>
       </div>
 
       {/* Create form */}
-      <Card className="p-5">
-        <h2 className="mb-4 flex items-center gap-2 font-medium text-sm">
-          <Plus className="h-4 w-4 text-saffron" /> New Alert
+      <Card className="p-6">
+        <h2 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
+          <Plus className="h-3.5 w-3.5 text-saffron" /> New alert
         </h2>
-        <form onSubmit={create} className="grid gap-3 sm:grid-cols-4">
-          <div className="sm:col-span-2">
+        <form onSubmit={create} className="space-y-4">
+          <div>
+            <Label className="mb-1.5 block">Stock</Label>
             <SearchBox
               placeholder="Search stock (TCS, INFY…)"
               onSelect={(sym) => setTicker(sym)}
             />
-            {ticker && <p className="mt-1 text-xs text-saffron font-mono">{ticker}</p>}
+            {ticker && <p className="mt-1.5 text-xs text-saffron font-mono">{ticker}</p>}
           </div>
-          <select
-            value={type}
-            onChange={e => setType(e.target.value as "above" | "below")}
-            className={inputBaseClasses}
-          >
-            <option value="above">Price Above ↑</option>
-            <option value="below">Price Below ↓</option>
-          </select>
-          <Input
-            type="number"
-            step="0.01"
-            min="0.01"
-            placeholder="Target price (₹)"
-            value={price}
-            onChange={e => setPrice(e.target.value)}
-            required
-          />
-          <Button
-            type="submit"
-            disabled={busy || !ticker}
-            className="sm:col-span-4 flex items-center justify-center gap-2"
-          >
-            <Bell className="h-4 w-4" />
-            {busy ? "Creating…" : "Set Alert"}
-          </Button>
+
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div>
+              <Label className="mb-1.5 block">Condition</Label>
+              <div className="inline-flex rounded-sm border border-border bg-raised p-1">
+                {(["above", "below"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setType(t)}
+                    className={clsx(
+                      "flex items-center gap-1.5 rounded-[4px] px-3.5 py-1.5 text-sm font-medium transition-all duration-150",
+                      type === t
+                        ? t === "above" ? "bg-up/10 text-up shadow-sm" : "bg-down/10 text-down shadow-sm"
+                        : "text-muted hover:text-fg"
+                    )}
+                  >
+                    {t === "above" ? "↑ Above" : "↓ Below"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex-1">
+              <Label className="mb-1.5 block">Target price</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                placeholder="₹0.00"
+                value={price}
+                onChange={e => setPrice(e.target.value)}
+                required
+              />
+            </div>
+
+            <Button
+              type="submit"
+              disabled={busy || !ticker}
+              className="flex items-center justify-center gap-2 sm:w-auto"
+            >
+              <Bell className="h-4 w-4" />
+              {busy ? "Creating…" : "Set Alert"}
+            </Button>
+          </div>
         </form>
       </Card>
 
       {isLoading ? (
         <Card className="p-8 text-center text-muted animate-pulse">Loading alerts…</Card>
       ) : alerts.length === 0 ? (
-        <Card className="p-10 text-center text-muted">
-          <Bell className="mx-auto h-10 w-10 mb-3 opacity-20" />
-          <p>No alerts yet. Set your first alert above.</p>
+        <Card className="p-12 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-raised ring-1 ring-border">
+            <Bell className="h-5 w-5 text-muted" />
+          </div>
+          <p className="text-sm text-muted">No alerts yet — set your first one above.</p>
         </Card>
       ) : (
         <>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
 import clsx from "clsx";
@@ -42,7 +42,30 @@ type NewsItem = {
 type Signal = { kind: "warning" | "info" | "positive"; metric?: string; title: string; detail: string };
 type AiObservation = { severity: "risk" | "opportunity" | "neutral"; title: string; insight?: string; action: string };
 type HoldingSentiment = { ticker: string; sentiment: "positive" | "negative" | "neutral"; headline: string; reason: string };
-type AiReview = { verdict: string | null; observations: AiObservation[]; holdings_sentiment?: HoldingSentiment[] };
+type AiReview = {
+  verdict: string | null;
+  observations: AiObservation[];
+  holdings_sentiment?: HoldingSentiment[];
+  truncated?: boolean;
+  shown_holdings?: number;
+  total_holdings?: number;
+  incomplete_holdings?: string[];
+  generated_at?: string;
+};
+
+/* Small relative-time label for "Generated X ago" — same precedent as this
+   file's local fmtMonth() for the growth chart. */
+function timeAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
 type GrowthPoint = { date: string; invested: number; value: number; nifty: number };
 type AskExchange = { q: string; a: string };
 
@@ -358,23 +381,42 @@ function InsightsCard() {
   const { data, isLoading } = useSWR<{ empty: boolean; signals: Signal[]; ai: AiReview | null }>(
     "/api/portfolio/insights", fetcher, { revalidateOnFocus: false },
   );
+  const { data: latestData } = useSWR<{ ai: AiReview | null }>(
+    "/api/portfolio/insights/ai/latest", fetcher, { revalidateOnFocus: false },
+  );
   const [aiReview, setAiReview] = useState<AiReview | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
+  const [slowNotice, setSlowNotice] = useState(false);
+
+  // Auto-show the last stored review on load, once — never clobbers a review
+  // freshly generated in this session.
+  useEffect(() => {
+    if (latestData?.ai && aiReview === null) setAiReview(latestData.ai);
+  }, [latestData, aiReview]);
 
   async function runAiReview() {
     setAiBusy(true);
     setAiError(null);
+    setSlowNotice(false);
+    const force = aiReview !== null;   // "Run again" always forces a fresh pass
+    const slowTimer = setTimeout(() => setSlowNotice(true), 15000);
     try {
-      const res = await fetcher("/api/portfolio/insights?ai=1");
+      const res = await fetcher(`/api/portfolio/insights/ai${force ? "?force=1" : ""}`);
       if (res.ai?.observations?.length > 0) {
         setAiReview(res.ai);
       } else {
         setAiError("The reviewer had nothing to add right now — try again later.");
       }
-    } catch {
-      setAiError("Couldn't reach the AI reviewer — please try again.");
+    } catch (e) {
+      if (e instanceof Error && e.message === "429") {
+        setAiError("You've run this a few times in the last minute — try again shortly.");
+      } else {
+        setAiError("Couldn't reach the AI reviewer — please try again.");
+      }
     } finally {
+      clearTimeout(slowTimer);
+      setSlowNotice(false);
       setAiBusy(false);
     }
   }
@@ -446,11 +488,35 @@ function InsightsCard() {
         })}
       </div>
 
-      {(aiReview || aiError) && (
+      {aiBusy && !aiReview && !aiError && (
         <div className="mt-4 rounded-xl border border-saffron/20 bg-saffron/5 p-4 sm:p-5">
           <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-saffron">
             <Sparkles className="h-3 w-3" /> AI review
           </p>
+          <div className="skeleton mt-2.5 h-6 w-3/4 rounded-lg" />
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="skeleton h-28 rounded-xl" />
+            <div className="skeleton h-28 rounded-xl" />
+            <div className="skeleton h-28 rounded-xl" />
+          </div>
+          {slowNotice && (
+            <p className="mt-3 text-[11px] text-muted">
+              Still working — this can take up to a minute during busy periods.
+            </p>
+          )}
+        </div>
+      )}
+
+      {(aiReview || aiError) && (
+        <div className="mt-4 rounded-xl border border-saffron/20 bg-saffron/5 p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-saffron">
+              <Sparkles className="h-3 w-3" /> AI review
+            </p>
+            {aiReview?.generated_at && (
+              <p className="font-mono text-[10px] text-muted/70">Generated {timeAgo(aiReview.generated_at)}</p>
+            )}
+          </div>
           {aiError ? (
             <p className="mt-2 text-sm text-muted">{aiError}</p>
           ) : (
@@ -523,6 +589,17 @@ function InsightsCard() {
                     })}
                   </div>
                 </div>
+              )}
+
+              {aiReview!.truncated && (
+                <p className="mt-3 text-[11px] text-muted/70">
+                  Showing the {aiReview!.shown_holdings} largest of {aiReview!.total_holdings} holdings by weight.
+                </p>
+              )}
+              {aiReview!.incomplete_holdings && aiReview!.incomplete_holdings.length > 0 && (
+                <p className="mt-1 text-[11px] text-muted/70">
+                  Live data was unavailable for {aiReview!.incomplete_holdings.join(", ")} — excluded from this review.
+                </p>
               )}
             </>
           )}

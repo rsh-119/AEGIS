@@ -1,16 +1,19 @@
 """/api/portfolio/* — holdings CRUD with live P&L + analysis (auth required)."""
 
 import asyncio
+import hashlib
 from datetime import date, datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user_id
+from app.core.cache import cache
 from app.core.database import get_db
-from app.models import Holding
+from app.middleware.rate_limiter import limiter, AI_LIMIT, user_or_ip_key
+from app.models import Holding, PortfolioReview
 from app.schemas import HoldingCreate
-from app.services import ai_service, news_service, stock_service, indianapi_service
+from app.services import ai_service, news_service, stock_service, indianapi_service, finance_math
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
@@ -116,6 +119,7 @@ async def _compute_analysis(rows, include_growth: bool) -> dict:
         "outperformance_pct": (
             round(xirr - nifty_xirr, 2) if xirr is not None and nifty_xirr is not None else None
         ),
+        "holdings":       holdings,   # row-aligned with the `rows` argument (1:1), pre-bucketing
         "cap_buckets":    _bucketise(holdings, _cap_label, value_total),
         "sector_buckets": _bucketise(holdings, lambda x: x["sector"], value_total, top=6),
         "as_of": today.isoformat(),
@@ -194,13 +198,13 @@ async def portfolio_news(
 
 @router.get("/insights")
 async def portfolio_insights(
-    ai: bool = False,
     user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Decision support: deterministic health signals computed from the
-    portfolio (always), plus an optional LLM review (?ai=1 — on demand so a
-    tab visit never spends model tokens)."""
+    portfolio — always free, no model tokens spent. The LLM review lives on
+    the separate rate-limited /insights/ai route (see portfolio_insights_ai)
+    so a plain tab visit here is never throttled by the AI quota."""
     rows = (
         await db.execute(select(Holding).where(Holding.user_id == user_id))
     ).scalars().all()
@@ -328,88 +332,191 @@ async def portfolio_insights(
             ),
         })
 
+    return {"empty": False, "signals": signals[:6], "ai": None}
+
+
+@router.get("/insights/ai")
+@limiter.limit(AI_LIMIT, key_func=user_or_ip_key)
+async def portfolio_insights_ai(
+    request: Request,
+    response: Response,   # required by slowapi's header-injection wrapper
+    force: bool = False,
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """The LLM portfolio review — on demand only (button click, not a tab
+    visit), separately rate-limited from the free /insights route above so
+    plain page visits never eat into the AI quota. Results are cached by a
+    hash of the exact context sent to the model (self-invalidates the moment
+    prices/holdings/news actually change) so accidental double-clicks or
+    multiple tabs don't burn a fresh call; `force=1` ("Run again" in the UI)
+    always bypasses the cache for a genuinely fresh pass."""
+    rows = (
+        await db.execute(select(Holding).where(Holding.user_id == user_id))
+    ).scalars().all()
+    if not rows:
+        return {"empty": True, "ai": None}
+
+    analysis = await _compute_analysis(rows, include_growth=False)
+    summary = analysis["summary"]
+    sectors = analysis["sector_buckets"]
+    xirr = analysis["xirr_pct"]
+    nifty = analysis["nifty_xirr_pct"]
+    sector_line = ", ".join(f"{s['label']} {s['alloc_pct']:.0f}%" for s in sectors)
+
+    # Full financial ratios, pre-computed red/green flags, and news for the
+    # top 25 holdings BY WEIGHT — not just the top few, and not an arbitrary
+    # DB-order slice — so the reviewer can actually cite the numbers/flags
+    # behind its calls instead of reasoning from weight/P&L alone, and a
+    # portfolio's biggest positions never get silently dropped just because
+    # they were added later. Capped at 25 defensively; real retail
+    # portfolios rarely exceed that.
+    row_values = analysis["holdings"]   # aligned 1:1 with `rows`
+    ranked = sorted(zip(rows, row_values), key=lambda rv: rv[1]["value"], reverse=True)
+    total_count = len(rows)
+    holding_rows = [r for r, _ in ranked[:25]]
+    truncated = total_count > 25
+
+    quotes, news_lists = await asyncio.gather(
+        asyncio.gather(*[stock_service.get_quote(h.ticker) for h in holding_rows], return_exceptions=True),
+        asyncio.gather(
+            *[indianapi_service.get_company_news(stock_service.bare_ticker(h.ticker)) for h in holding_rows],
+            return_exceptions=True,
+        ),
+    )
+
+    def _pct(v):
+        return f"{v * 100:.1f}%" if isinstance(v, (int, float)) else "N/A"
+
+    def _num(v):
+        return f"{v:.2f}" if isinstance(v, (int, float)) else "N/A"
+
+    holding_lines: list[str] = []
+    news_lines: list[str] = []
+    incomplete: list[str] = []   # tickers where live data was unavailable
+    for h, q, news in zip(holding_rows, quotes, news_lists):
+        if isinstance(q, Exception) or not isinstance(q, dict) or "error" in q:
+            incomplete.append(h.ticker)
+            continue
+        price = q.get("current_price") or h.avg_price
+        invested = h.shares * h.avg_price
+        value = h.shares * price
+        weight = value / summary["value"] * 100 if summary["value"] else 0
+        pnl_pct = (value - invested) / invested * 100 if invested else 0
+
+        flags = stock_service.ratio_signals(q)
+        green = [s["title"] for s in flags if s["type"] == "positive"]
+        red = [s["title"] for s in flags if s["type"] in ("negative", "warning")]
+
+        line = (
+            f"- {q.get('company_name') or h.ticker} ({h.ticker}): {weight:.1f}% weight, P&L {pnl_pct:+.1f}%, "
+            f"P/E {_num(q.get('pe_ratio'))}, D/E {_num(q.get('debt_to_equity'))}, "
+            f"ROE {_pct(q.get('roe'))}, Revenue Growth {_pct(q.get('revenue_growth'))}, "
+            f"Net Margin {_pct(q.get('profit_margin'))}"
+        )
+        if green:
+            line += f" | Green flags: {'; '.join(green)}"
+        if red:
+            line += f" | Red flags: {'; '.join(red)}"
+        holding_lines.append(line)
+
+        if isinstance(news, Exception):
+            # A genuine fetch failure, distinct from "no recent news" (an
+            # empty-but-successful list) — only the former is a data gap.
+            if h.ticker not in incomplete:
+                incomplete.append(h.ticker)
+        elif news:
+            headlines = [n.get("title", "").strip() for n in news[:3] if n.get("title")]
+            if headlines:
+                news_lines.append(f"- {h.ticker}: " + " | ".join(headlines))
+
+    holdings_block = "\n".join(holding_lines)
+    news_block = "\n".join(news_lines)
+
+    context = (
+        f"Holdings (live financial ratios + pre-computed green/red flags):\n{holdings_block}\n\n"
+        f"Sector mix: {sector_line}\n"
+        f"Portfolio XIRR: {xirr}% vs Nifty 50 {nifty}% (same cashflows).\n"
+        f"Total P&L: {summary['pnl_pct']}%."
+        + (f"\n\nRecent news per holding:\n{news_block}" if news_block else "")
+        + (
+            f"\n\nNote: live data was unavailable for {', '.join(incomplete)} — they are excluded from this review."
+            if incomplete else ""
+        )
+    )
+
+    # Content-addressed cache: keyed on exactly what's sent to the model, so
+    # it self-invalidates the moment the portfolio's prices/holdings/news
+    # actually change, rather than relying on wall-clock TTL alone.
+    fingerprint = hashlib.sha256(context.encode()).hexdigest()[:24]
+    cache_key = f"ai:portfolio_review:{user_id}:{fingerprint}"
+    if not force:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return {"empty": False, "ai": cached}
+
     ai_review = None
-    if ai:
-        sector_line = ", ".join(f"{s['label']} {s['alloc_pct']:.0f}%" for s in sectors)
-
-        # Full financial ratios, pre-computed red/green flags, and news for
-        # EVERY holding — not just the top few — so the reviewer can actually
-        # cite the numbers/flags behind its calls instead of reasoning from
-        # weight/P&L alone. Capped at 25 defensively; real retail portfolios
-        # rarely exceed that.
-        holding_rows = list(rows)[:25]
-        quotes, news_lists = await asyncio.gather(
-            asyncio.gather(*[stock_service.get_quote(h.ticker) for h in holding_rows], return_exceptions=True),
-            asyncio.gather(
-                *[indianapi_service.get_company_news(stock_service.bare_ticker(h.ticker)) for h in holding_rows],
-                return_exceptions=True,
-            ),
-        )
-
-        def _pct(v):
-            return f"{v * 100:.1f}%" if isinstance(v, (int, float)) else "N/A"
-
-        def _num(v):
-            return f"{v:.2f}" if isinstance(v, (int, float)) else "N/A"
-
-        holding_lines: list[str] = []
-        news_lines: list[str] = []
-        for h, q, news in zip(holding_rows, quotes, news_lists):
-            if isinstance(q, Exception) or not isinstance(q, dict) or "error" in q:
-                continue
-            price = q.get("current_price") or h.avg_price
-            invested = h.shares * h.avg_price
-            value = h.shares * price
-            weight = value / summary["value"] * 100 if summary["value"] else 0
-            pnl_pct = (value - invested) / invested * 100 if invested else 0
-
-            flags = stock_service.ratio_signals(q)
-            green = [s["title"] for s in flags if s["type"] == "positive"]
-            red = [s["title"] for s in flags if s["type"] in ("negative", "warning")]
-
-            line = (
-                f"- {q.get('company_name') or h.ticker} ({h.ticker}): {weight:.1f}% weight, P&L {pnl_pct:+.1f}%, "
-                f"P/E {_num(q.get('pe_ratio'))}, D/E {_num(q.get('debt_to_equity'))}, "
-                f"ROE {_pct(q.get('roe'))}, Revenue Growth {_pct(q.get('revenue_growth'))}, "
-                f"Net Margin {_pct(q.get('profit_margin'))}"
+    try:
+        result = await asyncio.wait_for(ai_service.review_portfolio(context), timeout=45)
+        if result.get("observations"):
+            ai_review = {
+                "verdict": result.get("verdict"),
+                "observations": result["observations"],
+                "holdings_sentiment": result.get("holdings_sentiment", []),
+                "truncated": truncated,
+                "shown_holdings": min(total_count, 25),
+                "total_holdings": total_count,
+                "incomplete_holdings": incomplete,
+            }
+            # Persist to Postgres — full history (one row per generation, not
+            # an upsert) so a returning user's last review survives beyond the
+            # 10-min Redis cache window / a Redis restart, and so a future
+            # "past reviews" or verdict-trend feature needs no schema change.
+            # Only on a genuine fresh generation (never on the cache-hit
+            # return above), so repeat clicks within the cache window don't
+            # spam duplicate rows.
+            row = PortfolioReview(
+                user_id=user_id, verdict=ai_review["verdict"], observations=ai_review["observations"],
+                holdings_sentiment=ai_review["holdings_sentiment"], truncated=ai_review["truncated"],
+                shown_holdings=ai_review["shown_holdings"], total_holdings=ai_review["total_holdings"],
+                incomplete_holdings=ai_review["incomplete_holdings"], fingerprint=fingerprint,
             )
-            if green:
-                line += f" | Green flags: {'; '.join(green)}"
-            if red:
-                line += f" | Red flags: {'; '.join(red)}"
-            holding_lines.append(line)
+            db.add(row)
+            await db.flush()   # populates row.created_at before we read it back
+            ai_review["generated_at"] = row.created_at.isoformat()
+            # Cached dict now carries the real generation timestamp, so a
+            # cache-hit re-read shows accurate "generated X ago", not "just now".
+            cache.set(cache_key, ai_review, "portfolio_review")
+    except Exception:
+        ai_review = None
 
-            if not isinstance(news, Exception) and news:
-                headlines = [n.get("title", "").strip() for n in news[:3] if n.get("title")]
-                if headlines:
-                    news_lines.append(f"- {h.ticker}: " + " | ".join(headlines))
+    return {"empty": False, "ai": ai_review}
 
-        holdings_block = "\n".join(holding_lines)
-        news_block = "\n".join(news_lines)
 
-        context = (
-            f"Holdings (live financial ratios + pre-computed green/red flags):\n{holdings_block}\n\n"
-            f"Sector mix: {sector_line}\n"
-            f"Portfolio XIRR: {xirr}% vs Nifty 50 {nifty}% (same cashflows).\n"
-            f"Total P&L: {summary['pnl_pct']}%."
-            + (f"\n\nRecent news per holding:\n{news_block}" if news_block else "")
+@router.get("/insights/ai/latest")
+async def portfolio_insights_ai_latest(
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Most recent stored AI review for this user, if any — powers
+    auto-show-on-load so a returning user sees their last review without
+    re-clicking Run AI review. Pure DB read, no LLM call, no rate limit."""
+    row = (
+        await db.execute(
+            select(PortfolioReview)
+            .where(PortfolioReview.user_id == user_id)
+            .order_by(PortfolioReview.created_at.desc())
+            .limit(1)
         )
-        try:
-            result = await ai_service.review_portfolio(context)
-            if result.get("observations"):
-                ai_review = {
-                    "verdict": result.get("verdict"),
-                    "observations": result["observations"],
-                    "holdings_sentiment": result.get("holdings_sentiment", []),
-                }
-        except Exception:
-            ai_review = None
-
-    return {"empty": False, "signals": signals[:6], "ai": ai_review}
+    ).scalar_one_or_none()
+    return {"ai": row.to_dict() if row else None}
 
 
 @router.post("/ask")
+@limiter.limit(AI_LIMIT, key_func=user_or_ip_key)
 async def ask_portfolio(
+    request: Request,
+    response: Response,   # required by slowapi's header-injection wrapper
     body: dict,
     user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
@@ -510,61 +617,12 @@ def _bucketise(holdings: list[dict], key, value_total: float, top: int | None = 
     return out
 
 
-def _xirr(flows: list[tuple[date, float]]) -> float | None:
-    """Annualised money-weighted return via bisection. Returns % or None when
-    the cashflows can't produce a root (e.g. everything bought today)."""
-    if len(flows) < 2:
-        return None
-    t0 = min(d for d, _ in flows)
-    yrs = [(d - t0).days / 365.25 for d, _ in flows]
-    amts = [a for _, a in flows]
-    if not (any(a < 0 for a in amts) and any(a > 0 for a in amts)):
-        return None
-    if max(yrs) < 1 / 365:          # all cashflows on one day — undefined
-        return None
-
-    def npv(r: float) -> float:
-        return sum(a / (1 + r) ** y for a, y in zip(amts, yrs))
-
-    lo, hi = -0.9999, 10.0
-    f_lo = npv(lo)
-    if f_lo * npv(hi) > 0:
-        return None
-    mid = 0.0
-    for _ in range(200):
-        mid = (lo + hi) / 2
-        f = npv(mid)
-        if abs(f) < 1e-7:
-            break
-        if f_lo * f > 0:
-            lo, f_lo = mid, f
-        else:
-            hi = mid
-    return round(mid * 100, 2)
-
-
-def _closes_map(hist: dict | None) -> list[tuple[date, float]]:
-    out: list[tuple[date, float]] = []
-    for c in (hist or {}).get("candles") or []:
-        try:
-            out.append((datetime.strptime(str(c["date"])[:10], "%Y-%m-%d").date(), float(c["close"])))
-        except Exception:
-            continue
-    out.sort()
-    return out
-
-
-def _close_at(closes: list[tuple[date, float]], d: date) -> float | None:
-    """Last close at or before d; clamps to the first candle for older dates."""
-    if not closes:
-        return None
-    best = closes[0][1]
-    for cd, cv in closes:
-        if cd <= d:
-            best = cv
-        else:
-            break
-    return best
+# _xirr/_closes_map/_close_at moved to app.services.finance_math so the
+# stock-page returns calculator (routers/stocks.py) can reuse the exact same
+# bisection/close-lookup logic instead of duplicating it — see that module.
+_xirr = finance_math.xirr
+_closes_map = finance_math.closes_map
+_close_at = finance_math.close_at
 
 
 async def _growth_series(rows, nifty_closes: list[tuple[date, float]]) -> list[dict]:

@@ -35,6 +35,9 @@ interface AuthContextValue extends AuthState {
   register: (email: string, username: string, password: string) => Promise<void>;
   logout:   () => void;
   getToken: () => string | null;   // always returns the freshest access token
+  /** Re-fetch /me and swap it into state — call after editing profile details
+   * so the nav/account page reflect the change without a full re-login. */
+  refreshUser: () => Promise<void>;
 }
 
 // ── Context ───────────────────────────────────────────────────────────────────
@@ -140,8 +143,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return state.accessToken ?? localStorage.getItem(ACCESS_KEY);
   }, [state.accessToken]);
 
+  const refreshUser = useCallback(async () => {
+    const token = state.accessToken ?? localStorage.getItem(ACCESS_KEY);
+    if (!token) return;
+    const me = await _fetchMe(token);
+    if (me) setState(s => ({ ...s, user: me }));
+  }, [state.accessToken]);
+
   return (
-    <AuthCtx.Provider value={{ ...state, login, register, logout, getToken }}>
+    <AuthCtx.Provider value={{ ...state, login, register, logout, getToken, refreshUser }}>
       {children}
     </AuthCtx.Provider>
   );

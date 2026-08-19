@@ -18,6 +18,7 @@ TTL map (seconds):
   ai        24 h     AI analysis (also in PostgreSQL ai_cache)
   forecast  30 min  ML forecast results
   search    10 min  search autocomplete results
+  portfolio_review  10 min  content-addressed AI portfolio review cache
 
 Usage:
     from app.core.cache import cache
@@ -83,6 +84,7 @@ TTL: dict[str, int] = {
     "market_snapshot": 432000,  # 5 days — last-known-good indices/movers, served as-is
                                  # outside trading hours (weekends/holidays included)
     "logo":      604800,  # 7 days  — company/fund logos essentially never change
+    "portfolio_review": 600,  # 10 min — content-addressed cache for AI portfolio review (see routers/portfolio.py)
 }
 
 # ── In-memory fallback ────────────────────────────────────────────────────────

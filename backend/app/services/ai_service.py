@@ -5,6 +5,9 @@ Provider chain (automatic waterfall — each step tried only if prior step fails
 `prefer_openrouter=True` tasks (Ask AI, portfolio/document Q&A) try step 5 FIRST,
 then fall through to the same chain from step 1 on failure:
   0. Prompt cache (20h TTL) — returns instantly for repeated calls
+  0.4 Gemini settings.gemini_model (gemini-3.6-flash)  (prefer_gemini=True ONLY —
+      portfolio review/ask — free-tier key, fast when it lands, but thin
+      quota so routine fallthrough to the rest of the chain is expected)
   1. Groq    llama-3.3-70b-versatile              (primary — 100k TPD free, low latency)
   2. Groq    llama-3.1-8b-instant                 (fallback #1 — 500k TPD)
   5. OpenRouter  settings.openrouter_model         (nvidia/nemotron-3-super-120b-a12b:free)
@@ -310,6 +313,68 @@ async def _call_openrouter(system: str, user: str, max_tokens: int, model: str |
         return _parse_json(raw)
 
 
+_GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+
+# ── Gemini call — free-tier key, used only as a fast first attempt for the
+#    portfolio review/ask paths (see prefer_gemini below), not a general
+#    fallback. Called via raw httpx (same pattern as OpenRouter/NVIDIA) —
+#    no google-generativeai SDK dependency needed. ───────────────────────────
+
+async def _call_gemini(system: str, user: str, max_tokens: int, temperature: float) -> dict:
+    if not settings.gemini_api_key:
+        raise RuntimeError("GEMINI_API_KEY not configured")
+    url = _GEMINI_URL.format(model=settings.gemini_model)
+    body = {
+        "system_instruction": {"parts": [{"text": system}]},
+        "contents": [{"parts": [{"text": user}]}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "maxOutputTokens": max_tokens,
+            "temperature": temperature,
+            # Gemini 3.x's internal "thinking" otherwise eats the whole
+            # maxOutputTokens budget before writing any answer text — same
+            # failure mode as the Nemotron reasoning-stream issue handled in
+            # _call_openrouter, just a different knob. thinkingBudget: 0 is
+            # rejected as invalid by this model; 1 is the practical minimum
+            # (verified empirically) and keeps this fast-path attempt fast.
+            "thinkingConfig": {"thinkingBudget": 1},
+        },
+    }
+    async with httpx.AsyncClient(timeout=30) as http:
+        r = await http.post(url, params={"key": settings.gemini_api_key}, json=body)
+        r.raise_for_status()
+        data = r.json()
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+        return _parse_json(text)
+
+
+async def _gemini_attempt(
+    system: str, user: str, max_tokens: int, use_cache: bool, errors: list[str],
+    schema: type[BaseModel] | None = None, temperature: float = _TEMP_STRUCTURED,
+) -> dict | None:
+    """Try Gemini; None if unconfigured or it fails (free tier — quota/429
+    errors are routine, not exceptional). Caller falls through to the normal
+    waterfall on None."""
+    if not settings.gemini_api_key:
+        errors.append("Gemini: no API key")
+        return None
+    try:
+        result = await _call_validated(_call_gemini, system, user, max_tokens, schema, temperature)
+        result.setdefault("_provider", f"gemini/{settings.gemini_model}")
+        if use_cache:
+            _prompt_cache.set(system, user, result)
+        return result
+    except httpx.HTTPStatusError as e:
+        errors.append(f"Gemini: HTTP {e.response.status_code}")
+        logger.warning("Gemini: HTTP %s — falling back", e.response.status_code)
+        return None
+    except (asyncio.TimeoutError, json.JSONDecodeError, ValidationError, Exception) as e:
+        errors.append(f"Gemini: {type(e).__name__}")
+        logger.warning("Gemini error: %s — falling back", e)
+        return None
+
+
 # ── Unified waterfall: NVIDIA → Groq → OpenRouter ────────────────────────────
 
 def _repair_prompt(user: str, errors: str) -> str:
@@ -379,7 +444,7 @@ async def _openrouter_attempt(
 
 async def _chat_json(
     system: str, user: str, max_tokens: int = 1200,
-    use_cache: bool = True, prefer_openrouter: bool = False,
+    use_cache: bool = True, prefer_openrouter: bool = False, prefer_gemini: bool = False,
     schema: type[BaseModel] | None = None, temperature: float = _TEMP_STRUCTURED,
 ) -> dict:
     """
@@ -394,6 +459,8 @@ async def _chat_json(
     `temperature` is applied uniformly to whichever provider ends up serving
     the request — sampling is tuned per task (see _TEMP_STRUCTURED /
     _TEMP_CONVERSATIONAL), not left to whatever a given provider defaults to.
+    `prefer_gemini` tries the free-tier Gemini key first (fast, but quota is
+    thin — expect routine fallthrough), used only by portfolio review/ask.
     """
     t0 = time.monotonic()
 
@@ -409,6 +476,16 @@ async def _chat_json(
 
     errors: list[str] = []
     openrouter_tried = False
+
+    # ── 0.4 Gemini (free tier) — fast first attempt for portfolio review/ask
+    #    only. Falls through to the normal chain (including OpenRouter below)
+    #    on any failure — free-tier quota exhaustion is expected, not fatal. ──
+    if prefer_gemini:
+        result = await _gemini_attempt(system, user, max_tokens, use_cache, errors, schema, temperature)
+        if result is not None:
+            _record_call(result.get("_provider", "gemini"), time.monotonic() - t0)
+            return result
+        logger.info("Gemini route failed/unavailable — falling back")
 
     # ── 0.5 Preferred route: OpenRouter's Nemotron-120B leads for tasks that
     #    want detailed, context-grounded prose (Ask AI, portfolio/document Q&A);
@@ -932,14 +1009,19 @@ async def ask_document(text: str, question: str, company: str | None = None) -> 
 async def review_portfolio(context: str) -> dict:
     """Structured portfolio review — an overall verdict, 3-4 typed observations
     (each with a reasoned insight and a concrete action), and a per-holding
-    news sentiment read (green/red flag friendly). Leads with Nemotron via
-    OpenRouter (prefer_openrouter=True) for the more detailed, context-heavy
-    prose this now requires — falls back through the normal Groq/GLM chain on
-    failure. Uncached — "Run again" should genuinely re-run, not replay."""
+    news sentiment read (green/red flag friendly). Tries the free-tier Gemini
+    key first (prefer_gemini=True — fast, but expect routine fallthrough on
+    quota), then leads with Nemotron via OpenRouter (prefer_openrouter=True)
+    for the more detailed, context-heavy prose this now requires — falls back
+    through the normal Groq/GLM chain on failure. Uncached at this layer — the
+    router (routers/portfolio.py) does its own content-addressed caching with
+    an explicit "Run again" bypass, so "uncached" here just means every call
+    into this function is a genuine model pass."""
     from app.schemas import PortfolioReviewResponse
     result = await _chat_json(
         _p_portfolio.REVIEW_SYSTEM, context, max_tokens=1800, use_cache=False,
-        prefer_openrouter=True, temperature=_TEMP_CONVERSATIONAL, schema=PortfolioReviewResponse,
+        prefer_openrouter=True, prefer_gemini=True,
+        temperature=_TEMP_CONVERSATIONAL, schema=PortfolioReviewResponse,
     )
 
     verdict = str(result.get("verdict") or "").strip() or None
@@ -987,7 +1069,10 @@ async def ask_portfolio(question: str, context: str) -> dict:
     Returns {"answer": str, "followups": [str, str]}. Uncached — the
     snapshot is live data, so every ask deserves a fresh model pass."""
     user = f"PORTFOLIO SNAPSHOT:\n{context}\n\nQUESTION: {question}"
-    result = await _chat_json(_p_portfolio.ASK_SYSTEM, user, max_tokens=900, use_cache=False, prefer_openrouter=True, temperature=_TEMP_CONVERSATIONAL)
+    result = await _chat_json(
+        _p_portfolio.ASK_SYSTEM, user, max_tokens=900, use_cache=False,
+        prefer_openrouter=True, prefer_gemini=True, temperature=_TEMP_CONVERSATIONAL,
+    )
     answer = str(result.get("answer") or "").strip()
     followups = [str(f).strip() for f in (result.get("followups") or []) if str(f).strip()][:2]
     if not answer:

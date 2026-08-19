@@ -19,6 +19,7 @@ import { PeerComparison } from "@/components/PeerComparison";
 import { ShareholdingPie } from "@/components/ShareholdingPie";
 import { FinancialsTables } from "@/components/FinancialsTables";
 import { TechnicalsCard } from "@/components/TechnicalsCard";
+import { ReturnsCalculator } from "@/components/ReturnsCalculator";
 import { ChartCard } from "@/components/ui/animated-card-chart";
 import Link from "next/link";
 import { Plus, ExternalLink, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, BarChart3, CheckCircle2, AlertTriangle, AlertCircle, Info, Newspaper, Target, Eye, Zap, Bell, Calendar, ArrowUpRight, Gift, ShieldCheck, FileText, Mic2 } from "lucide-react";
@@ -401,6 +402,8 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
           </div>
         </Card>
       </div>
+
+      <ReturnsCalculator ticker={symbol} />
 
       {/* ── Valuation Charts + Shareholding ── */}
       <div className="grid gap-4 lg:grid-cols-5">

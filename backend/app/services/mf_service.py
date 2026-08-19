@@ -79,6 +79,14 @@ def _calc_return(navs: list[dict], days: int) -> float | None:
         return None
 
 
+def _clean_isin(v: str | None) -> str | None:
+    """mfapi.in leaves isin_growth/isin_div_reinvestment as '', '-', or 'N.A.'
+    when a fund has no such share class — normalize all placeholder forms to
+    None so the frontend's `|| "—"` fallback is trustworthy."""
+    v = (v or "").strip()
+    return v if v and v.upper() not in ("-", "N.A.", "NA", "NULL") else None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # MF functions
 # ─────────────────────────────────────────────────────────────────────────────
@@ -218,6 +226,19 @@ async def get_mf_detail(scheme_code: int) -> dict:
 
     start_date = chart[0]["date"] if chart else None
 
+    # True inception — the oldest entry in the FULL nav history (not the 5y-
+    # cropped chart above), so "since inception" reflects the fund's actual
+    # launch even though the chart itself only shows the last 5 years.
+    inception_entry = navs[-1] if navs else None
+    inception_date = inception_entry["date"] if inception_entry else None
+    return_since_inception = None
+    if inception_entry:
+        try:
+            elapsed_days = (datetime.now() - _parse_date(inception_entry["date"])).days
+            return_since_inception = _calc_return(navs, elapsed_days)
+        except Exception:
+            pass
+
     result = {
         "scheme_code":    scheme_code,
         "name":           meta.get("scheme_name", ""),
@@ -231,7 +252,19 @@ async def get_mf_detail(scheme_code: int) -> dict:
         "return_5y":      _calc_return(navs, 1825),
         "chart":          chart,
         "chart_start":    start_date,
+        "isin_growth":            _clean_isin(meta.get("isin_growth")),
+        "isin_div_reinvestment":  _clean_isin(meta.get("isin_div_reinvestment")),
+        "inception_date":         inception_date,
+        "return_since_inception": return_since_inception,
     }
+
+    # AUM + star rating — best-effort, from IndianAPI's curated /mutual_funds
+    # snapshot (~249 funds). No fund manager/AMC-profile/expense-ratio data
+    # exists on IndianAPI at all, so this is genuinely all that's available.
+    extra = await indianapi_service.get_mf_extra_stats(result["name"])
+    result["aum"] = extra["aum"] if extra else None
+    result["star_rating"] = extra["star_rating"] if extra else None
+
     cache.set(ck, result, "mf_nav")
     return result
 

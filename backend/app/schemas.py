@@ -18,6 +18,21 @@ class UserLogin(BaseModel):
     password: str
 
 
+class UserUpdate(BaseModel):
+    """PATCH /api/auth/me — both fields optional, only what's sent gets touched.
+    current_password is required when email is being changed (email is the
+    account-recovery channel — a bare access token shouldn't be enough to
+    redirect it), but not for a username-only change."""
+    username: str | None = Field(default=None, min_length=3, max_length=30, pattern=r"^[a-zA-Z0-9_]+$")
+    email: EmailStr | None = None
+    current_password: str | None = None
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=6, max_length=100)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str

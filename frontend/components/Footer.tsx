@@ -2,8 +2,13 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { Github, Twitter, Linkedin, Mail, X, Send } from "lucide-react";
 import { Card } from "@/components/ui/card";
+
+// Full-screen chat-style pages manage their own viewport height; a tall
+// footer below them would push the page past 100vh and bury the input bar.
+const NO_FOOTER_ROUTES = ["/ask"];
 
 const SOCIALS = [
   { icon: Github,   label: "GitHub",   href: "https://github.com/rsh-119" },
@@ -101,6 +106,7 @@ const TOOL_LINKS = [
   { label: "AI Concall",      href: "/concall" },
   { label: "Peer Comparison", href: "/peers" },
   { label: "Ask AI",          href: "/ask" },
+  { label: "Returns Calculator", href: "/calculator" },
   { label: "Watchlist",       href: "/watchlist" },
   { label: "Portfolio",       href: "/portfolio" },
   { label: "Alerts",          href: "/alerts" },
@@ -119,6 +125,9 @@ function FooterLink({ href, children }: { href: string; children: React.ReactNod
 
 export function Footer() {
   const [showContact, setShowContact] = useState(false);
+  const pathname = usePathname();
+
+  if (NO_FOOTER_ROUTES.includes(pathname)) return null;
 
   return (
     <>

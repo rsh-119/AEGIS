@@ -11,7 +11,7 @@ import { fetcher, inr, pct, signCls, post, deleteTolerant404 } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
 import { LoginPrompt } from "@/components/LoginPrompt";
 import { useAuth } from "@/lib/auth";
-import { Trash2, Plus } from "lucide-react";
+import { Trash2, Plus, Briefcase } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { AnalysisPanel } from "./AnalysisPanel";
@@ -99,17 +99,19 @@ export default function PortfolioPage() {
   if (authLoading) return null;
   if (!user) {
     return (
-      <div className="space-y-6 animate-fade-up">
-        <h1 className="font-display text-3xl font-semibold">Portfolio</h1>
+      <div className="mx-auto max-w-3xl space-y-6 animate-fade-up">
+        <PageHeader />
         <LoginPrompt what="your portfolio" />
       </div>
     );
   }
 
+  const isEmpty = holdings.length === 0;
+
   return (
-    <div className="space-y-6 animate-fade-up">
+    <div className={clsx(isEmpty && "mx-auto max-w-3xl", "space-y-6 animate-fade-up")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-3xl font-semibold">Portfolio</h1>
+        <PageHeader />
         <div className="flex gap-2">
           {([["holdings", "Holdings"], ["analysis", "Analysis"]] as const).map(([key, label]) => (
             <button
@@ -127,39 +129,62 @@ export default function PortfolioPage() {
         <AnalysisPanel />
       ) : (
       <>
-      {/* Summary */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Invested" value={inr(summary?.invested)} />
-        <Stat label="Current value" value={inr(summary?.value)} />
-        <Stat label="P&L" value={inr(summary?.pnl)} cls={signCls(summary?.pnl)} />
-        <Stat label="Return" value={pct(summary?.pnl_pct)} cls={signCls(summary?.pnl_pct)} />
-      </div>
+      {/* Summary — skipped while empty, four ₹0 tiles isn't worth showing */}
+      {!isEmpty && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Invested" value={inr(summary?.invested)} />
+          <Stat label="Current value" value={inr(summary?.value)} />
+          <Stat label="P&L" value={inr(summary?.pnl)} cls={signCls(summary?.pnl)} />
+          <Stat label="Return" value={pct(summary?.pnl_pct)} cls={signCls(summary?.pnl_pct)} />
+        </div>
+      )}
 
       {/* Add form */}
-      <Card className="p-5">
-        <h2 className="mb-4 flex items-center gap-2 font-medium"><Plus className="h-4 w-4 text-saffron" /> Add holding</h2>
+      <Card className="p-6">
+        <h2 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
+          <Plus className="h-3.5 w-3.5 text-saffron" /> Add holding
+        </h2>
         <div className="grid gap-3 sm:grid-cols-4">
-          {/* SearchBox for ticker with onSelect callback */}
-          <SearchBox
-            placeholder="Search ticker (TCS, INFY…)"
-            onSelect={(symbol) => setForm({ ...form, ticker: symbol })}
-          />
-          <Input className="nums" type="number" placeholder="Shares" value={form.shares}
-            onChange={(e) => setForm({ ...form, shares: e.target.value })} />
-          <Input className="nums" type="number" placeholder="Avg price ₹" value={form.avg_price}
-            onChange={(e) => setForm({ ...form, avg_price: e.target.value })} />
-          <Input type="date" value={form.buy_date}
-            onChange={(e) => setForm({ ...form, buy_date: e.target.value })} />
+          <div>
+            <Label className="mb-1.5 block">Stock</Label>
+            <SearchBox
+              placeholder="Search ticker (TCS, INFY…)"
+              onSelect={(symbol) => setForm({ ...form, ticker: symbol })}
+            />
+          </div>
+          <div>
+            <Label className="mb-1.5 block">Shares</Label>
+            <Input className="nums" type="number" placeholder="0" value={form.shares}
+              onChange={(e) => setForm({ ...form, shares: e.target.value })} />
+          </div>
+          <div>
+            <Label className="mb-1.5 block">Avg price</Label>
+            <Input className="nums" type="number" placeholder="₹0.00" value={form.avg_price}
+              onChange={(e) => setForm({ ...form, avg_price: e.target.value })} />
+          </div>
+          <div>
+            <Label className="mb-1.5 block">Buy date</Label>
+            <Input type="date" value={form.buy_date}
+              onChange={(e) => setForm({ ...form, buy_date: e.target.value })} />
+          </div>
         </div>
         {form.ticker && (
-          <p className="mt-2 text-xs text-muted">Selected: <span className="font-semibold text-saffron">{form.ticker}</span></p>
+          <p className="mt-3 text-xs text-muted">Selected: <span className="font-semibold text-saffron">{form.ticker}</span></p>
         )}
-        <Button onClick={add} disabled={busy || !form.ticker} className="mt-3">
+        <Button onClick={add} disabled={busy || !form.ticker} className="mt-4">
           {busy ? "Adding…" : "Add to portfolio"}
         </Button>
       </Card>
 
       {/* Holdings */}
+      {isEmpty ? (
+        <Card className="p-12 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-raised ring-1 ring-border">
+            <Briefcase className="h-5 w-5 text-muted" />
+          </div>
+          <p className="text-sm text-muted">No holdings yet — add your first one above.</p>
+        </Card>
+      ) : (
       <Card className="overflow-hidden">
         <table className="w-full text-sm">
           <thead className="border-b border-border text-muted">
@@ -198,9 +223,7 @@ export default function PortfolioPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {sortedHoldings.length === 0 ? (
-              <tr><td colSpan={7} className="px-5 py-10 text-center text-muted">No holdings yet.</td></tr>
-            ) : sortedHoldings.map((h: any) => (
+            {sortedHoldings.map((h: any) => (
               <tr key={h.id} className="[&>td]:px-5 [&>td]:py-3 hover:bg-raised/40">
                 <td>
                   <a href={`/stock/${h.ticker}`} className="font-medium hover:text-saffron">{h.ticker.replace(".NS", "")}</a>
@@ -221,6 +244,7 @@ export default function PortfolioPage() {
           </tbody>
         </table>
       </Card>
+      )}
       </>
       )}
     </div>
@@ -233,5 +257,16 @@ function Stat({ label, value, cls }: { label: string; value: string; cls?: strin
       <Label>{label}</Label>
       <p className={`nums mt-1 text-lg font-semibold ${cls || ""}`}>{value}</p>
     </Card>
+  );
+}
+
+function PageHeader() {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-saffron/10 ring-1 ring-saffron/20">
+        <Briefcase className="h-4 w-4 text-saffron" />
+      </div>
+      <h1 className="font-display text-2xl font-semibold tracking-tight">Portfolio</h1>
+    </div>
   );
 }

@@ -944,6 +944,107 @@ async def _mf_id_for(fund_name: str) -> str | None:
     return None
 
 
+_CURATED_MF_CACHE_KEY = "indianapi:mutual_funds"
+
+
+async def _get_curated_mf_stats() -> list[dict]:
+    """GET /mutual_funds — a fixed curated snapshot (~249 funds, unlike
+    /static/all_mf.json this one costs IndianAPI quota), category -> sub-
+    category -> list. Only fields present: fund_name, latest_nav,
+    percentage_change, asset_size (AUM, Rs Cr), 1/3/6-month and 1/3/5-year
+    returns, star_rating — no fund manager/AMC-profile/expense-ratio/
+    riskometer/exit-load data exists on IndianAPI at all (verified live).
+    Query params have no effect on this endpoint — it's not a per-fund
+    lookup, just a fixed listing matched by name. Cached 24h — it's a fixed
+    daily snapshot and this endpoint isn't free like the two static JSON
+    lists, so caching hard matters for the metered quota."""
+    hit = cache.get(_CURATED_MF_CACHE_KEY)
+    if hit is not None:
+        return hit
+    data = await _get("/mutual_funds")
+    flat: list[dict] = []
+    if isinstance(data, dict):
+        for sub_categories in data.values():
+            if isinstance(sub_categories, dict):
+                for funds in sub_categories.values():
+                    if isinstance(funds, list):
+                        flat.extend(f for f in funds if isinstance(f, dict))
+    if flat:
+        cache.set(_CURATED_MF_CACHE_KEY, flat, "mf_list")
+    return flat
+
+
+async def get_mf_extra_stats(fund_name: str) -> dict | None:
+    """Best-effort AUM + star rating for a fund, from the curated
+    /mutual_funds snapshot. Returns None when the fund isn't in that list
+    (expected often — it only covers ~249 funds)."""
+    funds = await _get_curated_mf_stats()
+    target = _normalize_fund_name(fund_name)
+    if not target:
+        return None
+    match = next((f for f in funds if _normalize_fund_name(f.get("fund_name") or "") == target), None)
+    if not match:
+        target_tokens = _fund_name_tokens(fund_name)
+        if not target_tokens:
+            return None
+        match = next(
+            (f for f in funds
+             if (t := _fund_name_tokens(f.get("fund_name") or "")) and (t <= target_tokens or target_tokens <= t)),
+            None,
+        )
+    if not match:
+        return None
+    aum_cr = match.get("asset_size")
+    return {
+        "aum": round(float(aum_cr) * 1e7, 2) if isinstance(aum_cr, (int, float)) else None,  # Cr -> raw INR, matches inrCompact's existing input convention
+        "star_rating": match.get("star_rating"),
+    }
+
+
+_STOCK_QUALIFIER_WORDS = {"ltd", "limited", "pvt", "private", "plc", "the", "co", "company"}
+
+
+def _normalize_stock_name(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", name.lower()).strip()
+
+
+def _stock_name_tokens(name: str) -> set[str]:
+    return {w for w in _normalize_stock_name(name).split() if w not in _STOCK_QUALIFIER_WORDS}
+
+
+async def _ticker_for_holding_name(name: str) -> str | None:
+    """Best-effort mutual-fund-holding name -> NSE ticker, for linking a
+    fund's top holdings to Aegis's own stock pages. Same two-phase technique
+    as _mf_id_for() above (exact normalized match, then a qualifier-word-
+    stripped token-subset match), matched against the free static stock list
+    instead of the fund list. Fails safe (returns None) on any ambiguity —
+    a wrong stock link is worse than no link; non-equity holding rows (cash,
+    TREPS, government securities) are expected to never match, which is
+    correct, not a bug."""
+    stocks = await _get_all_stocks()
+    target = _normalize_stock_name(name)
+    if not target:
+        return None
+
+    # 1) Exact normalized match.
+    for s in stocks:
+        if _normalize_stock_name(s.get("name") or "") == target and s.get("nse-code"):
+            return f"{s['nse-code']}.NS"
+
+    # 2) Token-subset match, corporate-suffix words stripped — but only when
+    #    it resolves to a SINGLE unique ticker, and only for names with >=2
+    #    meaningful tokens (avoids one-word collisions like bare "ICICI").
+    target_tokens = _stock_name_tokens(name)
+    if len(target_tokens) < 2:
+        return None
+    candidates = {
+        s["nse-code"] for s in stocks
+        if s.get("nse-code") and (t := _stock_name_tokens(s.get("name") or ""))
+        and (t <= target_tokens or target_tokens <= t)
+    }
+    return f"{candidates.pop()}.NS" if len(candidates) == 1 else None
+
+
 async def get_mf_holdings(fund_name: str) -> list[dict] | None:
     """/mf_holdings — portfolio holdings of a mutual fund. Returns None if no
     IndianAPI fund match is found (best-effort — expected to happen often)."""
@@ -958,5 +1059,11 @@ async def get_mf_holdings(fund_name: str) -> list[dict] | None:
     data = await _get("/mf_holdings", {"stock_id": stock_id})
     result = _as_list(data)
     if result:
+        # Best-effort link each holding to its Aegis stock page — resolved
+        # in parallel, all from the already-cached stock list (no extra
+        # network calls). `ticker` is None for unresolved/non-equity rows.
+        tickers = await asyncio.gather(*[_ticker_for_holding_name(h.get("name") or "") for h in result])
+        for h, t in zip(result, tickers):
+            h["ticker"] = t
         cache.set(ck, result, "mf_list")
     return result or None

@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
 
+    # Free-tier key — used as a fast first attempt for the two interactive,
+    # latency-sensitive AI paths only (portfolio review + portfolio ask), not
+    # a general-purpose fallback. See ai_service.py's _call_gemini/prefer_gemini.
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.6-flash"
+
     redis_url: str = "redis://localhost:6379"
     indianapi_key: str = ""
     indianapi_enabled: bool = True   # set False when monthly quota is exhausted

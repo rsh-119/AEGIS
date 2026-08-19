@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, IBM_Plex_Mono, Fraunces } from "next/font/google";
+import { Rubik, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { Nav } from "@/components/Nav";
 import { MarketBar } from "@/components/MarketBar";
@@ -11,26 +11,19 @@ import { AuthProvider } from "@/lib/auth";
 import { ToastProvider } from "@/components/ui/toast";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 
-// Inter at 300 + 400 — closest open-source analogue to Sohne thin
-const inter = Inter({
+// Rubik everywhere — single family for both body copy and headlines
+// (--font-display aliases --font-sans in globals.css, see below).
+const rubik = Rubik({
   subsets: ["latin"],
   variable: "--font-sans",
   display: "swap",
-  weight: ["300", "400", "500", "600"],
+  weight: ["300", "400", "500", "600", "700"],
 });
 const ibmMono = IBM_Plex_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
   display: "swap",
   weight: ["400", "500"],
-});
-// Display face for headlines/wordmarks — high-contrast serif against the
-// Inter body for the premium/editorial fintech contrast
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  variable: "--font-display",
-  display: "swap",
-  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
@@ -40,7 +33,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${ibmMono.variable} ${fraunces.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${rubik.variable} ${ibmMono.variable}`}>
       <body suppressHydrationWarning>
         {/*
           Anti-flash: runs before body renders, sets .dark on <html> from

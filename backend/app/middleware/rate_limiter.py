@@ -35,6 +35,20 @@ SEARCH_LIMIT  = "30/minute"
 GENERAL_LIMIT = "120/minute"
 
 
+def user_or_ip_key(request: Request) -> str:
+    """Rate-limit key: authenticated user_id if a valid bearer token is
+    present, else fall back to remote IP. Used for AI endpoints where quota
+    should be per-account, not shared across a NAT/office IP."""
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        try:
+            from app.core.auth import decode_token
+            return f"user:{decode_token(auth[7:], expected_type='access')}"
+        except Exception:
+            pass
+    return get_remote_address(request)
+
+
 def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
     """Return JSON 429 instead of the default HTML page."""
     return JSONResponse(

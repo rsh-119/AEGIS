@@ -4,8 +4,8 @@
 
 /* ── Design tokens — Coinbase design language (DESIGN.md) ──────────────────── */
 :root {
-  --font-sans:    "Inter", system-ui, sans-serif;
-  --font-display: "Inter", system-ui, sans-serif;
+  --font-sans:    "Rubik", system-ui, sans-serif;
+  --font-display: var(--font-sans);
   --font-mono:    "IBM Plex Mono", ui-monospace, monospace;
 
   /* ── Light mode (Coinbase canvas) ──────────────────────────────────────── */
@@ -54,7 +54,13 @@
   --color-surface:    23  25  22;    /* #171916 — cards, one step up from ink       */
   --color-raised:     31  33  29;    /* #1f211d — inputs, chips                      */
   --color-border:     45  44  40;    /* #2d2c28 — warm hairline, visible not harsh   */
-  --color-muted:      155 155 148;   /* #9b9b94 — warm muted grey, secondary text    */
+  /* Was 155 155 148 (#9b9b94) — passable at full opacity (~6.3:1 on surface)
+     but the app leans heavily on text-muted/40..70 for secondary copy
+     (captions, labels, descriptions), and blended with the near-black
+     surface those dropped to ~3:1, genuinely hard to read. Brightened so
+     the common /60-/70 cases clear or nearly clear WCAG AA (4.5:1) instead
+     of sitting around 3:1 — full-opacity uses go from ~6.3:1 to ~9.5:1. */
+  --color-muted:      190 190 182;   /* #bebeb6 — warm muted grey, secondary text    */
   --color-fg:         247 243  236;  /* #f7f3ec — warm cream, NOT pure white          */
   --color-saffron:    59  130 246;   /* Coinbase Blue, kept as the CTA/brand accent  */
   --color-accent:     229 72   77;   /* #e5484d — Fey's negative/accent red          */
@@ -64,7 +70,7 @@
   --color-canvas-soft:  23  25  22;
   --color-canvas-cream: 5   30  15;
   --color-ink-secondary: 160 180 215;
-  --color-ink-mute:     155 155 148;
+  --color-ink-mute:     190 190 182;   /* kept in sync with --color-muted above */
   --color-brand-dark:    4   51  25;
 
   --shadow-sm:  0 1px 3px rgba(0,0,0,0.5),  0 1px 2px rgba(0,0,0,0.35);
