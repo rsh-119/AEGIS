@@ -3,8 +3,12 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import get_optional_user_id
+from app.core.database import get_db
+from app.core.entitlements import get_pro_user_id, is_pro_user
 from app.services import stock_service, news_service, ai_service, forecast_service, concall_service, peer_service, shareholding_service, financials_service, finance_math
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
@@ -156,7 +160,7 @@ async def news(ticker: str):
 
 
 @router.get("/{ticker}/forecast")
-async def price_forecast(ticker: str, horizon: int = 30, model: str = "holt"):
+async def price_forecast(ticker: str, horizon: int = 30, model: str = "holt", _pro: int = Depends(get_pro_user_id)):
     hist = await stock_service.get_history(ticker, "2y")
     candles = hist.get("candles", [])
     if not candles:
@@ -190,9 +194,18 @@ async def core_data(ticker: str, period: str = "6mo"):
 
 
 @router.get("/{ticker}/insights")
-async def insights(ticker: str):
+async def insights(
+    ticker: str,
+    user_id: int | None = Depends(get_optional_user_id),
+    db: AsyncSession = Depends(get_db),
+):
     """Deferred endpoint — news, AI analysis, health diagnosis, and all three forecasts.
-    Called in parallel with /core so these load in the background while the page is already visible."""
+    Called in parallel with /core so these load in the background while the page is already visible.
+    Forecast is Pro-only; AI analysis and health checks stay free for everyone in this same
+    response — a non-Pro caller skips running the (CPU-expensive) forecast models entirely rather
+    than just having the result hidden, and gets forecast_locked: true so the frontend has an
+    authoritative signal instead of relying on client-side user.is_pro alone."""
+    is_pro = await is_pro_user(user_id, db)
     quote, hist = await asyncio.gather(
         stock_service.get_quote(ticker),
         stock_service.get_history(ticker, "6mo"),
@@ -226,38 +239,54 @@ async def insights(ticker: str):
             return {"available": False, "reason": hist_2y.get("error", "No history available")}
         return await _forecast_async(candles_2y, 30, model)
 
-    # AI + all 3 forecasts genuinely in parallel — forecasts run on a
-    # thread pool (see _forecast_async) so they don't block each other or the
-    # event loop.
-    ai_analysis, health, fc_holt, fc_xgb, fc_lgbm = await asyncio.gather(
-        ai_service.analyse_stock(quote, signals, hist, sentiment, peer_avg),
-        ai_service.diagnose_health(quote, hist, sentiment, articles, peer_avg),
-        _run_forecast("holt"),
-        _run_forecast("xgboost"),
-        _run_forecast("lgbm"),
-    )
+    if is_pro:
+        # AI + all 3 forecasts genuinely in parallel — forecasts run on a
+        # thread pool (see _forecast_async) so they don't block each other or
+        # the event loop.
+        ai_analysis, health, fc_holt, fc_xgb, fc_lgbm = await asyncio.gather(
+            ai_service.analyse_stock(quote, signals, hist, sentiment, peer_avg),
+            ai_service.diagnose_health(quote, hist, sentiment, articles, peer_avg),
+            _run_forecast("holt"),
+            _run_forecast("xgboost"),
+            _run_forecast("lgbm"),
+        )
+        forecast = {"holt": fc_holt, "xgboost": fc_xgb, "lgbm": fc_lgbm}
+    else:
+        # Non-Pro — skip the forecast models entirely rather than computing
+        # and discarding them (saves real load on the CPU-bound forecast
+        # thread pool for the majority of, free, traffic).
+        ai_analysis, health = await asyncio.gather(
+            ai_service.analyse_stock(quote, signals, hist, sentiment, peer_avg),
+            ai_service.diagnose_health(quote, hist, sentiment, articles, peer_avg),
+        )
+        forecast = None
 
     return {
-        "news":       news_data["articles"],
-        "sentiment":  news_data["sentiment"],
-        "ai_analysis": ai_analysis,
-        "health":     health,
-        "forecast": {
-            "holt":    fc_holt,
-            "xgboost": fc_xgb,
-            "lgbm":    fc_lgbm,
-        },
+        "news":            news_data["articles"],
+        "sentiment":       news_data["sentiment"],
+        "ai_analysis":     ai_analysis,
+        "health":          health,
+        "forecast":        forecast,
+        "forecast_locked": not is_pro,
     }
 
 
 @router.get("/{ticker}/analysis")
-async def full_analysis(ticker: str, period: str = "6mo"):
-    """Legacy combined endpoint — kept for backwards compatibility."""
+async def full_analysis(
+    ticker: str,
+    period: str = "6mo",
+    user_id: int | None = Depends(get_optional_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Legacy combined endpoint — kept for backwards compatibility. Passes
+    the resolved auth dependencies through explicitly since insights() is
+    called here as a plain function, not via FastAPI's routing layer, so its
+    own Depends(...) defaults would never be resolved otherwise."""
     if period not in _PERIODS:
         period = "6mo"
     core, ins = await asyncio.gather(
         core_data(ticker, period),
-        insights(ticker),
+        insights(ticker, user_id, db),
     )
     return {**core, **ins}
 
@@ -282,7 +311,7 @@ async def peers(ticker: str):
 
 
 @router.get("/{ticker}/concall-summary")
-async def concall_summary(ticker: str):
+async def concall_summary(ticker: str, _pro: int = Depends(get_pro_user_id)):
     """AI-generated concall summary for the last 4 quarters."""
     data = await concall_service.get_concall_summary(ticker)
     if "error" in data:
@@ -312,7 +341,7 @@ async def shareholding_history(ticker: str):
 # ── IndianAPI-backed per-stock endpoints ──────────────────────────────────────
 
 @router.get("/{ticker}/analyst-targets")
-async def analyst_targets(ticker: str):
+async def analyst_targets(ticker: str, _pro: int = Depends(get_pro_user_id)):
     """Analyst price targets and recommendations from IndianAPI."""
     from app.services.indianapi_service import get_stock_target_price
     bare = stock_service.bare_ticker(ticker)
@@ -323,7 +352,7 @@ async def analyst_targets(ticker: str):
 
 
 @router.get("/{ticker}/analyst-forecasts")
-async def analyst_forecasts(ticker: str):
+async def analyst_forecasts(ticker: str, _pro: int = Depends(get_pro_user_id)):
     """Analyst revenue and EPS forecasts from IndianAPI."""
     from app.services.indianapi_service import get_stock_forecasts
     bare = stock_service.bare_ticker(ticker)

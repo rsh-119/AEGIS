@@ -6,9 +6,10 @@ import { useEffect, useMemo, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { fetcher, num, pct, signCls, deleteTolerant404 } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
-import { LoginPrompt } from "@/components/LoginPrompt";
 import { useAuth } from "@/lib/auth";
-import { Trash2, Download, SlidersHorizontal, Newspaper, Eye } from "lucide-react";
+import { getGuestWatchlist, removeGuestWatch, type GuestWatchItem } from "@/lib/guestData";
+import { Trash2, Download, SlidersHorizontal, Newspaper, Eye, Info } from "lucide-react";
+import Link from "next/link";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -48,7 +49,46 @@ export default function WatchlistPage() {
   const confirm = useConfirm();
   const { mutate } = useSWRConfig();
   const { data } = useSWR(user ? "/api/watchlist" : null, fetcher, { revalidateOnFocus: false });
-  const items = data?.items || [];
+
+  // Guest (logged-out) watchlist: read from this device's localStorage
+  // (lib/guestData.ts) instead of the DB-backed /api/watchlist, which
+  // requires a session. Re-read on every render of this effect's deps so
+  // add/remove elsewhere (e.g. the ★ button on a stock page) is reflected
+  // without a full reload.
+  const [guestWatch, setGuestWatch] = useState<GuestWatchItem[]>([]);
+  useEffect(() => {
+    if (!user) setGuestWatch(getGuestWatchlist());
+  }, [user]);
+  const guestTickers = guestWatch.map((w) => w.ticker).join(",");
+  // batch-quotes is a public endpoint (no auth) — the only way to get live
+  // prices/ratios for a guest's tickers, since /api/watchlist itself is
+  // auth-gated. Loses the per-item quarterly-headline/news fields that
+  // /api/watchlist enriches with (those aren't exposed as a bulk public
+  // call) — those columns just render "—" for a guest, same as any other
+  // missing value.
+  const { data: guestQuotes } = useSWR(
+    !user && guestTickers ? `/api/stocks/batch-quotes?tickers=${encodeURIComponent(guestTickers)}` : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+
+  const items = user
+    ? data?.items || []
+    : guestWatch.map((w) => {
+        const q = guestQuotes?.[w.ticker] || {};
+        return {
+          id: w.id,
+          ticker: w.ticker,
+          company_name: q.company_name || w.company_name || w.ticker,
+          current_price: q.current_price ?? null,
+          pe_ratio: q.pe_ratio ?? null,
+          market_cap: q.market_cap ?? null,
+          dividend_yield: q.dividend_yield ?? null,
+          roe: q.roe ?? null,
+          roce: q.roce ?? null,
+          industry: q.industry ?? null,
+        };
+      });
 
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -99,13 +139,19 @@ export default function WatchlistPage() {
     return sortDir === "asc" ? aval - bval : bval - aval;
   });
 
-  async function remove(id: number) {
+  async function remove(id: number | string) {
     const ok = await confirm({
       title: "Remove from watchlist?",
       confirmLabel: "Remove",
       destructive: true,
     });
     if (!ok) return;
+    if (!user) {
+      removeGuestWatch(String(id));
+      setGuestWatch(getGuestWatchlist());
+      toast({ variant: "success", title: "Removed from watchlist" });
+      return;
+    }
     const result = await deleteTolerant404(`/api/watchlist/${id}`);
     if (!result.ok) {
       toast({ variant: "error", title: "Couldn't remove item", description: result.message });
@@ -140,14 +186,6 @@ export default function WatchlistPage() {
   }
 
   if (authLoading) return null;
-  if (!user) {
-    return (
-      <div className="mx-auto max-w-3xl space-y-6 animate-fade-up">
-        <PageHeader />
-        <LoginPrompt what="your watchlist" />
-      </div>
-    );
-  }
 
   const visibleColList = COLUMNS.filter((c) => visibleCols.has(c.key));
   const colCount = 3 + visibleColList.length + 1; // S.No + Name + CMP + toggleable + remove
@@ -162,6 +200,7 @@ export default function WatchlistPage() {
             <SearchBox placeholder="Add a stock…" />
           </div>
         </div>
+        {!user && <GuestBanner />}
         <Card className="p-12 text-center">
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-raised ring-1 ring-border">
             <Eye className="h-5 w-5 text-muted" />
@@ -180,6 +219,7 @@ export default function WatchlistPage() {
           <SearchBox placeholder="Add a stock…" />
         </div>
       </div>
+      {!user && <GuestBanner />}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <select
@@ -303,6 +343,21 @@ function PageHeader() {
         <Eye className="h-4 w-4 text-saffron" />
       </div>
       <h1 className="font-display text-2xl font-semibold tracking-tight">Watchlist</h1>
+    </div>
+  );
+}
+
+/** Shown only when logged out — this watchlist is on-device only
+ * (lib/guestData.ts) until the user signs in, at which point it's imported
+ * into their account via POST /api/auth/sync-guest-data (see lib/auth.tsx). */
+function GuestBanner() {
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-border bg-raised/40 px-4 py-2.5 text-xs text-muted">
+      <Info className="h-3.5 w-3.5 shrink-0 text-saffron" />
+      <span>
+        Saved on this device only. <Link href="/login" className="font-medium text-saffron hover:underline">Sign in</Link>{" "}
+        to sync it to your account.
+      </span>
     </div>
   );
 }

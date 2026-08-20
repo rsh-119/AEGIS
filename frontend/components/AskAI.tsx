@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { post } from "@/lib/api";
+import { post, tryRefresh } from "@/lib/api";
 import { Send, Sparkles, AlertCircle, Plus, FileText, X } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -155,7 +155,7 @@ export function AskAI({ ticker, context }: { ticker: string; context?: StockAskC
     setBusy(true);
     try {
       if (docText) {
-        // Document Q&A mode
+        // Document Q&A mode — untouched by the streaming work below.
         const res = await fetch("/api/documents/ask", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -171,22 +171,116 @@ export function AskAI({ ticker, context }: { ticker: string; context?: StockAskC
           fromFacts: data.answered_from_facts,
         }]);
       } else {
-        // Normal stock Q&A mode
-        const res = await post<{ answer: string; confidence: string; answered_from_facts?: boolean }>("/api/ai/ask", {
-          question: text,
-          ticker,
-        });
-        setMsgs((m) => [...m, {
-          role: "ai",
-          text: res.answer,
-          confidence: res.confidence,
-          fromFacts: res.answered_from_facts,
-        }]);
+        await sendStockQuestion(text);
       }
     } catch (e) {
       setMsgs((m) => [...m, { role: "ai", text: (e as Error).message, error: true }]);
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** Normal stock Q&A — tries the streaming endpoint first, falls back to the
+   * blocking /api/ai/ask on any stream failure (network error, non-stream
+   * response, or an empty stream). */
+  async function sendStockQuestion(text: string) {
+    try {
+      await streamStockQuestion(text);
+    } catch {
+      const res = await post<{ answer: string; confidence: string; answered_from_facts?: boolean }>("/api/ai/ask", {
+        question: text,
+        ticker,
+      });
+      setMsgs((m) => [...m, {
+        role: "ai",
+        text: res.answer,
+        confidence: res.confidence,
+        fromFacts: res.answered_from_facts,
+      }]);
+    }
+  }
+
+  const _METADATA_DELIM = "___METADATA___";
+
+  async function streamStockQuestion(text: string) {
+    const doStream = () =>
+      fetch("/api/ai/ask-stream", {
+        method: "POST",
+        credentials: "include",   // cookie auth — no manual token handling needed
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: text, ticker }),
+      });
+
+    let res = await doStream();
+    if (res.status === 401) {
+      // Expired access cookie — try one cookie-based refresh, then retry
+      // once. Previously this call had no refresh handling at all and just
+      // failed straight to the blocking /api/ai/ask fallback below.
+      const ok = await tryRefresh();
+      if (ok) res = await doStream();
+    }
+    if (!res.ok || !res.body) throw new Error("stream unavailable");
+
+    // The backend falls back to a plain JSON response (not a stream) when
+    // its own peek-before-commit check finds nothing arrives in time —
+    // detect that here rather than trying to read it as a token stream.
+    if ((res.headers.get("content-type") || "").includes("application/json")) {
+      const data = await res.json();
+      setMsgs((m) => [...m, {
+        role: "ai",
+        text: data.answer,
+        confidence: data.confidence,
+        fromFacts: data.answered_from_facts,
+      }]);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let msgIndex = -1;
+
+    const renderText = (t: string) => {
+      setMsgs((m) => {
+        if (msgIndex === -1) {
+          msgIndex = m.length;
+          return [...m, { role: "ai", text: t }];
+        }
+        const copy = [...m];
+        copy[msgIndex] = { ...copy[msgIndex], text: t };
+        return copy;
+      });
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const delimIdx = buffer.indexOf(_METADATA_DELIM);
+      renderText((delimIdx === -1 ? buffer : buffer.slice(0, delimIdx)).trimEnd());
+    }
+
+    if (msgIndex === -1) throw new Error("empty stream");
+
+    const delimIdx = buffer.indexOf(_METADATA_DELIM);
+    if (delimIdx !== -1) {
+      const answerText = buffer.slice(0, delimIdx).trimEnd();
+      const metaRaw = buffer.slice(delimIdx + _METADATA_DELIM.length).trim();
+      try {
+        const meta = JSON.parse(metaRaw);
+        setMsgs((m) => {
+          const copy = [...m];
+          copy[msgIndex] = {
+            ...copy[msgIndex],
+            text: answerText,
+            confidence: meta.confidence,
+            fromFacts: meta.answered_from_facts,
+          };
+          return copy;
+        });
+      } catch {
+        // Malformed metadata block — keep the streamed answer text, just skip the badges.
+      }
     }
   }
 

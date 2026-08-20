@@ -88,6 +88,20 @@ async def index_data(slug: str, period: str = "1y"):
     return {"slug": slug, "symbol": index_name, "history": hist, "quote": quote}
 
 
+@router.get("/index/{slug}/stocks")
+async def index_stocks(slug: str):
+    """Constituent stocks for this index, with live quotes + returns — same
+    shape as /sector/{sector}. Separate from /index/{slug} above (not tied to
+    its `period` param) so switching chart periods doesn't redundantly
+    refetch the whole constituent list."""
+    if slug.lower() not in _INDEX_SYMBOLS:
+        raise HTTPException(status_code=404, detail=f"Unknown index: {slug}")
+    result = await market_service.get_index_stocks(slug)
+    if result.get("error") and not result.get("stocks"):
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result
+
+
 @router.get("/cap/{size}")
 async def cap_stocks(size: str):
     """Return all tracked stocks for large / mid / small cap tier."""

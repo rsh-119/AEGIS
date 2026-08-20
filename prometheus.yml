@@ -14,9 +14,14 @@ rule_files:
 
 scrape_configs:
   # ── Aegis backend ────────────────────────────────────────────────────────────
+  # Two targets so this works whether the backend runs inside docker-compose
+  # ("backend:8000", the container service name) or locally via `venv`
+  # ("host.docker.internal:8000" — see the prometheus service's extra_hosts
+  # in docker-compose.monitoring.yml). Whichever isn't running just shows as
+  # a down target — harmless.
   - job_name: aegis-backend
     static_configs:
-      - targets: ["backend:8000"]
+      - targets: ["backend:8000", "host.docker.internal:8000"]
     metrics_path: /metrics
     scrape_interval: 10s
 

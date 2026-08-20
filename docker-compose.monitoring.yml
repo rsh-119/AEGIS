@@ -1,13 +1,11 @@
-"""
-Monitoring stack — run alongside docker-compose.yml:
-
-  docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
-
-Includes:
-  • Prometheus   — metrics scraper     http://localhost:9090
-  • Grafana      — dashboards          http://localhost:3001  (admin/admin)
-  • Alertmanager — alert routing       http://localhost:9093
-"""
+# Monitoring stack — run alongside docker-compose.yml:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
+#
+# Includes:
+#   • Prometheus   — metrics scraper     http://localhost:9090
+#   • Grafana      — dashboards          http://localhost:3002  (admin/admin)
+#   • Alertmanager — alert routing       http://localhost:9093
 services:
 
   prometheus:
@@ -23,6 +21,12 @@ services:
       - "--web.enable-lifecycle"
     ports:
       - "9090:9090"
+    # Lets the aegis-backend scrape job reach a backend running locally via
+    # `venv` (host.docker.internal:8000, see prometheus.yml) in addition to
+    # the containerized `backend:8000` from docker-compose.yml — Linux
+    # doesn't resolve host.docker.internal without this.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   grafana:
@@ -34,8 +38,11 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3001:3000"
+      # Host 3001 was already in use by another process on this machine —
+      # remapped to 3002. Change back to 3001:3000 if that frees up.
+      - "3002:3000"
     depends_on:
       - prometheus
     restart: unless-stopped

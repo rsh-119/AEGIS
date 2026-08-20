@@ -263,7 +263,7 @@ function ErrorState({ symbol }: { symbol: string }) {
     <Card className="p-8 text-center">
       <h2 className="font-display text-xl">Couldn't load {symbol}</h2>
       <p className="mt-2 text-sm text-muted">
-        IndianAPI may be rate-limited, or this isn't a valid NSE/BSE symbol. Try again shortly.
+        Data may be temporarily unavailable, or this isn't a valid NSE/BSE symbol. Try again shortly.
       </p>
     </Card>
   );

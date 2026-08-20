@@ -200,7 +200,7 @@ export function Footer() {
               &copy; {new Date().getFullYear()} AEGIS. All rights reserved.
             </p>
             <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted/50">
-              Data via IndianAPI · For information only, not investment advice
+              For information only, not investment advice
             </p>
           </div>
         </div>

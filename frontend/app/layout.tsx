@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Rubik, IBM_Plex_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { Nav } from "@/components/Nav";
 import { MarketBar } from "@/components/MarketBar";
@@ -60,6 +61,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </ToastProvider>
           </SWRCacheProvider>
         </AuthProvider>
+        {/* Vercel Web Analytics — visitor/page-view tracking. No-ops locally
+            and on non-Vercel hosts; collects automatically once deployed to
+            Vercel (also toggle "Web Analytics" on in the Vercel project
+            dashboard if it isn't already). */}
+        <Analytics />
       </body>
     </html>
   );

@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from app.services import mf_service
+from app.services import finance_math, mf_service
 
 router = APIRouter(prefix="/api", tags=["mf"])
 logger = logging.getLogger(__name__)
@@ -71,6 +71,30 @@ async def mf_detail(scheme_code: int):
     if not data:
         raise HTTPException(404, "Mutual fund not found")
     return data
+
+
+@router.get("/mf/{scheme_code}/calculator")
+async def mf_returns_calculator(
+    scheme_code: int,
+    mode: str = "sip",       # "sip" | "lumpsum"
+    amount: float = 5000,
+    start_date: str = "",    # YYYY-MM-DD; defaults to earliest available NAV if blank
+):
+    """What-if returns calculator for this fund — mirrors
+    /api/stocks/{ticker}/calculator, backed by mfapi.in NAV history instead
+    of stock prices, via the same finance_math.simulate_investment()."""
+    try:
+        closes = await mf_service.get_mf_nav_series(scheme_code)
+    except Exception as e:
+        logger.warning("mf_returns_calculator %s NAV fetch failed: %s", scheme_code, e)
+        raise HTTPException(503, "NAV data temporarily unavailable")
+    try:
+        result = finance_math.simulate_investment(closes, mode, amount, start_date)
+    except ValueError as e:
+        status = 404 if "history" in str(e) else 400
+        raise HTTPException(status_code=status, detail=str(e))
+    result["scheme_code"] = scheme_code
+    return result
 
 
 @router.get("/mf/{scheme_code}/holdings")

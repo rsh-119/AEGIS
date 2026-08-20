@@ -33,17 +33,26 @@ AI_LIMIT      = "10/minute"
 STOCK_LIMIT   = "60/minute"
 SEARCH_LIMIT  = "30/minute"
 GENERAL_LIMIT = "120/minute"
+AUTH_LIMIT    = "5/15minute"   # brute-force/credential-stuffing guard — login + register only
 
 
 def user_or_ip_key(request: Request) -> str:
-    """Rate-limit key: authenticated user_id if a valid bearer token is
-    present, else fall back to remote IP. Used for AI endpoints where quota
-    should be per-account, not shared across a NAT/office IP."""
+    """Rate-limit key: authenticated user_id if a valid bearer token or
+    access cookie is present, else fall back to remote IP. Used for AI
+    endpoints where quota should be per-account, not shared across a
+    NAT/office IP.
+
+    Checks the Authorization header first (script/API clients), then the
+    aegis_access cookie (browser clients) — auth moved to httpOnly cookies,
+    so header-only lookup would silently degrade every browser user to
+    per-IP quota instead of per-account."""
+    from app.core.auth import ACCESS_COOKIE_NAME, decode_token
+
     auth = request.headers.get("authorization", "")
-    if auth.lower().startswith("bearer "):
+    token = auth[7:] if auth.lower().startswith("bearer ") else request.cookies.get(ACCESS_COOKIE_NAME)
+    if token:
         try:
-            from app.core.auth import decode_token
-            return f"user:{decode_token(auth[7:], expected_type='access')}"
+            return f"user:{decode_token(token, expected_type='access')}"
         except Exception:
             pass
     return get_remote_address(request)

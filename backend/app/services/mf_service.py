@@ -269,6 +269,35 @@ async def get_mf_detail(scheme_code: int) -> dict:
     return result
 
 
+async def get_mf_nav_series(scheme_code: int) -> list[tuple]:
+    """Full NAV history as sorted-ascending (date, nav) pairs — the same
+    shape finance_math.closes_map() produces for stock prices, so the
+    returns calculator's shared finance_math.simulate_investment() works
+    unmodified for mutual funds too. Cached separately from get_mf_detail()
+    (which only retains a 5y-cropped chart) since the calculator needs the
+    fund's full history, e.g. for a since-inception SIP."""
+    ck = f"mf:navs:{scheme_code}"
+    hit = cache.get(ck)
+    if hit is not None:
+        return [(datetime.strptime(d, "%Y-%m-%d").date(), v) for d, v in hit]
+
+    async with httpx.AsyncClient(timeout=30) as c:
+        resp = await c.get(f"{MFAPI}/mf/{scheme_code}")
+        resp.raise_for_status()
+        data = resp.json()
+
+    out: list[tuple] = []
+    for n in data.get("data", []):   # newest first, DD-MM-YYYY
+        try:
+            out.append((_parse_date(n["date"]).date(), float(n["nav"])))
+        except Exception:
+            continue
+    out.sort()
+
+    cache.set(ck, [(d.isoformat(), v) for d, v in out], "mf_nav")
+    return out
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Nifty 50 benchmark
 # ─────────────────────────────────────────────────────────────────────────────

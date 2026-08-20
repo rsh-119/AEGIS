@@ -189,7 +189,7 @@ export function FinancialsTables({ ticker }: { ticker: string }) {
         <div className="rounded-xl border border-border bg-raised/40 mx-5 my-5 px-5 py-6 text-center">
           <FileBarChart className="mx-auto mb-3 h-8 w-8 text-muted/40" />
           <p className="text-sm font-medium text-muted">Financial statements unavailable</p>
-          <p className="mt-1 text-xs text-muted/60">IndianAPI may not carry financials for this stock.</p>
+          <p className="mt-1 text-xs text-muted/60">Financials aren't available for this stock yet.</p>
         </div>
       )}
 
@@ -198,7 +198,7 @@ export function FinancialsTables({ ticker }: { ticker: string }) {
           <FinTable table={table} unitNote={UNIT_NOTES[tab]} />
           {tab === "profit_loss" && <GrowthBoxes growth={data!.growth} />}
           <p className="border-t border-border px-4 py-2 text-[10px] text-muted">
-            Source: company filings via IndianAPI · figures in ₹ Crore unless noted
+            Source: company filings · figures in ₹ Crore unless noted
           </p>
         </>
       )}

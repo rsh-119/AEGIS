@@ -33,13 +33,10 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=6, max_length=100)
 
 
-class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-
-
 class RefreshRequest(BaseModel):
+    """Temporary rollout-only fallback body for POST /refresh — see
+    routers/auth.py's module docstring. Auth is otherwise cookie-based;
+    tokens are no longer returned in any response body."""
     refresh_token: str
 
 
@@ -90,6 +87,25 @@ class WatchCreate(BaseModel):
     ticker: str
     target_price: float | None = None
     company_name: str | None = None
+
+
+# ── Guest-data sync (localStorage → account, on login/register) ────────────────
+# Reuses HoldingCreate/WatchCreate directly rather than near-duplicate classes —
+# the guest-side frontend store (lib/guestData.ts) mirrors those shapes exactly.
+
+class GuestDataSync(BaseModel):
+    holdings: list[HoldingCreate] = Field(default_factory=list, max_length=200)
+    watchlist: list[WatchCreate] = Field(default_factory=list, max_length=200)
+
+
+class SyncResult(BaseModel):
+    imported: int
+    skipped: int
+
+
+class GuestDataSyncResponse(BaseModel):
+    holdings: SyncResult
+    watchlist: SyncResult
 
 
 # ── AI ────────────────────────────────────────────────────────────────────────

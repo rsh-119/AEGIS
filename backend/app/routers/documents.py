@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import io
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 
 import pypdf
 
+from app.core.entitlements import get_pro_user_id
 from app.services import ai_service
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -54,8 +55,10 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 
 @router.post("/analyze")
-async def analyze_document(req: AnalyzeRequest):
-    """Full AI analysis of a concall document or any financial text."""
+async def analyze_document(req: AnalyzeRequest, _pro: int = Depends(get_pro_user_id)):
+    """Full AI analysis of a concall document or any financial text. Pro-only
+    — exclusive to the /concall/document analyzer (unlike upload-pdf/ask,
+    which are shared with the free Ask AI PDF-chat feature and stay open)."""
     text = req.text.strip()
     if len(text) < 100:
         raise HTTPException(status_code=422, detail="Document too short — paste at least a paragraph.")

@@ -4,6 +4,8 @@ import { useCallback, useRef, useState } from "react";
 import useSWR from "swr";
 import { fetcher } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
+import { useAuth } from "@/lib/auth";
+import { ProGate } from "@/components/ProGate";
 import {
   Mic2, FileText, ExternalLink, ChevronDown, ChevronUp,
   TrendingUp, TrendingDown, AlertTriangle, CheckCircle2,
@@ -585,7 +587,7 @@ function UploadSection({ symbol, company: initialCompany }: { symbol?: string; c
         <div className="space-y-3">
           {[
             { label: mode === "loading-pdf" ? "Extracting text from PDF…" : "Text extracted ✓", done: mode !== "loading-pdf" },
-            { label: mode === "loading-analysis" ? `Analyzing with ${aiModel === "deepseek" ? "Qwen3-32B (reasoning)" : aiModel === "minimax" ? "Llama 3.1 8B" : "Llama 3.3 70B"} — parsing financials, margins, promises…` : "Pending", done: false },
+            { label: mode === "loading-analysis" ? `Analyzing with ${aiModel === "deepseek" ? "Deep Reasoning" : aiModel === "minimax" ? "Standard Analysis" : "Quick Read"} mode — parsing financials, margins, promises…` : "Pending", done: false },
           ].map((step, i) => (
             <div key={i} className="flex items-center gap-3 text-left">
               <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${step.done ? "bg-up/20" : "bg-saffron/20"}`}>
@@ -623,7 +625,7 @@ function UploadSection({ symbol, company: initialCompany }: { symbol?: string; c
   const AI_MODELS = [
     {
       id: "groq" as const,
-      name: "Llama 3.3 70B",
+      name: "Quick Read",
       badge: "Quick",
       badgeColor: "bg-up/10 text-up",
       icon: "⚡",
@@ -632,16 +634,16 @@ function UploadSection({ symbol, company: initialCompany }: { symbol?: string; c
     },
     {
       id: "minimax" as const,
-      name: "Llama 3.1 8B",
+      name: "Standard Analysis",
       badge: "Standard",
       badgeColor: "bg-saffron/10 text-saffron",
       icon: "⚖️",
       time: "~2s",
-      desc: "Fast, low-latency model — full 17-field analysis with margin breakdowns and management quotes",
+      desc: "Fast, low-latency analysis — full 17-field breakdown with margins and management quotes",
     },
     {
       id: "deepseek" as const,
-      name: "Qwen3 32B",
+      name: "Deep Reasoning",
       badge: "Detailed",
       badgeColor: "bg-blue-500/10 text-blue-400",
       icon: "🔬",
@@ -809,6 +811,10 @@ function ConcallResults({ symbol, company }: { symbol: string; company: string }
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function ConcallPage() {
   const [selected, setSelected] = useState<{ symbol: string; name: string } | null>(null);
+  const { user, isLoading: authLoading } = useAuth();
+
+  if (authLoading) return null;
+  if (!user?.is_pro) return <ProGate feature="Concall Analysis" />;
 
   return (
     <div className="space-y-8 animate-fade-up">

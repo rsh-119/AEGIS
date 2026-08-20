@@ -11,7 +11,7 @@ import { Reveal, Stagger, MotionNumber } from "@/components/motion";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import { AuroraBackground } from "@/components/ui/aurora-background";
 import { BentoGrid } from "@/components/ui/bento-grid";
-import { Activity, Bell, Bookmark, ChevronRight, Rocket } from "lucide-react";
+import { Activity, Bell, Bookmark, Calculator, ChevronRight, PiggyBank, Rocket } from "lucide-react";
 
 /* ─── Section heading — mono eyebrow + calm display title ── */
 function SectionHeading({ eyebrow, title, sub }: { eyebrow: string; title: string; sub?: string }) {
@@ -383,6 +383,38 @@ function WatchlistBg() {
   );
 }
 
+function MfBg() {
+  const rows = [
+    { n: "Parag Parikh Flexi Cap", r: "+18.4%" },
+    { n: "Nippon India Small Cap", r: "+24.1%" },
+    { n: "SBI Bluechip Fund",      r: "+14.2%" },
+  ];
+  return (
+    <div className="absolute inset-x-6 top-5 divide-y divide-border/70 opacity-90">
+      {rows.map((r) => (
+        <div key={r.n} className="flex items-center justify-between gap-3 py-2 font-mono text-[10px] transition-transform duration-300 group-hover:translate-x-0.5">
+          <span className="truncate text-muted">{r.n}</span>
+          <span className="nums shrink-0 text-up">{r.r}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CalculatorBg() {
+  return (
+    <div className="absolute inset-x-6 top-6 space-y-3">
+      <div className="rounded-xl border border-border bg-raised/50 px-3 py-2.5 font-mono text-[10px] transition-transform duration-300 group-hover:translate-x-0.5">
+        <span className="text-muted">₹5,000/mo SIP · 12% · 5y</span>
+      </div>
+      <div className="flex items-center justify-between rounded-xl border border-up/20 bg-up/5 px-3 py-2.5 font-mono text-[10px] transition-transform duration-300 delay-75 group-hover:translate-x-0.5">
+        <span className="text-fg">Projected value</span>
+        <span className="text-up">₹4.12L</span>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Page ──────────────────────────────────────── */
 export default function Home() {
   return (
@@ -412,7 +444,7 @@ export default function Home() {
           <p className="hero-el mx-auto mt-7 max-w-xl text-[1.05rem] leading-[1.7] text-muted">
             Institutional-grade research for every Indian investor — concall briefs,
             live fundamentals, peer benchmarks and portfolio intelligence.{" "}
-            <span className="font-semibold text-fg">Completely free.</span>
+            <span className="font-semibold text-fg">Free to start.</span>
           </p>
 
           {/* Search — the front door */}
@@ -599,6 +631,48 @@ export default function Home() {
                 </>
               ),
             },
+            {
+              Icon: PiggyBank,
+              name: "Mutual Funds & ETFs",
+              description: "Top funds by 1Y/3Y/5Y returns, NAV history and holdings — benchmarked against the Nifty 50.",
+              href: "/mf",
+              cta: "Browse funds",
+              className: "lg:col-span-2",
+              background: <MfBg />,
+              content: (
+                <>
+                  <p>
+                    Screen funds and ETFs by category and past performance, then drill into any
+                    one for its NAV history, underlying holdings, and similar-fund suggestions.
+                  </p>
+                  <p>
+                    Returns are always shown next to the Nifty 50 for the same period, so you can
+                    tell skill from a rising tide.
+                  </p>
+                </>
+              ),
+            },
+            {
+              Icon: Calculator,
+              name: "Returns Calculator",
+              description: "Project a SIP or lumpsum forward, or run the numbers on a real stock's own price history.",
+              href: "/calculator",
+              cta: "Run the numbers",
+              className: "lg:col-span-1",
+              background: <CalculatorBg />,
+              content: (
+                <>
+                  <p>
+                    Pick an amount, a horizon, and an assumed annual return — see the projected
+                    corpus for a monthly SIP or a one-time investment.
+                  </p>
+                  <p>
+                    On any stock&apos;s page, the same calculator switches to real history — what
+                    a SIP or lumpsum since any past date would&apos;ve actually returned.
+                  </p>
+                </>
+              ),
+            },
           ]}
         />
       </section>
@@ -617,7 +691,7 @@ export default function Home() {
         </div>
         <div>
           <p className="nums font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">₹0</p>
-          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">The price of admission — forever</p>
+          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">To start — no card required</p>
         </div>
         <div>
           <p className="font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">Live</p>
@@ -715,7 +789,9 @@ export default function Home() {
               <span className="h-3 w-px bg-border" aria-hidden />
               <span>Live off the tape</span>
               <span className="h-3 w-px bg-border" aria-hidden />
-              <span className="text-saffron">Free means free</span>
+              <Link href="/pricing" className="text-saffron transition-colors hover:text-fg">
+                No card to start
+              </Link>
             </div>
           </div>
         </AuroraBackground>

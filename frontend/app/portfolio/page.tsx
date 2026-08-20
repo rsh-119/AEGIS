@@ -1,17 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 // NOTE: the bare `mutate` exported from "swr" targets the DEFAULT cache — this
 // app runs on a custom IDB-backed provider (lib/swr-config), so that mutate
 // silently no-ops and new holdings only appeared after a full reload.
 // useSWRConfig().mutate is bound to the active provider.
 import useSWR, { useSWRConfig } from "swr";
-import { useRouter } from "next/navigation";
 import { fetcher, inr, pct, signCls, post, deleteTolerant404 } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
-import { LoginPrompt } from "@/components/LoginPrompt";
 import { useAuth } from "@/lib/auth";
-import { Trash2, Plus, Briefcase } from "lucide-react";
+import { getGuestHoldings, addGuestHolding, removeGuestHolding, type GuestHolding } from "@/lib/guestData";
+import { Trash2, Plus, Briefcase, Info } from "lucide-react";
+import Link from "next/link";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { AnalysisPanel } from "./AnalysisPanel";
@@ -27,7 +27,6 @@ type SortDir = "asc" | "desc";
 
 export default function PortfolioPage() {
   const { user, isLoading: authLoading } = useAuth();
-  const router = useRouter();
   const { toast } = useToast();
   const confirm = useConfirm();
   const { mutate } = useSWRConfig();
@@ -39,13 +38,60 @@ export default function PortfolioPage() {
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [view, setView] = useState<"holdings" | "analysis">("holdings");
 
+  // Guest (logged-out) portfolio: read from this device's localStorage
+  // (lib/guestData.ts) instead of the DB-backed /api/portfolio, which
+  // requires a session. P&L is computed client-side from live quotes —
+  // there's no guest equivalent of /api/portfolio/analysis's XIRR/sector
+  // breakdown, so the Analysis tab is hidden for guests (see the view
+  // toggle below).
+  const [guestHoldings, setGuestHoldings] = useState<GuestHolding[]>([]);
+  useEffect(() => {
+    if (!user) setGuestHoldings(getGuestHoldings());
+  }, [user]);
+  const guestTickers = guestHoldings.map((h) => h.ticker).join(",");
+  const { data: guestQuotes } = useSWR(
+    !user && guestTickers ? `/api/stocks/batch-quotes?tickers=${encodeURIComponent(guestTickers)}` : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir(key === "ticker" ? "asc" : "desc"); }
   }
 
-  const summary = data?.summary;
-  const holdings = data?.holdings || [];
+  let summary = data?.summary;
+  let holdings = data?.holdings || [];
+  if (!user) {
+    let invested = 0, value = 0;
+    holdings = guestHoldings.map((h) => {
+      const q = guestQuotes?.[h.ticker] || {};
+      const price = q.current_price ?? h.avg_price;
+      const hInvested = h.shares * h.avg_price;
+      const hValue = h.shares * price;
+      invested += hInvested;
+      value += hValue;
+      return {
+        id: h.id,
+        ticker: h.ticker,
+        company_name: q.company_name || h.company_name || h.ticker,
+        shares: h.shares,
+        avg_price: h.avg_price,
+        current_price: Math.round(price * 100) / 100,
+        invested: Math.round(hInvested * 100) / 100,
+        current_value: Math.round(hValue * 100) / 100,
+        pnl: Math.round((hValue - hInvested) * 100) / 100,
+        pnl_pct: hInvested ? Math.round(((hValue - hInvested) / hInvested) * 10000) / 100 : 0,
+      };
+    });
+    summary = {
+      invested: Math.round(invested * 100) / 100,
+      value: Math.round(value * 100) / 100,
+      pnl: Math.round((value - invested) * 100) / 100,
+      pnl_pct: invested ? Math.round(((value - invested) / invested) * 10000) / 100 : 0,
+      count: holdings.length,
+    };
+  }
   const sortedHoldings = [...holdings].sort((a: any, b: any) => {
     if (sortKey === "ticker") {
       return sortDir === "asc" ? a.ticker.localeCompare(b.ticker) : b.ticker.localeCompare(a.ticker);
@@ -56,21 +102,29 @@ export default function PortfolioPage() {
   });
 
   async function add() {
-    if (!user) {
-      router.push("/login");
-      return;
-    }
     if (!form.ticker || !form.shares || !form.avg_price || !form.buy_date) return;
     setBusy(true);
     try {
-      await post("/api/portfolio", {
-        ticker: form.ticker,
-        shares: parseFloat(form.shares),
-        avg_price: parseFloat(form.avg_price),
-        buy_date: form.buy_date,
-      });
+      if (!user) {
+        // Guest: saved on-device (lib/guestData.ts), synced to the account
+        // automatically the first time this browser logs in or registers.
+        addGuestHolding({
+          ticker: form.ticker,
+          shares: parseFloat(form.shares),
+          avg_price: parseFloat(form.avg_price),
+          buy_date: form.buy_date,
+        });
+        setGuestHoldings(getGuestHoldings());
+      } else {
+        await post("/api/portfolio", {
+          ticker: form.ticker,
+          shares: parseFloat(form.shares),
+          avg_price: parseFloat(form.avg_price),
+          buy_date: form.buy_date,
+        });
+        mutate("/api/portfolio");
+      }
       setForm({ ticker: "", shares: "", avg_price: "", buy_date: "" });
-      mutate("/api/portfolio");
       toast({ variant: "success", title: "Added to portfolio", description: form.ticker });
     } catch (e) {
       toast({ variant: "error", title: "Couldn't add holding", description: (e as Error).message });
@@ -79,7 +133,7 @@ export default function PortfolioPage() {
     }
   }
 
-  async function remove(id: number) {
+  async function remove(id: number | string) {
     const ok = await confirm({
       title: "Remove this holding?",
       description: "This will remove it from your portfolio permanently.",
@@ -87,6 +141,12 @@ export default function PortfolioPage() {
       destructive: true,
     });
     if (!ok) return;
+    if (!user) {
+      removeGuestHolding(String(id));
+      setGuestHoldings(getGuestHoldings());
+      toast({ variant: "success", title: "Holding removed" });
+      return;
+    }
     const result = await deleteTolerant404(`/api/portfolio/${id}`);
     if (!result.ok) {
       toast({ variant: "error", title: "Couldn't remove holding", description: result.message });
@@ -97,35 +157,34 @@ export default function PortfolioPage() {
   }
 
   if (authLoading) return null;
-  if (!user) {
-    return (
-      <div className="mx-auto max-w-3xl space-y-6 animate-fade-up">
-        <PageHeader />
-        <LoginPrompt what="your portfolio" />
-      </div>
-    );
-  }
 
   const isEmpty = holdings.length === 0;
+  // Analysis (XIRR vs Nifty, sector/cap buckets, AI review) is computed
+  // server-side against a session's stored holdings — no guest equivalent,
+  // so the tab is hidden until sign-in rather than showing a broken/empty view.
+  const showAnalysisTab = !!user;
 
   return (
     <div className={clsx(isEmpty && "mx-auto max-w-3xl", "space-y-6 animate-fade-up")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PageHeader />
-        <div className="flex gap-2">
-          {([["holdings", "Holdings"], ["analysis", "Analysis"]] as const).map(([key, label]) => (
-            <button
-              key={key}
-              onClick={() => setView(key)}
-              className={view === key ? "seg seg-on" : "seg seg-off"}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {showAnalysisTab && (
+          <div className="flex gap-2">
+            {([["holdings", "Holdings"], ["analysis", "Analysis"]] as const).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setView(key)}
+                className={view === key ? "seg seg-on" : "seg seg-off"}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+      {!user && <GuestBanner />}
 
-      {view === "analysis" ? (
+      {showAnalysisTab && view === "analysis" ? (
         <AnalysisPanel />
       ) : (
       <>
@@ -267,6 +326,22 @@ function PageHeader() {
         <Briefcase className="h-4 w-4 text-saffron" />
       </div>
       <h1 className="font-display text-2xl font-semibold tracking-tight">Portfolio</h1>
+    </div>
+  );
+}
+
+/** Shown only when logged out — this portfolio is on-device only
+ * (lib/guestData.ts) until the user signs in, at which point it's imported
+ * into their account via POST /api/auth/sync-guest-data (see lib/auth.tsx). */
+function GuestBanner() {
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-border bg-raised/40 px-4 py-2.5 text-xs text-muted">
+      <Info className="h-3.5 w-3.5 shrink-0 text-saffron" />
+      <span>
+        Saved on this device only — P&amp;L only, no XIRR/analysis yet.{" "}
+        <Link href="/login" className="font-medium text-saffron hover:underline">Sign in</Link>{" "}
+        to sync it to your account and unlock full analysis.
+      </span>
     </div>
   );
 }

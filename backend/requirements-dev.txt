@@ -1,0 +1,5 @@
+# Dev-only extras — not installed in the production Docker image
+# (backend/Dockerfile only installs requirements.txt).
+-r requirements.txt
+
+faker>=33.0.0   # used by app/db/seed.py to generate throwaway test users

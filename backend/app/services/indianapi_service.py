@@ -923,6 +923,58 @@ def _fund_name_tokens(name: str) -> set[str]:
     return {w for w in _normalize_fund_name(name).split() if w not in _MF_QUALIFIER_WORDS}
 
 
+def _fund_name_core_words(name: str) -> list[str]:
+    """Ordered, qualifier-word-stripped tokens — for building a short search
+    query. Unlike _fund_name_tokens()'s set (used for matching), word order
+    matters here since this feeds a search query string."""
+    return [w for w in _normalize_fund_name(name).split() if w not in _MF_QUALIFIER_WORDS]
+
+
+async def _search_mf_id(fund_name: str) -> str | None:
+    """Fallback fund-id lookup via IndianAPI's undocumented, quota-costing
+    /mutual_fund_search — used only when the free static all_mf.json list
+    (~251 funds) has no match. Indexes IndianAPI's full fund database
+    (observed ids up to MF016118+, vs ~251 in the static list), covering
+    popular funds the free list misses. The endpoint is flaky: some valid-
+    looking queries return {"error": ...} with HTTP 200 rather than raising,
+    so that shape is checked for explicitly, with a shorter retry query.
+    Cached — including confirmed misses via an empty-string sentinel — so a
+    given fund only ever costs quota once per 24h."""
+    ck = f"indianapi:mf_search_id:{fund_name.lower()}"
+    hit = cache.get(ck)
+    if hit is not None:
+        return hit or None   # "" sentinel = confirmed no match
+
+    words = _fund_name_core_words(fund_name)
+    target_tokens = _fund_name_tokens(fund_name)
+    resolved: str | None = None
+
+    for n in (2, 1):   # try a 2-word query first (most reliable in testing), then 1-word
+        if resolved or len(words) < n:
+            continue
+        data = await _get("/mutual_fund_search", {"query": " ".join(words[:n])})
+        if not isinstance(data, list) or not data:
+            continue   # {"error": ...} dict, empty list, or None — try the next query
+        exact = next(
+            (f for f in data if _normalize_fund_name(f.get("schemeName") or "") == _normalize_fund_name(fund_name)),
+            None,
+        )
+        if exact:
+            resolved = exact.get("id")
+            break
+        candidates = {
+            f["id"] for f in data
+            if f.get("id") and (t := _fund_name_tokens(f.get("schemeName") or ""))
+            and (t <= target_tokens or target_tokens <= t)
+        }
+        if len(candidates) == 1:   # fail safe on ambiguity — same philosophy as _ticker_for_holding_name
+            resolved = candidates.pop()
+            break
+
+    cache.set(ck, resolved or "", "mf_list")
+    return resolved
+
+
 async def _mf_id_for(fund_name: str) -> str | None:
     funds = await _get_all_mf()
     target = _normalize_fund_name(fund_name)
@@ -935,13 +987,15 @@ async def _mf_id_for(fund_name: str) -> str | None:
     # 2) Token-set match with qualifier words (Plan/Growth/Direct/...) stripped
     #    from both sides, so word order/position differences don't matter.
     target_tokens = _fund_name_tokens(fund_name)
-    if not target_tokens:
-        return None
-    for f in funds:
-        candidate_tokens = _fund_name_tokens(f.get("mfName") or "")
-        if candidate_tokens and (candidate_tokens <= target_tokens or target_tokens <= candidate_tokens):
-            return f.get("id")
-    return None
+    if target_tokens:
+        for f in funds:
+            candidate_tokens = _fund_name_tokens(f.get("mfName") or "")
+            if candidate_tokens and (candidate_tokens <= target_tokens or target_tokens <= candidate_tokens):
+                return f.get("id")
+    # 3) Free static list has no match (only ~251 funds, skewed toward debt/
+    #    floater funds) — fall back to the quota-costing search endpoint,
+    #    which indexes IndianAPI's real, much larger fund database.
+    return await _search_mf_id(fund_name)
 
 
 _CURATED_MF_CACHE_KEY = "indianapi:mutual_funds"

@@ -397,7 +397,7 @@ export function ConcallCard({ ticker }: { ticker: string }) {
           <div className="rounded-xl border border-border bg-raised/40 px-5 py-6 text-center">
             <Mic2 className="mx-auto mb-3 h-8 w-8 text-muted/40" />
             <p className="text-sm font-medium text-muted">Quarterly data unavailable</p>
-            <p className="mt-1 text-xs text-muted/60">IndianAPI may not carry financials for this stock.</p>
+            <p className="mt-1 text-xs text-muted/60">Financials aren't available for this stock yet.</p>
           </div>
         )}
 
@@ -407,7 +407,6 @@ export function ConcallCard({ ticker }: { ticker: string }) {
             {data.sector && (
               <div className="flex items-center gap-2 mb-2">
                 <Badge className="bg-raised text-muted ring-1 ring-border text-[10px]">{data.sector}</Badge>
-                <span className="text-[10px] text-muted">· AI context: financial data + earnings news headlines</span>
               </div>
             )}
 
@@ -416,7 +415,7 @@ export function ConcallCard({ ticker }: { ticker: string }) {
             ))}
 
             <p className="pt-1 text-[10px] text-muted">
-              Financials via IndianAPI · AI synthesis by AEGIS (Groq/Llama-3.3) · News via Google News RSS · Not investment advice
+              Not investment advice
             </p>
 
             {/* ── Document Analyzer CTA ── */}

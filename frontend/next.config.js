@@ -37,4 +37,16 @@ const nextConfig = {
     ];
   },
 };
-module.exports = nextConfig;
+
+// Wraps the config with Sentry's build plugin (source map upload, etc).
+// Safe with no Sentry account yet — org/project undefined and no
+// SENTRY_AUTH_TOKEN just skips source map upload with a build-time warning,
+// it doesn't fail the build. Actual error capture (instrumentation*.ts /
+// sentry.*.config.ts) is separately gated on NEXT_PUBLIC_SENTRY_DSN.
+const { withSentryConfig } = require("@sentry/nextjs");
+module.exports = withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  silent: true,
+  disableLogger: true,
+});

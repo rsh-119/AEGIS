@@ -7,11 +7,10 @@ import {
   useEffect,
   useState,
 } from "react";
+import { tryRefresh } from "./api";
+import { guestDataPayload, hasGuestData, clearGuestData } from "./guestData";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
-const ACCESS_KEY  = "aegis_access_token";
-const REFRESH_KEY = "aegis_refresh_token";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -21,20 +20,19 @@ export interface User {
   username: string;
   is_active: boolean;
   is_admin: boolean;
+  is_pro: boolean;
   created_at: string;
 }
 
 interface AuthState {
   user: User | null;
-  accessToken: string | null;
   isLoading: boolean;
 }
 
 interface AuthContextValue extends AuthState {
   login:    (email: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
-  logout:   () => void;
-  getToken: () => string | null;   // always returns the freshest access token
+  logout:   () => Promise<void>;
   /** Re-fetch /me and swap it into state — call after editing profile details
    * so the nav/account page reflect the change without a full re-login. */
   refreshUser: () => Promise<void>;
@@ -47,50 +45,20 @@ const AuthCtx = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({
     user: null,
-    accessToken: null,
     isLoading: true,
   });
 
-  // ── Bootstrap: restore token from localStorage, validate via /me ──────────
+  // ── Bootstrap: auth lives in httpOnly cookies, so just ask /me. If the
+  // access cookie is expired, /me 401s — try one cookie-based refresh (which
+  // rotates both cookies) and retry once before concluding logged-out. ──────
   useEffect(() => {
-    const access  = localStorage.getItem(ACCESS_KEY);
-    const refresh = localStorage.getItem(REFRESH_KEY);
-    if (!access && !refresh) {
-      setState(s => ({ ...s, isLoading: false }));
-      return;
-    }
     (async () => {
-      let token = access;
-      // Try existing access token first; refresh if expired
-      if (token) {
-        const me = await _fetchMe(token);
-        if (me) {
-          setState({ user: me, accessToken: token, isLoading: false });
-          return;
-        }
+      let me = await _fetchMe();
+      if (!me) {
+        const ok = await tryRefresh();
+        if (ok) me = await _fetchMe();
       }
-      // Access token invalid/expired — try refresh
-      if (refresh) {
-        try {
-          const res = await fetch(`${API}/api/auth/refresh`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ refresh_token: refresh }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            localStorage.setItem(ACCESS_KEY, data.access_token);
-            localStorage.setItem(REFRESH_KEY, data.refresh_token);
-            const me = await _fetchMe(data.access_token);
-            setState({ user: me, accessToken: data.access_token, isLoading: false });
-            return;
-          }
-        } catch { /* fall through */ }
-      }
-      // Both failed — clear and show login
-      localStorage.removeItem(ACCESS_KEY);
-      localStorage.removeItem(REFRESH_KEY);
-      setState({ user: null, accessToken: null, isLoading: false });
+      setState({ user: me, isLoading: false });
     })();
   }, []);
 
@@ -99,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const res = await fetch(`${API}/api/auth/login`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
     });
@@ -106,17 +75,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail ?? "Login failed");
     }
-    const data = await res.json();
-    localStorage.setItem(ACCESS_KEY, data.access_token);
-    localStorage.setItem(REFRESH_KEY, data.refresh_token);
-    const me = await _fetchMe(data.access_token);
-    setState({ user: me, accessToken: data.access_token, isLoading: false });
+    const user = await res.json();
+    setState({ user, isLoading: false });
+    await _syncGuestData();
   }, []);
 
   const register = useCallback(
     async (email: string, username: string, password: string) => {
       const res = await fetch(`${API}/api/auth/register`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, username, password }),
       });
@@ -124,34 +92,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail ?? "Registration failed");
       }
-      const data = await res.json();
-      localStorage.setItem(ACCESS_KEY, data.access_token);
-      localStorage.setItem(REFRESH_KEY, data.refresh_token);
-      const me = await _fetchMe(data.access_token);
-      setState({ user: me, accessToken: data.access_token, isLoading: false });
+      const user = await res.json();
+      setState({ user, isLoading: false });
+      await _syncGuestData();
     },
     []
   );
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(ACCESS_KEY);
-    localStorage.removeItem(REFRESH_KEY);
-    setState({ user: null, accessToken: null, isLoading: false });
+  const logout = useCallback(async () => {
+    // Stateful now (blocklists the current access token server-side) — must
+    // actually hit the endpoint, not just clear local state.
+    try {
+      await fetch(`${API}/api/auth/logout`, { method: "POST", credentials: "include" });
+    } catch {
+      // best-effort — cookies are httpOnly so we can't clear them client-side
+      // regardless, and the user should see themselves logged out either way.
+    }
+    setState({ user: null, isLoading: false });
   }, []);
 
-  const getToken = useCallback(() => {
-    return state.accessToken ?? localStorage.getItem(ACCESS_KEY);
-  }, [state.accessToken]);
-
   const refreshUser = useCallback(async () => {
-    const token = state.accessToken ?? localStorage.getItem(ACCESS_KEY);
-    if (!token) return;
-    const me = await _fetchMe(token);
+    const me = await _fetchMe();
     if (me) setState(s => ({ ...s, user: me }));
-  }, [state.accessToken]);
+  }, []);
 
   return (
-    <AuthCtx.Provider value={{ ...state, login, register, logout, getToken, refreshUser }}>
+    <AuthCtx.Provider value={{ ...state, login, register, logout, refreshUser }}>
       {children}
     </AuthCtx.Provider>
   );
@@ -165,14 +131,36 @@ export function useAuth(): AuthContextValue {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-async function _fetchMe(token: string): Promise<User | null> {
+async function _fetchMe(): Promise<User | null> {
   try {
-    const res = await fetch(`${API}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const res = await fetch(`${API}/api/auth/me`, { credentials: "include" });
     if (!res.ok) return null;
     return res.json();
   } catch {
     return null;
+  }
+}
+
+/** Imports this browser's guest holdings/watchlist (lib/guestData.ts) into
+ * the account that just logged in or registered — best-effort, and
+ * deliberately silent (no toast) so a sync hiccup never overshadows a
+ * successful login. Only clears localStorage on a confirmed 2xx; leaves it
+ * intact otherwise so the same data gets retried on the next login (see
+ * sync-guest-data's docstring in backend/app/routers/auth.py). Portfolio/
+ * watchlist pages pick up the imported rows on their own — their SWR keys
+ * go from `null` to `/api/portfolio` / `/api/watchlist` the moment `user`
+ * is set above, which fetches fresh. */
+async function _syncGuestData(): Promise<void> {
+  if (!hasGuestData()) return;
+  try {
+    const res = await fetch(`${API}/api/auth/sync-guest-data`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(guestDataPayload()),
+    });
+    if (res.ok) clearGuestData();
+  } catch {
+    // network error — guest data stays put, retried next successful login
   }
 }

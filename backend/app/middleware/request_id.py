@@ -36,12 +36,15 @@ _SLOW_THRESHOLD = 8.0    # seconds — warn if stock/AI endpoints exceed this
 _FAST_THRESHOLD = 2.0    # seconds — warn for all other endpoints
 
 
-def _normalise_path(path: str) -> str:
-    """Collapse dynamic path segments to avoid metric cardinality explosion."""
+def _collapse_unmatched_path(path: str) -> str:
+    """Fallback heuristic for paths with no resolved route (true 404s only —
+    e.g. a typo'd URL structure) — _normalise_path prefers the real FastAPI
+    route template below, which doesn't need this guessing for any matched
+    route."""
     parts = path.split("/")
     out   = []
     _DYNAMIC_PARENTS = frozenset({
-        "stock", "index", "sector", "mf", "portfolio", "watchlist", "document"
+        "stocks", "index", "sector", "mf", "portfolio", "watchlist", "document"
     })
     for i, part in enumerate(parts):
         if i > 0 and out and out[-1].lstrip("/") in _DYNAMIC_PARENTS:
@@ -49,6 +52,20 @@ def _normalise_path(path: str) -> str:
         else:
             out.append(part)
     return "/".join(out)
+
+
+def _normalise_path(request: Request) -> str:
+    """Prefer the FastAPI-matched route template (e.g. "/api/mf/{scheme_code}"
+    or "/api/mf/highlights") — set in request.scope by Starlette's router once
+    a route matches, so real sub-routes and dynamic ID segments are always
+    distinguished correctly, with zero guessing. Falls back to a heuristic
+    collapse only for genuinely unmatched paths (404s from a bad URL
+    structure), which have no resolved route in scope."""
+    route = request.scope.get("route")
+    path_format = getattr(route, "path", None)
+    if path_format:
+        return path_format
+    return _collapse_unmatched_path(request.url.path)
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
@@ -73,7 +90,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
             if not skip:
                 active_requests.dec()
-                path = _normalise_path(request.url.path)
+                path = _normalise_path(request)
                 http_requests_total.inc(
                     method=request.method, path=path, status=status
                 )

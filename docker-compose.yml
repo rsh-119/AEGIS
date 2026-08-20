@@ -10,7 +10,11 @@ services:
       POSTGRES_PASSWORD: aegis
       POSTGRES_DB:       aegis
     ports:
-      - "5433:5432"
+      # Host 5433 is already held by a native Postgres install on this
+      # machine (not this container) — remapped to 5434 to avoid the clash.
+      # Internal container-to-container traffic (backend's `db:5432`) is
+      # unaffected either way.
+      - "5434:5432"
     volumes:
       - aegis_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -25,7 +29,9 @@ services:
     image: redis:7-alpine
     command: redis-server --save 60 1 --loglevel warning
     ports:
-      - "6379:6379"
+      # Host 6379 is already held by a native Redis install on this
+      # machine — remapped to 6380 to avoid the clash.
+      - "6380:6379"
     volumes:
       - aegis_redis:/data
     healthcheck:

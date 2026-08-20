@@ -233,7 +233,7 @@ export function ShareholdingPie({ promoterPct, institutionPct, ticker }: StaticP
       <p className="text-[10px] text-muted/60 leading-relaxed">
         {hasHistory
           ? <>Source: <a href={data?.source_url} target="_blank" rel="noreferrer" className="underline hover:text-muted">BSE India</a> · SEBI-mandated quarterly disclosure</>
-          : "Source: IndianAPI · Promoters = insider holding reported by exchange."}
+          : "Promoters = insider holding reported by exchange."}
       </p>
     </div>
   );

@@ -67,3 +67,80 @@ def close_at(closes: list[tuple[date, float]], d: date) -> float | None:
         else:
             break
     return best
+
+
+def simulate_investment(
+    closes: list[tuple[date, float]],
+    mode: str,               # "sip" | "lumpsum"
+    amount: float,
+    start_date: str = "",    # YYYY-MM-DD; blank = earliest available price
+) -> dict:
+    """SIP (one purchase per calendar month) or lumpsum (single purchase)
+    simulation from start_date to the latest point in `closes`, plus XIRR.
+    `closes` is any sorted-ascending (date, price) series — stock closes via
+    closes_map(), or a mutual fund's NAV history — the math doesn't care
+    which. Extracted here (next to xirr()/close_at()) so the mutual-fund
+    returns calculator (routers/mf.py) can reuse the exact same simulation
+    the stock returns calculator (routers/stocks.py) already does inline,
+    instead of a second copy of this logic.
+    Raises ValueError on bad input — caller maps that to an HTTP 400/404."""
+    if mode not in ("sip", "lumpsum"):
+        raise ValueError("mode must be 'sip' or 'lumpsum'")
+    if amount <= 0:
+        raise ValueError("amount must be positive")
+    if len(closes) < 2:
+        raise ValueError("not enough price history to calculate returns")
+
+    earliest, latest = closes[0][0], closes[-1][0]
+    if start_date:
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        except ValueError:
+            raise ValueError("start_date must be YYYY-MM-DD")
+    else:
+        start = earliest
+    start = max(start, earliest)
+    if start >= latest:
+        raise ValueError("start_date must be before the latest available price date")
+
+    current_price = closes[-1][1]
+
+    if mode == "lumpsum":
+        entry_price = close_at(closes, start)
+        units = amount / entry_price if entry_price else 0.0
+        invested = amount
+        current_value = units * current_price
+        flows: list[tuple[date, float]] = [(start, -amount), (latest, current_value)]
+    else:  # sip
+        flows = []
+        units = 0.0
+        invested = 0.0
+        d = start
+        while d <= latest:
+            px = close_at(closes, d)
+            if px:
+                units += amount / px
+                invested += amount
+                flows.append((d, -amount))
+            month = d.month + 1
+            year = d.year + (month - 1) // 12
+            month = (month - 1) % 12 + 1
+            day = min(d.day, 28)   # sidesteps month-length overflow (e.g. Jan 31 -> Feb 31)
+            d = date(year, month, day)
+        current_value = units * current_price
+        flows.append((latest, current_value))
+
+    xirr_pct = xirr(flows)
+    absolute_return_pct = round((current_value - invested) / invested * 100, 2) if invested else None
+
+    return {
+        "mode": mode,
+        "start_date": start.isoformat(),
+        "as_of": latest.isoformat(),
+        "invested": round(invested, 2),
+        "current_value": round(current_value, 2),
+        "units": round(units, 4),
+        "current_price": current_price,
+        "absolute_return_pct": absolute_return_pct,
+        "xirr_pct": xirr_pct,
+    }

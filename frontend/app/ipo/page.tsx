@@ -523,7 +523,7 @@ export default function IpoPage() {
       )}
 
       <p className="text-right font-mono text-[10px] uppercase tracking-[0.14em] text-muted/60">
-        Source: SEBI filings via IndianAPI · refreshed hourly
+        Source: SEBI filings · refreshed hourly
       </p>
     </div>
   );

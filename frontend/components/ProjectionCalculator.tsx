@@ -13,8 +13,13 @@ const DEFAULT_RATE = "12";
 /** Forward-looking "if I start today" SIP/lumpsum projection — assumed
  * constant annual return, no dependency on any stock's real price history.
  * Self-contained: drops into the stock page (inside ReturnsCalculator's
- * "Project forward" mode) and the standalone /calculator page identically. */
-export function ProjectionCalculator({ className }: { className?: string }) {
+ * "Project forward" mode) and the standalone /calculator page identically.
+ *
+ * `compact` forces single-column input/result grids regardless of viewport
+ * width — for embedding in a narrow sidebar column, where Tailwind's `sm:`
+ * breakpoint (keyed off viewport, not container) would otherwise still pack
+ * 3-4 columns into a ~300px card. */
+export function ProjectionCalculator({ className, compact = false }: { className?: string; compact?: boolean }) {
   const [mode, setMode] = useState<"sip" | "lumpsum">("sip");
   const [amount, setAmount] = useState("5000");
   const [years, setYears] = useState("5");
@@ -38,50 +43,81 @@ export function ProjectionCalculator({ className }: { className?: string }) {
 
   return (
     <div className={className}>
-      <div className="mb-4 flex w-fit gap-1 rounded-lg bg-raised p-1">
-        {(["sip", "lumpsum"] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => switchMode(m)}
-            className={clsx("seg", mode === m ? "seg-on" : "seg-off")}
-          >
-            {m === "sip" ? "Monthly SIP" : "One-time"}
-          </button>
-        ))}
+      <div className={clsx("mb-4 flex items-start gap-4", compact ? "flex-wrap justify-between" : "w-fit")}>
+        <div className="flex w-fit gap-1 rounded-lg bg-raised p-1">
+          {(["sip", "lumpsum"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => switchMode(m)}
+              className={clsx("seg", mode === m ? "seg-on" : "seg-off")}
+            >
+              {m === "sip" ? "Monthly SIP" : "One-time"}
+            </button>
+          ))}
+        </div>
+
+        {compact && (
+          <div>
+            <Label className="mb-1.5 block text-right">Years from today</Label>
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              <Input
+                type="number" min={1} max={30} step="any" value={years}
+                onChange={(e) => setYears(e.target.value)}
+                className="w-14 shrink-0 px-2 text-center"
+              />
+              {YEAR_PRESETS.map((y) => (
+                <button
+                  key={y}
+                  type="button"
+                  onClick={() => setYears(String(y))}
+                  className={clsx("seg", Number(years) === y ? "seg-on" : "seg-off")}
+                >
+                  {y}y
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className={clsx("grid", compact ? "grid-cols-2 gap-3" : "gap-4 sm:grid-cols-3")}>
         <div>
-          <Label className="mb-1.5 block">{mode === "sip" ? "Monthly amount (₹)" : "Amount (₹)"}</Label>
+          <Label className="mb-1.5 block truncate">
+            {compact ? "Amount (₹)" : mode === "sip" ? "Monthly amount (₹)" : "Amount (₹)"}
+          </Label>
           <Input type="number" min={1} step="any" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </div>
         <div>
-          <Label className="mb-1.5 block">Expected annual return (%)</Label>
+          <Label className="mb-1.5 block truncate">{compact ? "Return (%)" : "Expected annual return (%)"}</Label>
           <Input type="number" min={0} step="any" value={rate} onChange={(e) => setRate(e.target.value)} />
         </div>
-        <div>
-          <Label className="mb-1.5 block">Years from today</Label>
-          <Input type="number" min={1} max={30} step="any" value={years} onChange={(e) => setYears(e.target.value)} />
-        </div>
+        {!compact && (
+          <div>
+            <Label className="mb-1.5 block">Years from today</Label>
+            <Input type="number" min={1} max={30} step="any" value={years} onChange={(e) => setYears(e.target.value)} />
+          </div>
+        )}
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {YEAR_PRESETS.map((y) => (
-          <button
-            key={y}
-            type="button"
-            onClick={() => setYears(String(y))}
-            className={clsx("seg", Number(years) === y ? "seg-on" : "seg-off")}
-          >
-            {y}y
-          </button>
-        ))}
-      </div>
+      {!compact && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {YEAR_PRESETS.map((y) => (
+            <button
+              key={y}
+              type="button"
+              onClick={() => setYears(String(y))}
+              className={clsx("seg", Number(years) === y ? "seg-on" : "seg-off")}
+            >
+              {y}y
+            </button>
+          ))}
+        </div>
+      )}
 
       {result && (
-        <div className="mt-5 border-t border-border pt-5">
-          <div className="grid gap-4 sm:grid-cols-4">
+        <div className={clsx("border-t border-border", compact ? "mt-4 pt-4" : "mt-5 pt-5")}>
+          <div className={clsx("grid gap-4", compact ? "grid-cols-2" : "sm:grid-cols-4")}>
             <div>
               <p className="text-xs text-muted">Total invested</p>
               <p className="nums mt-1 text-lg font-semibold text-fg">{inr(result.invested)}</p>

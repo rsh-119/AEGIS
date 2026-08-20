@@ -25,12 +25,20 @@ const GROUPS: { title: string; items: Feature[] }[] = [
     ],
   },
   {
+    title: "Research tools",
+    items: [
+      { label: "Price forecast (Holt / XGBoost / LightGBM)", free: false, pro: true },
+      { label: "Technical indicators (RSI, MACD, Bollinger & more)", free: false, pro: true },
+      { label: "Analyst price targets & revenue/EPS estimates", free: false, pro: true },
+    ],
+  },
+  {
     title: "AEGIS AI",
     items: [
       { label: "Ask AI (chat, per stock & portfolio)", free: "5 questions/day", pro: "Unlimited" },
       { label: "AI stock health checks", free: true, pro: true },
-      { label: "AI concall summaries", free: false, pro: true },
-      { label: "Chat with any PDF / document", free: false, pro: true },
+      { label: "Chat with any PDF via Ask AI", free: true, pro: true },
+      { label: "Quarterly concall analysis (per-stock, lookup & PDF analyzer)", free: false, pro: true },
       { label: "Priority AI queue — faster responses", free: false, pro: true },
     ],
   },

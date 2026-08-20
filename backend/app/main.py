@@ -41,6 +41,19 @@ settings = get_settings()
 configure_logging(app_env=settings.app_env, log_level=settings.log_level)
 logger = logging.getLogger(__name__)
 
+# Error tracking — no-op until SENTRY_DSN is set (same fail-closed-until-
+# configured pattern as admin_api_key). FastAPI/Starlette integrations
+# auto-enable once sentry-sdk detects those packages are installed.
+if settings.sentry_dsn:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.app_env,
+        traces_sample_rate=0.1,   # 10% of requests get performance tracing
+        send_default_pii=False,   # don't attach request bodies/headers/user IPs
+    )
+    logger.info("Sentry error tracking enabled — env=%s", settings.app_env)
+
 
 async def _prewarm():
     """Warm the slowest caches in background so the first user request is fast.
@@ -72,9 +85,25 @@ async def _prewarm():
         logger.warning("Cache: pre-warm failed: %s", exc)
 
 
+DEFAULT_JWT_SECRET = "change-me-in-production-use-openssl-rand-hex-32"  # matches config.py's default
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Aegis API starting — env=%s", settings.app_env)
+
+    # Fail fast — before touching Redis/DB — if a production deploy is about
+    # to sign every user's session with a public, guessable secret.
+    if settings.app_env == "production" and settings.jwt_secret_key == DEFAULT_JWT_SECRET:
+        raise RuntimeError(
+            "FATAL: JWT_SECRET_KEY is still the default placeholder while APP_ENV=production. "
+            "Set a real secret (e.g. `openssl rand -hex 32`) before starting."
+        )
+    if settings.jwt_secret_key == DEFAULT_JWT_SECRET:
+        logger.warning("JWT_SECRET_KEY is the default placeholder — fine for local dev, must not ship to prod.")
+    elif len(settings.jwt_secret_key) < 32:
+        logger.warning("JWT_SECRET_KEY is set but shorter than 32 chars — consider `openssl rand -hex 32`.")
+
     cache.connect(settings.redis_url)
     await init_db()
     if not (settings.groq_api_key or settings.nvidia_api_key):

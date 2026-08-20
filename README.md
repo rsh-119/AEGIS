@@ -56,7 +56,7 @@
 | **Valuation Charts** | Visual comparison of current vs. historical valuation multiples |
 | **Shareholding Pattern** | Promoter, FII, DII, retail breakdown with interactive pie chart |
 | **Peer Benchmarking** | Compare any stock across its sector on key financial ratios side-by-side |
-| **News + Sentiment** | Latest headlines scored with VADER sentiment analysis (no NewsAPI key required) |
+| **News + Sentiment** | Latest headlines scored with VADER sentiment analysis and split into positive/negative, with an overall sentiment badge (no NewsAPI key required) |
 | **Credit Ratings & Annual Reports** | Latest credit rating actions and direct links to filed annual reports |
 | **Company Logos & Corporate Actions** | Auto-resolved stock logos plus dividends/splits/bonus history |
 | **Mutual Funds & ETFs** | Popular, top-gaining, and top-losing funds/ETFs across 1Y/3Y/5Y horizons via AMFI data, with holdings breakdown and similar-fund suggestions |
@@ -66,9 +66,11 @@
 |---|---|
 | **Portfolio Tracker** | Add holdings with buy price and quantity; see live P&L and XIRR |
 | **Watchlist** | Track stocks with custom target prices and alerts |
+| **Stock Quick View** | Clicking a watchlist row opens a lightweight preview (price, chart, key stats, related news) instead of jumping straight to the full research page — a "Detail view" link goes there when you need it |
 | **Price Alerts** | Set high/low price triggers with notification support |
 | **Live Price Polling** | 30s cached-quote polling per stock page — tuned to stay within IndianAPI's metered quota |
 | **Sortable Tables** | Bidirectional column sorting on watchlist, portfolio, and commodities tables |
+| **Returns Calculator** | Project a monthly SIP or lump-sum investment forward at an assumed annual return |
 
 ### Platform
 | Feature | Description |
@@ -121,10 +123,12 @@ aegis/
 │   └── .env.example
 │
 ├── frontend/                       # Next.js 15 application
-│   ├── app/                        # Pages: /, /stock/[ticker], /market, /mf,
-│   │                               # /portfolio, /watchlist, /peers, /concall,
+│   ├── app/                        # Pages: /, /stock/[ticker] (+/preview quick
+│   │                               # view), /market, /mf (+ /[code]), /portfolio,
+│   │                               # /watchlist, /peers, /concall (+ /document),
 │   │                               # /ask, /alerts, /sector/[name], /index/[slug],
-│   │                               # /ipo, /commodities, /login, /register
+│   │                               # /ipo, /commodities, /calculator, /pricing,
+│   │                               # /account, /admin, /login, /register
 │   ├── components/                 # Nav, SearchBox, PriceChart, HealthCard,
 │   │                               # ForecastCard, TechnicalsCard, PeerComparison,
 │   │                               # ConcallCard, AskAI, MarketBar, StockLogo,
@@ -161,7 +165,7 @@ aegis/
 docker compose up -d db redis
 ```
 
-This starts PostgreSQL on port `5433` and Redis on `6379`. Tables are auto-created on first backend startup.
+This starts PostgreSQL on port `5434` and Redis on `6379`. Schema is created/migrated automatically on first backend startup via Alembic (see `backend/MIGRATIONS.md`); to also load realistic sample data, run `python -m app.db.seed` from `backend/` afterward.
 
 ---
 
@@ -217,7 +221,7 @@ docker compose up --build
 | Frontend | http://localhost:3000 |
 | Backend API | http://localhost:8000 |
 | API Docs (Swagger) | http://localhost:8000/docs |
-| PostgreSQL | localhost:5433 |
+| PostgreSQL | localhost:5434 |
 | Redis | localhost:6379 |
 
 To also start the monitoring stack (Prometheus + Alertmanager):

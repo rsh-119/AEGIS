@@ -1,0 +1,15 @@
+# Tells Grafana to auto-load any dashboard JSON dropped into
+# /var/lib/grafana/dashboards (mounted from ../../dashboards in
+# docker-compose.monitoring.yml) — no manual "import dashboard" click needed.
+apiVersion: 1
+
+providers:
+  - name: Aegis
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

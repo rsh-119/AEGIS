@@ -13,6 +13,7 @@ import {
   Tooltip, Legend, CartesianGrid, ReferenceLine,
 } from "recharts";
 import { Card } from "@/components/ui/card";
+import { ReturnsCalculator } from "@/components/ReturnsCalculator";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Period = "1y" | "3y" | "5y" | "all";
@@ -294,6 +295,8 @@ function MFDetailView({ code }: { code: number }) {
           <p className="mt-1.5 text-sm font-bold text-fg">{data.scheme_type || "—"}</p>
         </div>
       </div>
+
+      <ReturnsCalculator apiUrl={`/api/mf/${code}/calculator`} />
 
       {/* Comparison chart + Fund holdings, side by side on larger screens
           (holdings are best-effort — only ~251 funds match IndianAPI's

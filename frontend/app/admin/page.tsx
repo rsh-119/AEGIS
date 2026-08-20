@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import useSWR from "swr";
-import { fetcher } from "@/lib/api";
+import useSWR, { useSWRConfig } from "swr";
+import { fetcher, patch } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { LoginPrompt } from "@/components/LoginPrompt";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/components/ui/toast";
 import { Search, ShieldAlert, Users, Eye, Bell, Wallet } from "lucide-react";
 import clsx from "clsx";
 
@@ -16,6 +17,7 @@ type AdminUser = {
   username: string;
   is_active: boolean;
   is_admin: boolean;
+  is_pro: boolean;
   created_at: string;
   holdings_count: number;
   watchlist_count: number;
@@ -46,9 +48,20 @@ function StatCard({ icon, label, value }: { icon: React.ReactNode; label: string
 
 export default function AdminPage() {
   const { user, isLoading: authLoading } = useAuth();
+  const { mutate } = useSWRConfig();
+  const { toast } = useToast();
   const [q, setQ] = useState("");
 
   const gated = !authLoading && (!user || !user.is_admin);
+
+  async function togglePro(u: AdminUser) {
+    try {
+      await patch(`/api/admin/users/${u.id}`, { is_pro: !u.is_pro });
+      mutate("/api/admin/users");
+    } catch (err) {
+      toast({ variant: "error", title: "Couldn't update Pro status", description: (err as Error).message });
+    }
+  }
 
   const { data: stats } = useSWR<Stats>(user?.is_admin ? "/api/admin/stats" : null, fetcher, {
     revalidateOnFocus: false,
@@ -151,6 +164,16 @@ export default function AdminPage() {
                         {u.is_admin && (
                           <Badge className="bg-saffron/10 text-saffron ring-1 ring-saffron/20 text-[10px]">Admin</Badge>
                         )}
+                        <button onClick={() => togglePro(u)} title="Click to toggle Pro status">
+                          <Badge
+                            className={clsx(
+                              "text-[10px] cursor-pointer transition-opacity hover:opacity-70",
+                              u.is_pro ? "bg-up/10 text-up ring-1 ring-up/20" : "bg-raised text-muted ring-1 ring-border"
+                            )}
+                          >
+                            {u.is_pro ? "Pro" : "Free"}
+                          </Badge>
+                        </button>
                       </div>
                       <p className="text-[10px] text-muted">#{u.id}</p>
                     </td>

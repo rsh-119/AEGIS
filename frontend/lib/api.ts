@@ -1,38 +1,23 @@
 // lib/api.ts — typed fetch helpers + formatters for the AEGIS frontend
-
-// Read the stored token without importing the AuthContext (avoids circular deps).
-function _getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("aegis_access_token");
-}
-
-function _authHeaders(extra?: Record<string, string>): Record<string, string> {
-  const token = _getToken();
-  return {
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...extra,
-  };
-}
+//
+// Auth is cookie-based (httpOnly aegis_access/aegis_refresh cookies set by
+// the backend) — every request needs `credentials: "include"` so the
+// browser attaches them; there is no token to read or attach by hand
+// anymore. See lib/auth.tsx for the AuthProvider that consumes this file's
+// _tryRefresh via the same 401-retry path used here.
 
 // Singleton promise — prevents parallel 401s from triggering multiple refresh calls
 let _refreshing: Promise<boolean> | null = null;
 
-async function _tryRefresh(): Promise<boolean> {
+export async function tryRefresh(): Promise<boolean> {
   if (_refreshing) return _refreshing;
   _refreshing = (async () => {
-    const refresh = localStorage.getItem("aegis_refresh_token");
-    if (!refresh) return false;
     try {
       const res = await fetch("/api/auth/refresh", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refresh }),
+        credentials: "include",
       });
-      if (!res.ok) return false;
-      const data = await res.json();
-      localStorage.setItem("aegis_access_token", data.access_token);
-      localStorage.setItem("aegis_refresh_token", data.refresh_token);
-      return true;
+      return res.ok;
     } catch {
       return false;
     } finally {
@@ -43,22 +28,27 @@ async function _tryRefresh(): Promise<boolean> {
 }
 
 export const fetcher = async (url: string) => {
-  let r = await fetch(url, { headers: _authHeaders() });
+  let r = await fetch(url, { credentials: "include" });
   if (r.status === 401) {
-    const ok = await _tryRefresh();
-    if (ok) r = await fetch(url, { headers: _authHeaders() });
+    const ok = await tryRefresh();
+    if (ok) r = await fetch(url, { credentials: "include" });
   }
   if (!r.ok) throw new Error(`${r.status}`);
   return r.json();
 };
 
 async function _request(method: string, url: string, body?: unknown): Promise<Response> {
-  const headers = _authHeaders(body !== undefined ? { "Content-Type": "application/json" } : {});
-  const init: RequestInit = { method, headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) };
+  const headers: Record<string, string> = body !== undefined ? { "Content-Type": "application/json" } : {};
+  const init: RequestInit = {
+    method,
+    headers,
+    credentials: "include",
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  };
   let r = await fetch(url, init);
   if (r.status === 401) {
-    const ok = await _tryRefresh();
-    if (ok) r = await fetch(url, { ...init, headers: _authHeaders(body !== undefined ? { "Content-Type": "application/json" } : {}) });
+    const ok = await tryRefresh();
+    if (ok) r = await fetch(url, init);
   }
   return r;
 }

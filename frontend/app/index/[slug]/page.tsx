@@ -11,6 +11,13 @@ import { ChartCard } from "@/components/ui/animated-card-chart";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { PERIODS } from "@/lib/periods";
+import { StockConstituentsTable, type ConstituentStock } from "@/components/StockConstituentsTable";
+
+type IndexStocksData = {
+  slug: string;
+  stocks: ConstituentStock[];
+  stats: { median_pe: number | null; median_pb: number | null; median_return_1y: number | null; count: number };
+};
 
 const INDEX_META: Record<string, { name: string; desc: string; exchange: string }> = {
   nifty50:     { name: "Nifty 50", desc: "Top 50 companies by free-float market cap listed on NSE", exchange: "NSE" },
@@ -26,6 +33,14 @@ export default function IndexPage({ params }: { params: Promise<{ slug: string }
 
   const { data, isLoading } = useSWR(
     `/api/market/index/${slug}?period=${period}`,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+
+  // Not tied to `period` — the constituent list/quotes don't change when the
+  // chart's time range does, so this shouldn't refetch on every period click.
+  const { data: stocksData } = useSWR<IndexStocksData>(
+    `/api/market/index/${slug}/stocks`,
     fetcher,
     { revalidateOnFocus: false }
   );
@@ -132,12 +147,20 @@ export default function IndexPage({ params }: { params: Promise<{ slug: string }
         )}
       </ChartCard>
 
+      {/* Constituents */}
+      <StockConstituentsTable
+        stocks={stocksData?.stocks ?? []}
+        medianPe={stocksData?.stats.median_pe}
+        title={`${meta.name} Constituents`}
+        footnote={`P/E < median highlighted green · ROE > 15% highlighted green · Returns are price-only · Click any column header to sort ↑↓ · Index membership is approximate, may drift from the latest NSE rebalancing`}
+      />
+
       {/* About */}
       <Card className="p-5">
         <h2 className="mb-2 font-semibold">About {meta.name}</h2>
         <p className="text-sm leading-relaxed text-muted">{meta.desc}</p>
         <p className="mt-3 text-xs text-muted/60">
-          Index data from IndianAPI · {meta.exchange} · For reference only, not investment advice.
+          {meta.exchange} · For reference only, not investment advice.
         </p>
       </Card>
     </div>

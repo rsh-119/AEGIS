@@ -7,7 +7,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql+asyncpg://aegis:aegis@127.0.0.1:5433/aegis"
+    # No hardcoded fallback on purpose (was previously a stale port-5433
+    # default pointing at a since-decommissioned native Postgres install —
+    # see MIGRATIONS.md) — DATABASE_URL must be set explicitly. Missing it
+    # now fails loudly (pydantic-settings validation error) instead of
+    # silently reconnecting to whatever used to be at the old default.
+    database_url: str
 
     nvidia_api_key: str = ""
     nvidia_model: str = "deepseek-ai/deepseek-v4-flash"
@@ -15,7 +20,7 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_api_key_2: str = ""   # optional 2nd Groq key — doubles token budget
     groq_api_key_3: str = ""   # optional 3rd Groq key — triples token budget
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"
 
     @property
     def groq_keys(self) -> list[str]:
@@ -59,6 +64,10 @@ class Settings(BaseSettings):
     readonly_mode: bool = False          # Firegun: blocks all write ops when True
     rate_limit_enabled: bool = True      # Toggle slowapi rate limiting
     log_level: str = "INFO"             # DEBUG | INFO | WARNING | ERROR
+
+    # Empty by default: error tracking (Sentry) stays off until a real DSN is
+    # set, same fail-closed-until-configured pattern as admin_api_key above.
+    sentry_dsn: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:

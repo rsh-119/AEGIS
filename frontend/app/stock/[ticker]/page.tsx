@@ -4,10 +4,10 @@ import { use, useRef, useState } from "react";
 // useSWRConfig().mutate, not the bare `mutate` export — the app runs on a
 // custom SWR cache provider, and the global mutate doesn't reach it.
 import useSWR, { useSWRConfig } from "swr";
-import { useRouter } from "next/navigation";
 import { fetcher, inr, inrCompact, pct, num, signCls, post } from "@/lib/api";
 import { useRealtimePrice } from "@/lib/useRealtimePrice";
 import { useAuth } from "@/lib/auth";
+import { addGuestWatch, isGuestWatched } from "@/lib/guestData";
 import { PriceChart } from "@/components/PriceChart";
 import { VolumeChart } from "@/components/VolumeChart";
 import { ValuationChart } from "@/components/ValuationChart";
@@ -19,10 +19,11 @@ import { PeerComparison } from "@/components/PeerComparison";
 import { ShareholdingPie } from "@/components/ShareholdingPie";
 import { FinancialsTables } from "@/components/FinancialsTables";
 import { TechnicalsCard } from "@/components/TechnicalsCard";
-import { ReturnsCalculator } from "@/components/ReturnsCalculator";
+import { ProjectionCalculator } from "@/components/ProjectionCalculator";
+import { ProGate } from "@/components/ProGate";
 import { ChartCard } from "@/components/ui/animated-card-chart";
 import Link from "next/link";
-import { Plus, ExternalLink, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, BarChart3, CheckCircle2, AlertTriangle, AlertCircle, Info, Newspaper, Target, Eye, Zap, Bell, Calendar, ArrowUpRight, Gift, ShieldCheck, FileText, Mic2 } from "lucide-react";
+import { Plus, ExternalLink, TrendingUp, TrendingDown, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, BarChart3, CheckCircle2, AlertTriangle, AlertCircle, Info, Newspaper, Target, Eye, Zap, Bell, Calendar, ArrowUpRight, Gift, ShieldCheck, FileText, Mic2, Calculator } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -64,7 +65,6 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
   const { ticker } = use(params);
   const symbol = decodeURIComponent(ticker);
   const { user } = useAuth();
-  const router = useRouter();
   const { toast } = useToast();
   const { mutate } = useSWRConfig();
   const [period, setPeriod]           = useState("6mo");
@@ -93,13 +93,15 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
   );
 
   // ── DEFERRED IndianAPI data — loads in background after core is ready ──────
+  // Pro-gated on the backend — don't even attempt the fetch for non-Pro
+  // users, since it would just 403.
   const { data: analystTargets } = useSWR(
-    core ? `/api/stocks/${symbol}/analyst-targets` : null,
+    core && user?.is_pro ? `/api/stocks/${symbol}/analyst-targets` : null,
     fetcher,
     { revalidateOnFocus: false }
   );
   const { data: analystForecasts } = useSWR(
-    core ? `/api/stocks/${symbol}/analyst-forecasts` : null,
+    core && user?.is_pro ? `/api/stocks/${symbol}/analyst-forecasts` : null,
     fetcher,
     { revalidateOnFocus: false }
   );
@@ -153,7 +155,18 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
 
   async function addToWatchlist() {
     if (!user) {
-      router.push("/login");
+      // Guest: saved on-device (lib/guestData.ts), synced to the account
+      // automatically the first time this browser logs in or registers.
+      if (isGuestWatched(symbol)) {
+        toast({ variant: "info", title: "Already on your watchlist", description: symbol });
+        return;
+      }
+      addGuestWatch({ ticker: symbol, company_name: q.company_name });
+      toast({
+        variant: "success",
+        title: "Added to watchlist",
+        description: `${symbol} — saved on this device. Sign in to sync it to your account.`,
+      });
       return;
     }
     try {
@@ -403,8 +416,6 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
         </Card>
       </div>
 
-      <ReturnsCalculator ticker={symbol} />
-
       {/* ── Valuation Charts + Shareholding ── */}
       <div className="grid gap-4 lg:grid-cols-5">
 
@@ -509,37 +520,52 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
           {insLoading ? <div className="skeleton h-52 rounded-2xl" /> : <HealthCard health={ins?.health} />}
         </div>
         <div className="space-y-6">
-          {insLoading ? <div className="skeleton h-48 rounded-2xl" /> : <ForecastCard forecast={ins?.forecast} />}
-          <TechnicalsCard
-            candles={hist?.candles ?? []}
-            currentPrice={q.current_price}
-            latestRsi={hist?.latest_rsi ?? null}
-          />
+          {insLoading ? <div className="skeleton h-48 rounded-2xl" />
+            : ins?.forecast_locked ? <ProGate feature="Price Forecast" />
+            : <ForecastCard forecast={ins?.forecast} />}
+          {user?.is_pro ? (
+            <TechnicalsCard
+              candles={hist?.candles ?? []}
+              currentPrice={q.current_price}
+              latestRsi={hist?.latest_rsi ?? null}
+            />
+          ) : (
+            <ProGate feature="Technical Indicators" />
+          )}
+          {!user?.is_pro ? (
+            <ProGate feature="Analyst Price Targets" />
+          ) : analystTargets ? (
+            <AnalystTargetCard targets={analystTargets} currentPrice={q.current_price} />
+          ) : null}
+          {core.signals?.length > 0 && (
+            <Card className="overflow-hidden">
+              <div className="flex items-center gap-2 border-b border-border bg-raised/40 px-4 py-3">
+                <BarChart3 className="h-4 w-4 text-saffron" />
+                <h3 className="text-sm font-semibold">Ratio Signals</h3>
+                <span className="text-[10px] text-muted ml-auto">{core.signals.length} detected</span>
+              </div>
+              <div className="space-y-3 p-4 stagger">
+                {core.signals.map((s: RatioSignal, i: number) => (
+                  <SignalCard key={i} signal={s} />
+                ))}
+              </div>
+            </Card>
+          )}
+          <Card className="overflow-hidden">
+            <div className="flex items-center gap-2 border-b border-border bg-raised/40 px-4 py-3">
+              <Calculator className="h-4 w-4 text-saffron" />
+              <h3 className="text-sm font-semibold">Returns Calculator</h3>
+            </div>
+            <div className="p-4">
+              <ProjectionCalculator compact />
+            </div>
+          </Card>
         </div>
       </div>
 
-      {/* ── Ratio signals ── */}
-      {core.signals?.length > 0 && (
-        <div>
-          <div className="mb-3 flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-saffron" />
-            <h2 className="font-display text-lg font-semibold">Ratio Signals</h2>
-            <span className="text-xs text-muted">{core.signals.length} signals detected</span>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 stagger">
-            {core.signals.map((s: RatioSignal, i: number) => (
-              <SignalCard key={i} signal={s} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Analyst Targets + Forecasts ── */}
-      {(analystTargets || analystForecasts) && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <AnalystTargetCard targets={analystTargets} currentPrice={q.current_price} />
-          <AnalystForecastCard forecasts={analystForecasts} />
-        </div>
+      {/* ── Analyst Forecasts ── */}
+      {user?.is_pro && analystForecasts && (
+        <AnalystForecastCard forecasts={analystForecasts} />
       )}
 
       {/* ── Peer Comparison ── */}
@@ -549,7 +575,7 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
       <FinancialsTables ticker={symbol} />
 
       {/* ── Concall Summary ── */}
-      <ConcallCard ticker={symbol} />
+      {user?.is_pro ? <ConcallCard ticker={symbol} /> : <ProGate feature="Concall Analysis" />}
 
       {/* ── Credit Ratings + Annual Reports + Concall Transcripts + Announcements ── */}
       {(creditRatings?.length > 0 || annualReports?.length > 0 || concallTranscripts?.length > 0 || announcements?.length > 0) && (
@@ -1028,56 +1054,63 @@ function AnalystTargetCard({ targets, currentPrice }: { targets: any; currentPri
   const sellW = total ? Math.round((sell / total) * 100) : 0;
 
   return (
-    <Card className="p-5 space-y-4">
-      <div className="flex items-center gap-2">
+    <Card className="overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2 border-b border-border bg-raised/40 px-4 py-3">
         <Target className="h-4 w-4 text-saffron" />
-        <h3 className="font-semibold text-sm">Analyst Price Targets</h3>
-        {total > 0 && <span className="text-xs text-muted ml-auto">{total} analyst{total !== 1 ? "s" : ""}</span>}
+        <h3 className="text-sm font-semibold">Analyst Price Targets</h3>
+        {total > 0 && (
+          <span className="text-[10px] text-muted ml-auto">{total} analyst{total !== 1 ? "s" : ""}</span>
+        )}
       </div>
 
-      {mean && (
-        <div className="flex items-baseline gap-3">
-          <span className="nums text-2xl font-bold">{inr(mean)}</span>
-          <span className="text-xs text-muted">mean target</span>
-          {upside !== null && (
-            <span className={clsx("nums ml-auto text-sm font-semibold flex items-center gap-0.5", upside >= 0 ? "text-up" : "text-down")}>
-              <ArrowUpRight className={clsx("h-3.5 w-3.5", upside < 0 && "rotate-90")} />
-              {upside >= 0 ? "+" : ""}{upside.toFixed(1)}% upside
-            </span>
-          )}
-        </div>
-      )}
-
-      {(low || high) && (
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <span className="text-down font-semibold">{inr(low)}</span>
-          <div className="flex-1 h-1.5 rounded-full bg-border relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-down via-saffron to-up rounded-full" />
-            {mean && low && high && (high - low) > 0 && (
-              <div
-                className="absolute top-1/2 -translate-y-1/2 h-3 w-0.5 bg-fg rounded-full"
-                style={{ left: `${((mean - low) / (high - low)) * 100}%` }}
-              />
+      <div className="space-y-3 px-4 py-4">
+        {mean && (
+          <div className="space-y-1">
+            <div className="flex items-baseline gap-2">
+              <span className="nums text-xl font-bold">{inr(mean)}</span>
+              <span className="text-[10px] text-muted">mean target</span>
+            </div>
+            {upside !== null && (
+              <span className={clsx("nums flex items-center gap-0.5 text-xs font-semibold", upside >= 0 ? "text-up" : "text-down")}>
+                <ArrowUpRight className={clsx("h-3.5 w-3.5", upside < 0 && "rotate-90")} />
+                {upside >= 0 ? "+" : ""}{upside.toFixed(1)}% upside
+              </span>
             )}
           </div>
-          <span className="text-up font-semibold">{inr(high)}</span>
-        </div>
-      )}
+        )}
 
-      {total > 0 && (
-        <div className="space-y-2">
-          <div className="flex gap-1 h-2 rounded-full overflow-hidden">
-            {buyW  > 0 && <div className="bg-up rounded-l-full"   style={{ width: `${buyW}%` }}  />}
-            {holdW > 0 && <div className="bg-saffron"             style={{ width: `${holdW}%` }} />}
-            {sellW > 0 && <div className="bg-down rounded-r-full" style={{ width: `${sellW}%` }} />}
+        {(low || high) && (
+          <div className="flex items-center gap-2 text-[11px] text-muted">
+            <span className="text-down font-semibold shrink-0">{inr(low)}</span>
+            <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-border">
+              <div className="absolute inset-0 rounded-full bg-gradient-to-r from-down via-saffron to-up" />
+              {mean && low && high && (high - low) > 0 && (
+                <div
+                  className="absolute top-1/2 h-3 w-0.5 -translate-y-1/2 rounded-full bg-fg"
+                  style={{ left: `${((mean - low) / (high - low)) * 100}%` }}
+                />
+              )}
+            </div>
+            <span className="text-up font-semibold shrink-0">{inr(high)}</span>
           </div>
-          <div className="flex gap-4 text-[10px]">
-            <span className="flex items-center gap-1 text-up"><span className="h-2 w-2 rounded-full bg-up inline-block" /> Buy {buy}</span>
-            <span className="flex items-center gap-1 text-saffron"><span className="h-2 w-2 rounded-full bg-saffron inline-block" /> Hold {hold}</span>
-            <span className="flex items-center gap-1 text-down"><span className="h-2 w-2 rounded-full bg-down inline-block" /> Sell {sell}</span>
+        )}
+
+        {total > 0 && (
+          <div className="space-y-2">
+            <div className="flex h-2 gap-1 overflow-hidden rounded-full">
+              {buyW  > 0 && <div className="rounded-l-full bg-up"     style={{ width: `${buyW}%` }}  />}
+              {holdW > 0 && <div className="bg-saffron"                style={{ width: `${holdW}%` }} />}
+              {sellW > 0 && <div className="rounded-r-full bg-down"   style={{ width: `${sellW}%` }} />}
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px]">
+              <span className="flex items-center gap-1 text-up"><span className="inline-block h-2 w-2 rounded-full bg-up" /> Buy {buy}</span>
+              <span className="flex items-center gap-1 text-saffron"><span className="inline-block h-2 w-2 rounded-full bg-saffron" /> Hold {hold}</span>
+              <span className="flex items-center gap-1 text-down"><span className="inline-block h-2 w-2 rounded-full bg-down" /> Sell {sell}</span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </Card>
   );
 }
@@ -1476,7 +1509,7 @@ function ErrorState({ symbol }: { symbol: string }) {
     <Card className="p-8 text-center">
       <h2 className="font-display text-xl">Couldn't load {symbol}</h2>
       <p className="mt-2 text-sm text-muted">
-        IndianAPI may be rate-limited, or this isn't a valid NSE/BSE symbol. Try again shortly.
+        Data may be temporarily unavailable, or this isn't a valid NSE/BSE symbol. Try again shortly.
       </p>
     </Card>
   );

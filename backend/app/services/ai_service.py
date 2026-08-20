@@ -8,20 +8,39 @@ then fall through to the same chain from step 1 on failure:
   0.4 Gemini settings.gemini_model (gemini-3.6-flash)  (prefer_gemini=True ONLY —
       portfolio review/ask — free-tier key, fast when it lands, but thin
       quota so routine fallthrough to the rest of the chain is expected)
-  1. Groq    llama-3.3-70b-versatile              (primary — 100k TPD free, low latency)
-  2. Groq    llama-3.1-8b-instant                 (fallback #1 — 500k TPD)
+  1. Groq    openai/gpt-oss-120b                  (primary — low latency, JSON-mode compliant)
+  2. Groq    openai/gpt-oss-20b                    (fallback #1 — faster, smaller)
   5. OpenRouter  settings.openrouter_model         (nvidia/nemotron-3-super-120b-a12b:free)
      OpenRouter  nvidia/nemotron-3-ultra-550b-a55b:free
      OpenRouter  google/gemma-4-31b-it:free
      OpenRouter  nvidia/nemotron-3-nano-30b-a3b:free
   6. NVIDIA  settings.nvidia_model (z-ai/glm-5.2)  (last resort — correct but ~1-3 min queue)
 
-Verified 2026-08-01 by direct per-model test (see /api/health or ask Claude to
-re-run it): GLM-5.2 is the most groundedness-accurate but far slower (~80s)
-than Groq's primary model (~4s, nearly as accurate) — Groq staying primary is
-the right call. Previously-listed "Groq specdec / llama-4-scout" and "NVIDIA
-MiniMax M2.7" fallback steps were removed — all three now return hard errors
-(decommissioned / 404 / EOL) from their providers, not real fallback capacity.
+Verified 2026-08-19 by direct per-model test against Groq's live /models
+catalog: the previous primary/fallback pair (llama-3.3-70b-versatile,
+llama-3.1-8b-instant) had both been silently decommissioned by Groq — every
+call was 404ing straight through to OpenRouter, undetected because the
+waterfall's job is to fail quietly and move on. openai/gpt-oss-120b and
+openai/gpt-oss-20b are confirmed live, JSON-mode-compliant (response_format=
+json_object), and stream cleanly (~0.5-1.3s TTFB even at realistic ~1400-token
+prompts, finish_reason=stop with room under a 900-token budget despite a
+nonzero reasoning_tokens component — no Nemotron/Gemini-style budget-eating
+issue observed). qwen/qwen3.6-27b was tested and rejected — fails Groq's
+json_object validation outright. Don't re-add a model here without confirming
+it still resolves on Groq's console first (see the removed-model note below —
+this isn't the first time Groq has quietly dropped IDs this codebase relied
+on). Earlier note, still true: GLM-5.2 remains the most groundedness-accurate
+option but far slower (~80s) than the Groq primary — Groq staying primary is
+still the right call. Previously-listed "Groq specdec / llama-4-scout" and
+"NVIDIA MiniMax M2.7" fallback steps were removed — all three now return hard
+errors (decommissioned / 404 / EOL) from their providers, not real fallback
+capacity.
+
+NOTE: analyze_document()'s "deepseek"/"minimax" tiers below still hardcode
+qwen/qwen3-32b and llama-3.1-8b-instant respectively — the same live-catalog
+check found qwen/qwen3-32b is ALSO not in Groq's current model list. Left
+unfixed here deliberately (out of scope for the Ask AI work this waterfall
+update was part of) — flagging so it isn't mistaken for already-verified.
 
 Four capabilities:
   • analyse_stock()    — valuation, risks, outlook (structured, data-cited)
@@ -39,6 +58,7 @@ import json
 import logging
 import re
 import time
+from collections.abc import AsyncGenerator
 
 import httpx
 from groq import AsyncGroq, RateLimitError, APIStatusError
@@ -173,11 +193,12 @@ _NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 # Groq fallback models — each has a separate daily quota
 _GROQ_EXTRA_MODELS = [
-    "llama-3.1-8b-instant",
-    # "llama-3.3-70b-specdec" and "meta-llama/llama-4-scout-17b-16e-instruct"
-    # were removed 2026-08-01 — both now hard-fail (decommissioned / 404) on
-    # every call, verified by direct per-model test. Don't re-add a model here
-    # without confirming it still resolves on Groq's console first.
+    "openai/gpt-oss-20b",
+    # "llama-3.3-70b-specdec", "meta-llama/llama-4-scout-17b-16e-instruct",
+    # "llama-3.1-8b-instant" (removed 2026-08-01 / 2026-08-19 respectively) all
+    # now hard-fail (decommissioned / 404) on every call, verified by direct
+    # per-model test each time. Don't re-add a model here without confirming
+    # it still resolves on Groq's /models list first — see module docstring.
 ]
 
 # OpenRouter free fallbacks
@@ -446,6 +467,7 @@ async def _chat_json(
     system: str, user: str, max_tokens: int = 1200,
     use_cache: bool = True, prefer_openrouter: bool = False, prefer_gemini: bool = False,
     schema: type[BaseModel] | None = None, temperature: float = _TEMP_STRUCTURED,
+    preferred_groq_model: str | None = None,
 ) -> dict:
     """
     Multi-model waterfall — Groq (primary) → NVIDIA DeepSeek → OpenRouter.
@@ -461,6 +483,10 @@ async def _chat_json(
     _TEMP_CONVERSATIONAL), not left to whatever a given provider defaults to.
     `prefer_gemini` tries the free-tier Gemini key first (fast, but quota is
     thin — expect routine fallthrough), used only by portfolio review/ask.
+    `preferred_groq_model` moves a specific model to the front of the Groq
+    attempt order (e.g. the small/fast instant model for a simple lookup
+    query) without dropping the rest of the chain — if that model fails, the
+    normal Groq fallback list and the full waterfall below still apply.
     """
     t0 = time.monotonic()
 
@@ -501,7 +527,10 @@ async def _chat_json(
 
     # ── 1. Groq — primary (fast path; GLM fallback is slow but capable) ──────
     if settings.groq_api_key:
-        for gmodel in [settings.groq_model] + _GROQ_EXTRA_MODELS:
+        groq_models = [settings.groq_model] + _GROQ_EXTRA_MODELS
+        if preferred_groq_model:
+            groq_models = [preferred_groq_model] + [m for m in groq_models if m != preferred_groq_model]
+        for gmodel in groq_models:
             try:
                 call_fn = functools.partial(_call_groq, model=gmodel)
                 result = await _call_validated(call_fn, system, user, max_tokens, schema, temperature)
@@ -775,124 +804,207 @@ async def diagnose_health(quote: dict, hist: dict, sentiment: dict, articles: li
 
 # ── 3. Grounded Q&A ───────────────────────────────────────────────────────────
 
+# Keyword buckets for the Ask AI intent classifier — deliberately coarse.
+# A question hitting both buckets, or neither, resolves to "general" (see
+# _classify_intent) rather than guessing: losing grounding data the model
+# actually needed is worse than missing a pruning/routing optimization.
+_RATIO_KEYWORDS = (
+    "p/e", "pe ratio", "peg", "p/b", "debt", "d/e", "dividend", "margin",
+    "rsi", "price", "valuation", "eps", "roe", "market cap",
+)
+_NEWS_KEYWORDS = (
+    "news", "why", "sentiment", "management", "acquisition", "rumor",
+    "rumour", "deal", "event", "announce",
+)
+
+
+def _classify_intent(question: str) -> str:
+    """Cheap keyword classifier used for both context pruning and model
+    routing. Biased toward "general" (= full context, default routing) on
+    any ambiguity."""
+    q = question.lower()
+    is_ratio = any(k in q for k in _RATIO_KEYWORDS)
+    is_news = any(k in q for k in _NEWS_KEYWORDS)
+    if is_ratio and not is_news:
+        return "ratios"
+    if is_news and not is_ratio:
+        return "news"
+    return "general"
+
+
+def _build_ask_grounding(
+    quote: dict | None, hist: dict | None, articles: list[dict] | None,
+    bulk_deals: list[dict] | None, intent: str,
+) -> dict:
+    """Shared grounding-dict builder for answer() and stream_answer(). Pulls
+    every field from data the caller already fetched — no network calls in
+    here (the router does one pass: quote/history/bulk-deals in parallel,
+    then news once the company name is known — see routers/ai.py).
+
+    `intent` (from _classify_intent) controls the one pruning lever that
+    actually moves prompt size: a "ratios" question trims recent_news to 3
+    items when more are available, since news detail rarely matters for a
+    valuation question. Every other intent — including any ambiguous
+    question — keeps the full 12-article window."""
+    if not quote:
+        return {}
+
+    grounding: dict = {
+        "company_name": quote.get("company_name"),
+        "ticker": quote.get("ticker"),
+        "sector": quote.get("sector"),
+        "industry": quote.get("industry"),
+        "current_price_inr": quote.get("current_price"),
+        "previous_close_inr": quote.get("previous_close"),
+        "day_high_inr": quote.get("day_high"),
+        "day_low_inr": quote.get("day_low"),
+        "week52_high_inr": quote.get("week52_high"),
+        "week52_low_inr": quote.get("week52_low"),
+        "market_cap_inr": quote.get("market_cap"),
+        "pe_ratio": quote.get("pe_ratio"),
+        "forward_pe": quote.get("forward_pe"),
+        "pb_ratio": quote.get("pb_ratio"),
+        "eps": quote.get("eps"),
+        "roe": quote.get("roe"),
+        "debt_to_equity": quote.get("debt_to_equity"),
+        "profit_margin": quote.get("profit_margin"),
+        "revenue_growth": quote.get("revenue_growth"),
+        "earnings_growth": quote.get("earnings_growth"),
+        "dividend_yield": quote.get("dividend_yield"),
+        "beta": quote.get("beta"),
+        "volume_today": quote.get("volume"),
+        "avg_volume_3mo": quote.get("avg_volume"),
+        "float_shares": quote.get("float_shares"),
+        "shares_outstanding": quote.get("shares_outstanding"),
+        "held_by_insiders_pct": quote.get("held_by_insiders_pct"),
+        "held_by_institutions_pct": quote.get("held_by_institutions_pct"),
+        "short_ratio": quote.get("short_ratio"),
+        "current_leadership": quote.get("officers"),
+        "company_summary": quote.get("summary"),
+    }
+    if hist:
+        grounding["return_pct_3mo"] = hist.get("pct_change")
+        grounding["rsi_14"] = hist.get("latest_rsi")
+        grounding["annualised_volatility_pct"] = hist.get("volatility_pct")
+
+    # Institutional & insider data (may be absent for Indian stocks)
+    if quote.get("institutional_holders"):
+        grounding["top_institutional_holders"] = quote["institutional_holders"]
+    if quote.get("mutualfund_holders"):
+        grounding["top_mutualfund_holders"] = quote["mutualfund_holders"]
+    if quote.get("insider_transactions"):
+        grounding["recent_insider_transactions"] = quote["insider_transactions"]
+
+    if articles:
+        cap = 3 if (intent == "ratios" and len(articles) > 5) else 12
+        grounding["recent_news"] = [
+            {
+                "title": a["title"],
+                "publisher": a.get("publisher", ""),
+                "sentiment_score": a.get("sentiment", 0),
+            }
+            for a in articles[:cap]
+        ]
+
+    # Real NSE bulk/block deals for this ticker specifically — the
+    # "top_institutional_holders"/"insider_transactions" fields above are
+    # yfinance-era leftovers that IndianAPI never populates for Indian
+    # stocks, so bulk-deal questions always fell through to "not available"
+    # even though this exact data already powers /api/market/bulk-deals
+    # elsewhere in the app.
+    if bulk_deals:
+        grounding["recent_bulk_deals"] = [
+            {
+                "date": d.get("date"),
+                "entity": d.get("entity"),
+                "deal_type": d.get("deal_type"),
+                "quantity": d.get("quantity"),
+                "price_inr": d.get("price"),
+                "value_cr": d.get("value_cr"),
+                "exchange": d.get("exchange"),
+            }
+            for d in bulk_deals
+        ]
+
+    return grounding
+
+
 async def answer(
     question: str,
     quote: dict | None,
     hist: dict | None,
     articles: list[dict] | None = None,
+    bulk_deals: list[dict] | None = None,
 ) -> dict:
-    grounding: dict = {}
-    if quote:
-        grounding = {
-            "company_name": quote.get("company_name"),
-            "ticker": quote.get("ticker"),
-            "sector": quote.get("sector"),
-            "industry": quote.get("industry"),
-            "current_price_inr": quote.get("current_price"),
-            "previous_close_inr": quote.get("previous_close"),
-            "day_high_inr": quote.get("day_high"),
-            "day_low_inr": quote.get("day_low"),
-            "week52_high_inr": quote.get("week52_high"),
-            "week52_low_inr": quote.get("week52_low"),
-            "market_cap_inr": quote.get("market_cap"),
-            "pe_ratio": quote.get("pe_ratio"),
-            "forward_pe": quote.get("forward_pe"),
-            "pb_ratio": quote.get("pb_ratio"),
-            "eps": quote.get("eps"),
-            "roe": quote.get("roe"),
-            "debt_to_equity": quote.get("debt_to_equity"),
-            "profit_margin": quote.get("profit_margin"),
-            "revenue_growth": quote.get("revenue_growth"),
-            "earnings_growth": quote.get("earnings_growth"),
-            "dividend_yield": quote.get("dividend_yield"),
-            "beta": quote.get("beta"),
-            "volume_today": quote.get("volume"),
-            "avg_volume_3mo": quote.get("avg_volume"),
-            "float_shares": quote.get("float_shares"),
-            "shares_outstanding": quote.get("shares_outstanding"),
-            "held_by_insiders_pct": quote.get("held_by_insiders_pct"),
-            "held_by_institutions_pct": quote.get("held_by_institutions_pct"),
-            "short_ratio": quote.get("short_ratio"),
-            "current_leadership": quote.get("officers"),
-            "company_summary": quote.get("summary"),
-        }
-        if hist:
-            grounding["return_pct_3mo"] = hist.get("pct_change")
-            grounding["rsi_14"] = hist.get("latest_rsi")
-            grounding["annualised_volatility_pct"] = hist.get("volatility_pct")
-
-        # Institutional & insider data (may be absent for Indian stocks)
-        if quote.get("institutional_holders"):
-            grounding["top_institutional_holders"] = quote["institutional_holders"]
-        if quote.get("mutualfund_holders"):
-            grounding["top_mutualfund_holders"] = quote["mutualfund_holders"]
-        if quote.get("insider_transactions"):
-            grounding["recent_insider_transactions"] = quote["insider_transactions"]
-
-        if articles:
-            grounding["recent_news"] = [
-                {
-                    "title": a["title"],
-                    "publisher": a.get("publisher", ""),
-                    "sentiment_score": a.get("sentiment", 0),
-                }
-                for a in articles[:12]
-            ]
-
-        # Inject IndianAPI live-market context (price, targets, announcements)
-        ticker = quote.get("ticker") if quote else None
-        if ticker:
-            try:
-                from app.services.indianapi_service import get_stock
-                bare = ticker.replace(".NS", "").replace(".BO", "")
-                idata = await get_stock(bare)
-                if idata and idata.get("current_price"):
-                    price = idata["current_price"]
-                    chg   = idata.get("change_pct", 0) or 0
-                    mc    = idata.get("market_cap")
-                    mc_str = f"₹{mc/1e7:.0f}Cr" if mc else "N/A"
-                    lines = [
-                        f"=== Live Market Data (IndianAPI, INR) ===",
-                        f"• {ticker}: ₹{price:,.2f} {'▲' if chg >= 0 else '▼'}{abs(chg):.2f}% | MCap {mc_str}",
-                    ]
-                    if idata.get("pe_ratio"):
-                        lines.append(f"  P/E {idata['pe_ratio']:.1f}")
-                    if idata.get("pb_ratio"):
-                        lines.append(f"  P/B {idata['pb_ratio']:.2f}")
-                    grounding["live_market_data"] = "\n".join(lines)
-            except Exception:
-                pass
-
-            # Real NSE bulk/block deals for this ticker specifically — the
-            # "top_institutional_holders"/"insider_transactions" fields below
-            # are yfinance-era leftovers that IndianAPI never populates for
-            # Indian stocks, so bulk-deal questions always fell through to
-            # "not available" even though this exact data already powers
-            # /api/market/bulk-deals elsewhere in the app.
-            try:
-                from app.services.bulk_deals_service import get_bulk_deals
-                bare = ticker.replace(".NS", "").replace(".BO", "")
-                all_deals = await get_bulk_deals(limit=75)
-                deals = [d for d in all_deals if d.get("symbol") == bare][:10]
-                if deals:
-                    grounding["recent_bulk_deals"] = [
-                        {
-                            "date": d.get("date"),
-                            "entity": d.get("entity"),
-                            "deal_type": d.get("deal_type"),
-                            "quantity": d.get("quantity"),
-                            "price_inr": d.get("price"),
-                            "value_cr": d.get("value_cr"),
-                            "exchange": d.get("exchange"),
-                        }
-                        for d in deals
-                    ]
-            except Exception:
-                pass
-
+    intent = _classify_intent(question)
+    grounding = _build_ask_grounding(quote, hist, articles, bulk_deals, intent)
     user = json.dumps({"question": question, "context": grounding}, default=str)
+    logger.debug(
+        "ask context: ticker=%s intent=%s user_tokens_est=%d",
+        quote.get("ticker") if quote else None, intent, len(user) // 4,
+    )
     from app.schemas import AskResponse
-    return await _chat_json(_p_ask.ANSWER_SYSTEM, user, max_tokens=900, prefer_openrouter=True, schema=AskResponse)
+    # "ratios" intent skips the Nemotron-first preferred route and goes
+    # straight to Groq's small/fast model — simple lookups don't need the
+    # slower, more detailed-prose model. Everything else keeps the existing
+    # prefer_openrouter=True behavior unchanged.
+    preferred_model = "openai/gpt-oss-20b" if intent == "ratios" else None
+    return await _chat_json(
+        _p_ask.ANSWER_SYSTEM, user, max_tokens=900,
+        prefer_openrouter=(preferred_model is None), schema=AskResponse,
+        preferred_groq_model=preferred_model,
+    )
+
+
+async def stream_answer(
+    question: str,
+    quote: dict | None,
+    hist: dict | None,
+    articles: list[dict] | None = None,
+    bulk_deals: list[dict] | None = None,
+) -> AsyncGenerator[str, None]:
+    """Streaming counterpart to answer() — Groq only, no schema validation,
+    no repair-retry, no multi-provider waterfall. This is a deliberate scope
+    cut, not an oversight: you can't validate a Pydantic schema before the
+    full response has arrived, and you can't silently swap providers after
+    partial text is already rendered in the user's chat bubble. The caller
+    (routers/ai.py's /ask-stream) covers the resilience gap with a
+    peek-before-commit fallback to the normal answer() waterfall if this
+    generator produces nothing within its timeout.
+
+    Output format is NOT pure JSON: plain prose answer text, then a literal
+    "___METADATA___" delimiter line, then a trailing single-line JSON blob
+    — see ANSWER_STREAM_SYSTEM. response_format is intentionally omitted
+    from the Groq call because of this (Groq's JSON mode requires the whole
+    completion to be valid JSON, which this format isn't).
+    """
+    intent = _classify_intent(question)
+    grounding = _build_ask_grounding(quote, hist, articles, bulk_deals, intent)
+    user = json.dumps({"question": question, "context": grounding}, default=str)
+    logger.debug(
+        "ask-stream context: ticker=%s intent=%s user_tokens_est=%d",
+        quote.get("ticker") if quote else None, intent, len(user) // 4,
+    )
+
+    client = _next_groq_client() or _get_groq()
+    if client is None:
+        raise RuntimeError("GROQ_API_KEY not configured")
+
+    model = "openai/gpt-oss-20b" if intent == "ratios" else settings.groq_model
+    stream = await client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": _p_ask.ANSWER_STREAM_SYSTEM},
+            {"role": "user", "content": user},
+        ],
+        temperature=_TEMP_STRUCTURED,
+        max_tokens=900,
+        stream=True,
+    )
+    async for chunk in stream:
+        delta = chunk.choices[0].delta.content
+        if delta:
+            yield delta
 
 
 # ── 3b. Free-form chat (no ticker required) ──────────────────────────────────

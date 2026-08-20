@@ -14,6 +14,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import text
 
+from app.core import groq_circuit_breaker
 from app.core.cache import cache
 from app.core.circuit_breaker import all_statuses as cb_statuses
 from app.core.config import get_settings
@@ -39,6 +40,12 @@ def _all_circuit_statuses() -> list[dict]:
             "name": "indianapi", "state": "open", "failures": 0,
             "total_trips": 0, "seconds_until_retry": indianapi_backoff_remaining(),
         })
+    # Groq streaming breaker (app.core.groq_circuit_breaker) — folded in the
+    # same way, but deliberately NOT added to _CRITICAL below: a stream
+    # outage degrades to non-streaming JSON via the still-working waterfall,
+    # a UX regression, not an outage worth pulling the pod from rotation for.
+    if groq_circuit_breaker.is_open():
+        statuses.append(groq_circuit_breaker.status())
     return statuses
 
 

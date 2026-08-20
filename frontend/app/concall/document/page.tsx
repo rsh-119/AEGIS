@@ -12,6 +12,8 @@ import Link from "next/link";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
+import { useAuth } from "@/lib/auth";
+import { ProGate } from "@/components/ProGate";
 
 // ── types ──────────────────────────────────────────────────────────────────────
 type Promise = { commitment: string; timeline: string; metric: string };
@@ -463,6 +465,7 @@ function AnalysisPanel({
 type Mode = "landing" | "loading-pdf" | "loading-analysis" | "results";
 
 export default function DocumentPage() {
+  const { user, isLoading: authLoading } = useAuth();
   const [mode, setMode] = useState<Mode>("landing");
   const [tab, setTab] = useState<"pdf" | "paste">("pdf");
   const [docText, setDocText] = useState("");
@@ -560,6 +563,9 @@ export default function DocumentPage() {
     { done: mode !== "loading-pdf", label: mode === "loading-pdf" ? "Extracting text from PDF…" : "Text extracted" },
     { done: mode === "results", label: mode === "loading-analysis" ? "Analyzing with AI — parsing financials, margins, promises…" : mode === "results" ? "Analysis complete" : "Pending AI analysis" },
   ];
+
+  if (authLoading) return null;
+  if (!user?.is_pro) return <ProGate feature="PDF Document Analysis" />;
 
   return (
     <div className="space-y-8 animate-fade-up">

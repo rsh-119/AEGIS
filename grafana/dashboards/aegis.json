@@ -1,0 +1,126 @@
+{
+  "uid": "aegis-overview",
+  "title": "Aegis Overview",
+  "tags": ["aegis"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request rate by status",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(aegis_http_requests_total[5m])) by (status)",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error rate (5xx) %",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "100 * sum(rate(aegis_http_requests_total{status=~\"5..\"}[5m])) / sum(rate(aegis_http_requests_total[5m]))",
+          "legendFormat": "5xx %"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "P95 latency by path (top 10)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "topk(10, histogram_quantile(0.95, sum(rate(aegis_http_request_duration_seconds_bucket[5m])) by (le, path)))",
+          "legendFormat": "{{path}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Active (in-flight) requests",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [{ "expr": "aegis_active_requests" }]
+    },
+    {
+      "id": 5,
+      "title": "Cache hit rate %",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "100 * sum(rate(aegis_cache_operations_total{result=\"hit\"}[5m])) / sum(rate(aegis_cache_operations_total[5m]))"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Circuit breaker state (0=closed, 1=half-open, 2=open)",
+      "type": "timeseries",
+      "gridPos": { "h": 4, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "aegis_circuit_breaker_state",
+          "legendFormat": "{{service}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "AI requests by provider/outcome",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(aegis_ai_requests_total[5m])) by (provider, outcome)",
+          "legendFormat": "{{provider}} / {{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "External API calls by provider/outcome",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(aegis_external_api_calls_total[5m])) by (provider, outcome)",
+          "legendFormat": "{{provider}} / {{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Top paths by request volume",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "targets": [
+        {
+          "expr": "topk(10, sum(rate(aegis_http_requests_total[5m])) by (path))",
+          "legendFormat": "{{path}}"
+        }
+      ]
+    }
+  ]
+}

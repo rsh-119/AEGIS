@@ -552,6 +552,135 @@ async def get_sector_stocks(sector: str) -> dict:
     return out
 
 
+# Index membership — hardcoded, same accepted-as-approximate pattern as
+# peer_service._SECTOR_PEERS (IndianAPI has no index-constituents endpoint;
+# confirmed by probing /stock's full field list). NSE rebalances these
+# semi-annually, so treat as "close enough for browsing", not authoritative —
+# review periodically. Keys match the slugs in routers/market.py's
+# _INDEX_SYMBOLS/_INDEX_DISPLAY_NAMES.
+_INDEX_CONSTITUENTS: dict[str, list[str]] = {
+    "nifty50": [
+        "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS",
+        "BHARTIARTL.NS", "ITC.NS", "SBIN.NS", "LT.NS", "HINDUNILVR.NS",
+        "BAJFINANCE.NS", "HCLTECH.NS", "KOTAKBANK.NS", "AXISBANK.NS", "MARUTI.NS",
+        "SUNPHARMA.NS", "TITAN.NS", "ULTRACEMCO.NS", "ASIANPAINT.NS", "ADANIENT.NS",
+        "NTPC.NS", "ONGC.NS", "POWERGRID.NS", "M&M.NS", "TATAMOTORS.NS",
+        "WIPRO.NS", "JSWSTEEL.NS", "TATASTEEL.NS", "ADANIPORTS.NS", "COALINDIA.NS",
+        "NESTLEIND.NS", "BAJAJFINSV.NS", "TECHM.NS", "HDFCLIFE.NS", "SBILIFE.NS",
+        "GRASIM.NS", "INDUSINDBK.NS", "DRREDDY.NS", "CIPLA.NS", "EICHERMOT.NS",
+        "APOLLOHOSP.NS", "BRITANNIA.NS", "DIVISLAB.NS", "BAJAJ-AUTO.NS", "HEROMOTOCO.NS",
+        "TATACONSUM.NS", "BPCL.NS", "SHRIRAMFIN.NS", "UPL.NS", "LTIM.NS",
+    ],
+    "sensex": [
+        "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "INFY.NS",
+        "BHARTIARTL.NS", "ITC.NS", "SBIN.NS", "LT.NS", "HINDUNILVR.NS",
+        "BAJFINANCE.NS", "HCLTECH.NS", "KOTAKBANK.NS", "AXISBANK.NS", "MARUTI.NS",
+        "SUNPHARMA.NS", "TITAN.NS", "ULTRACEMCO.NS", "ASIANPAINT.NS", "NTPC.NS",
+        "POWERGRID.NS", "M&M.NS", "TATAMOTORS.NS", "JSWSTEEL.NS", "NESTLEIND.NS",
+        "TECHM.NS", "INDUSINDBK.NS", "ADANIPORTS.NS", "TATASTEEL.NS", "HDFCLIFE.NS",
+    ],
+    "banknifty": [
+        "HDFCBANK.NS", "ICICIBANK.NS", "KOTAKBANK.NS", "SBIN.NS", "AXISBANK.NS",
+        "INDUSINDBK.NS", "BANKBARODA.NS", "PNB.NS", "IDFCFIRSTB.NS", "FEDERALBNK.NS",
+        "AUBANK.NS", "CANBK.NS",
+    ],
+    "niftyit": [
+        "TCS.NS", "INFY.NS", "HCLTECH.NS", "WIPRO.NS", "TECHM.NS",
+        "LTIM.NS", "PERSISTENT.NS", "COFORGE.NS", "MPHASIS.NS", "LTTS.NS",
+    ],
+    "niftypharma": [
+        "SUNPHARMA.NS", "DRREDDY.NS", "CIPLA.NS", "DIVISLAB.NS", "APOLLOHOSP.NS",
+        "TORNTPHARM.NS", "LUPIN.NS", "AUROPHARMA.NS", "ZYDUSLIFE.NS", "ALKEM.NS",
+        "MANKIND.NS", "GLENMARK.NS", "BIOCON.NS", "ABBOTINDIA.NS", "IPCALAB.NS",
+        "LAURUSLABS.NS", "GLAND.NS", "NATCOPHARM.NS", "GRANULES.NS", "AJANTPHARM.NS",
+    ],
+    "niftyauto": [
+        "MARUTI.NS", "M&M.NS", "TATAMOTORS.NS", "BAJAJ-AUTO.NS", "EICHERMOT.NS",
+        "HEROMOTOCO.NS", "TVSMOTOR.NS", "ASHOKLEY.NS", "BHARATFORG.NS", "MOTHERSON.NS",
+        "BALKRISIND.NS", "MRF.NS", "EXIDEIND.NS", "BOSCHLTD.NS", "TIINDIA.NS",
+    ],
+    "niftyfmcg": [
+        "HINDUNILVR.NS", "ITC.NS", "NESTLEIND.NS", "BRITANNIA.NS", "TATACONSUM.NS",
+        "DABUR.NS", "GODREJCP.NS", "MARICO.NS", "COLPAL.NS", "VBL.NS",
+        "UBL.NS", "EMAMILTD.NS", "RADICO.NS", "GILLETTE.NS",
+    ],
+    "niftymetal": [
+        "TATASTEEL.NS", "JSWSTEEL.NS", "HINDALCO.NS", "VEDL.NS", "JINDALSTEL.NS",
+        "SAIL.NS", "NMDC.NS", "NATIONALUM.NS", "APLAPOLLO.NS", "HINDZINC.NS",
+        "RATNAMANI.NS", "WELCORP.NS", "JSL.NS", "MOIL.NS", "COALINDIA.NS",
+    ],
+    "niftyenergy": [
+        "RELIANCE.NS", "ONGC.NS", "NTPC.NS", "POWERGRID.NS", "COALINDIA.NS",
+        "BPCL.NS", "IOC.NS", "GAIL.NS", "TATAPOWER.NS", "ADANIGREEN.NS",
+    ],
+    "niftyinfra": [
+        "LT.NS", "ULTRACEMCO.NS", "ADANIPORTS.NS", "NTPC.NS", "POWERGRID.NS",
+        "GRASIM.NS", "SIEMENS.NS", "ABB.NS", "BHARTIARTL.NS", "IRB.NS",
+        "NBCC.NS", "RVNL.NS", "CONCOR.NS", "ADANIENT.NS",
+    ],
+    "niftyrealty": [
+        "DLF.NS", "GODREJPROP.NS", "OBEROIRLTY.NS", "PHOENIXLTD.NS", "PRESTIGE.NS",
+        "LODHA.NS", "BRIGADE.NS", "SOBHA.NS", "SUNTECK.NS",
+    ],
+    "niftymedia": [
+        "ZEEL.NS", "SUNTV.NS", "PVRINOX.NS", "NETWORK18.NS", "TV18BRDCST.NS",
+        "NAZARA.NS", "SAREGAMA.NS", "DISHTV.NS", "HATHWAY.NS", "TIPSMUSIC.NS",
+    ],
+}
+
+
+async def get_index_stocks(slug: str) -> dict:
+    """Constituent stocks for a market index (Nifty 50, Nifty Pharma, etc.)
+    with live quotes + price returns — same shape and caching approach as
+    get_sector_stocks() above, just keyed by index slug instead of sector
+    name. Not tied to the index chart's `period` param (routers/market.py's
+    /index/{slug} endpoint), so switching chart periods doesn't redundantly
+    refetch the whole constituent list."""
+    key = f"index_stocks:{slug}"
+
+    if (cached := _cache.get(key)) is not None:
+        return cached
+    if (cached := cache.get(key)) is not None:
+        _cache.set(key, cached)
+        return cached
+
+    tickers = _INDEX_CONSTITUENTS.get(slug.lower(), [])
+    if not tickers:
+        return {"slug": slug, "stocks": [], "error": "No constituent list for this index"}
+
+    quote_results, returns = await asyncio.gather(
+        asyncio.gather(*[_fetch_sector_quote(t) for t in tickers]),
+        _batch_returns(tickers),
+    )
+
+    stocks = [r for r in quote_results if r is not None]
+    for s in stocks:
+        ret = returns.get(s["ticker"], {})
+        s["return_1y"] = ret.get("return_1y")
+        s["return_3y"] = ret.get("return_3y")
+        s["return_5y"] = ret.get("return_5y")
+
+    stocks.sort(key=lambda x: -(x.get("market_cap") or 0))
+
+    import statistics
+    def med(field: str) -> float | None:
+        vals = [s[field] for s in stocks if s.get(field) is not None]
+        return round(statistics.median(vals), 3) if vals else None
+
+    stats = {
+        "median_pe":      med("pe_ratio"),
+        "median_pb":      med("pb_ratio"),
+        "median_return_1y": med("return_1y"),
+        "count":          len(stocks),
+    }
+
+    out = {"slug": slug, "stocks": stocks, "stats": stats}
+    if stocks:
+        _cache.set(key, out)
+        cache.set(key, out, "analyst")   # 24h Redis — financial ratios are stable
+    return out
+
+
 async def _fetch_indices_from_indianapi() -> list[dict]:
     """Fallback when NSE direct is blocked (403 from cloud IPs, e.g. Render).
     IndianAPI's /indices works fine from any cloud IP but lacks open/high/low/
