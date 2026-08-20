@@ -94,8 +94,11 @@ class WatchCreate(BaseModel):
 # the guest-side frontend store (lib/guestData.ts) mirrors those shapes exactly.
 
 class GuestDataSync(BaseModel):
-    holdings: list[HoldingCreate] = Field(default_factory=list, max_length=200)
-    watchlist: list[WatchCreate] = Field(default_factory=list, max_length=200)
+    # Caps are abuse/DoS guards on an authenticated-but-unmetered endpoint, not
+    # real usage limits — no legitimate guest session accumulates anywhere
+    # close to this many rows in localStorage before their first login.
+    holdings: list[HoldingCreate] = Field(default_factory=list, max_length=50)
+    watchlist: list[WatchCreate] = Field(default_factory=list, max_length=100)
 
 
 class SyncResult(BaseModel):
