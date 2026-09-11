@@ -25,19 +25,6 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-export async function idbGet<T = unknown>(key: string): Promise<T | undefined> {
-  try {
-    const db = await openDB();
-    return new Promise((res, rej) => {
-      const req = db.transaction(STORE, "readonly").objectStore(STORE).get(key);
-      req.onsuccess = () => res(req.result as T);
-      req.onerror   = () => rej(req.error);
-    });
-  } catch {
-    return undefined;
-  }
-}
-
 export async function idbSet(key: string, val: unknown): Promise<void> {
   try {
     const db = await openDB();
@@ -86,17 +73,4 @@ export async function idbGetAll(): Promise<Record<string, unknown>> {
   } catch {
     return {};
   }
-}
-
-/** Clear all cached entries (e.g. on logout or manual refresh). */
-export async function idbClear(): Promise<void> {
-  try {
-    const db = await openDB();
-    await new Promise<void>((res, rej) => {
-      const tx = db.transaction(STORE, "readwrite");
-      tx.objectStore(STORE).clear();
-      tx.oncomplete = () => res();
-      tx.onerror    = () => rej(tx.error);
-    });
-  } catch {}
 }

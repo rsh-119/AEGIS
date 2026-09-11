@@ -26,6 +26,21 @@ _BACKOFF_SECONDS = 300   # 5 minutes
 _blocked_until: float = 0.0
 
 
+def _publish_state(*, open: bool) -> None:
+    """Mirror the breaker into aegis_circuit_breaker_state.
+
+    alerting_rules.yml ("aegis_circuit_breaker_state == 2") and the Grafana
+    panel both read that gauge, and nothing was ever writing an "indianapi"
+    series to it — so the alert for the one upstream with a metered monthly
+    quota could never fire. Best-effort: a metrics failure must not break a
+    market-data call."""
+    try:
+        from app.core.metrics import circuit_breaker_state
+        circuit_breaker_state.set(2 if open else 0, service="indianapi")
+    except Exception:
+        pass
+
+
 def _headers() -> dict[str, str]:
     return {"X-API-Key": get_settings().indianapi_key}
 
@@ -43,6 +58,7 @@ async def _get(path: str, params: dict | None = None) -> dict | list | None:
             r = await client.get(f"{BASE_URL}{path}", headers=_headers(), params=params or {})
             if r.status_code == 429:
                 _blocked_until = time.time() + _BACKOFF_SECONDS
+                _publish_state(open=True)
                 logger.warning("IndianAPI 429 on %s — circuit open for %ds", path, _BACKOFF_SECONDS)
                 return None
             r.raise_for_status()
@@ -63,6 +79,7 @@ async def _post(path: str, json_body: dict) -> dict | None:
             r = await client.post(f"{BASE_URL}{path}", headers=_headers(), json=json_body)
             if r.status_code == 429:
                 _blocked_until = time.time() + _BACKOFF_SECONDS
+                _publish_state(open=True)
                 logger.warning("IndianAPI 429 on %s — circuit open for %ds", path, _BACKOFF_SECONDS)
                 return None
             r.raise_for_status()
@@ -73,7 +90,12 @@ async def _post(path: str, json_body: dict) -> dict | None:
 
 
 def indianapi_blocked() -> bool:
-    return time.time() < _blocked_until
+    blocked = time.time() < _blocked_until
+    if not blocked and _blocked_until:
+        # Backoff lapsed — drive the gauge back to 0 so the alert resolves
+        # instead of latching at 2 until the process restarts.
+        _publish_state(open=False)
+    return blocked
 
 
 def indianapi_backoff_remaining() -> int:
@@ -768,13 +790,38 @@ async def get_company_news(stock: str) -> list[dict]:
     return result
 
 
+# IndianAPI's /ipo response has drifted from an {upcoming, open, listed} shape
+# to {upcoming, pre_apply, active, closed, listed} — "open" split into
+# "pre_apply" (dates set, bidding not started) and "active" (bidding live),
+# plus a new "closed" bucket (bidding over, listing pending). Map each item's
+# own `status` field onto the categories the frontend renders as tabs.
+_IPO_STATUS_MAP = {
+    "upcoming": "upcoming",
+    "pre_apply": "upcoming",
+    "active": "open",
+    "open": "open",       # legacy shape, kept for safety
+    "closed": "closed",
+    "listed": "listed",
+}
+
+
 async def get_ipo() -> list[dict]:
     data = await _get("/ipo")
     if not data:
         return []
     if isinstance(data, dict):
-        return (data.get("upcoming") or []) + (data.get("open") or []) + (data.get("listed") or [])
-    return data
+        # Flatten every list-valued bucket rather than naming specific keys —
+        # IndianAPI has renamed/added buckets before without notice, and a
+        # hardcoded key list silently drops whatever bucket it doesn't know.
+        items = [item for v in data.values() if isinstance(v, list) for item in v]
+    elif isinstance(data, list):
+        items = data
+    else:
+        return []
+    for item in items:
+        raw_status = item.get("status")
+        item["status"] = _IPO_STATUS_MAP.get(raw_status, raw_status)
+    return items
 
 
 async def get_commodities() -> list[dict]:

@@ -1,9 +1,9 @@
 "use client";
 
-import { use, useEffect, useState, useMemo } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  ChevronLeft, ChevronRight, TrendingUp, TrendingDown, Building2,
+  ChevronLeft, ChevronRight, Building2,
   Layers, BarChart3, AlertTriangle, Loader2, Info, Star,
 } from "lucide-react";
 import { inrCompact } from "@/lib/api";

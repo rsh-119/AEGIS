@@ -49,6 +49,7 @@ settings = get_settings()
 
 _BLOCKLIST_PREFIX = "auth:blocklist:jti:"
 _SESSION_PREFIX   = "auth:session:"
+_USER_SESSIONS_PREFIX = "auth:user:"   # {prefix}{user_id}:sids -> set of sid
 
 _REFRESH_TTL = settings.jwt_refresh_expire_days * 86400
 
@@ -154,9 +155,9 @@ def check_and_rotate_refresh(sid: str, presented_jti: str, new_jti: str) -> None
 
 
 def revoke_session(sid: str) -> None:
-    """Explicit whole-session kill (used nowhere yet — available for a future
-    'log out all devices' feature). Fail-open by design: a best-effort revoke
-    matches this function's non-critical-path usage."""
+    """Explicit whole-session kill. Fail-open by design: a best-effort revoke
+    matches this function's non-critical-path usage. Called directly for a
+    single session, and in bulk by revoke_all_sessions below."""
     r = _redis()
     if r is None:
         return
@@ -164,3 +165,39 @@ def revoke_session(sid: str) -> None:
         r.setex(f"{_SESSION_PREFIX}{sid}:revoked", _REFRESH_TTL, "1")
     except Exception:
         pass
+
+
+# ── Per-user session tracking (for "revoke all sessions on password reset") ──
+
+def track_session(user_id: int, sid: str) -> None:
+    """Called from routers/auth.py's _issue_session right after
+    start_session, so every sid a user has ever been issued is recoverable
+    for a bulk revoke. Fail-open, same reasoning as start_session — Redis
+    being down must never block login itself."""
+    r = _redis()
+    if r is None:
+        return
+    try:
+        r.sadd(f"{_USER_SESSIONS_PREFIX}{user_id}:sids", sid)
+        r.expire(f"{_USER_SESSIONS_PREFIX}{user_id}:sids", _REFRESH_TTL)
+    except Exception:
+        pass
+
+
+def revoke_all_sessions(user_id: int) -> None:
+    """Called on password reset. Applies revoke_session to every sid this
+    user has been issued — bulk use of the existing per-session kill switch,
+    nothing new invented. Fail-open (best-effort): the accepted worst case
+    (Redis down at the exact moment of reset) is bounded by
+    check_and_rotate_refresh's fail-closed refresh path — a stolen session
+    can't refresh past its own access-token expiry (<= jwt_access_expire_minutes)
+    during that same outage either."""
+    r = _redis()
+    if r is None:
+        return
+    try:
+        sids = r.smembers(f"{_USER_SESSIONS_PREFIX}{user_id}:sids")
+    except Exception:
+        return
+    for sid in sids:
+        revoke_session(sid if isinstance(sid, str) else sid.decode())

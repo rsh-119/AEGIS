@@ -81,7 +81,7 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         try:
             response = await call_next(request)
             status   = str(response.status_code)
-        except Exception as exc:
+        except Exception:
             status = "500"
             raise
         finally:

@@ -3,9 +3,9 @@
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
-import { fetcher, inr, inrCompact, pct, signCls, num } from "@/lib/api";
+import { fetcher, inr, inrCompact } from "@/lib/api";
 import { PriceChart } from "@/components/PriceChart";
-import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Zap, Activity, Rocket, Flame, ChevronRight } from "lucide-react";
+import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Zap, Rocket, Flame, ChevronRight } from "lucide-react";
 import clsx from "clsx";
 import { ChartCard } from "@/components/ui/animated-card-chart";
 import { Card } from "@/components/ui/card";
@@ -312,9 +312,15 @@ function ViewAllLink({ href, label }: { href: string; label: string }) {
 
 type IpoPreview = { symbol: string; name: string; status: string; document_url?: string | null };
 
+// open (biddable now) first, then closed (awaiting listing), then upcoming
+const IPO_PRIORITY: Record<string, number> = { open: 0, closed: 1, upcoming: 2 };
+
 function IpoWidget() {
   const { data, isLoading } = useSWR<IpoPreview[]>("/api/market/ipo", fetcher, { revalidateOnFocus: false });
-  const items = (data ?? []).filter((i) => i.status !== "listed").slice(0, 4);
+  const items = (data ?? [])
+    .filter((i) => i.status !== "listed")
+    .sort((a, b) => (IPO_PRIORITY[a.status] ?? 9) - (IPO_PRIORITY[b.status] ?? 9))
+    .slice(0, 4);
 
   return (
     <Card className="overflow-hidden">
@@ -326,7 +332,7 @@ function IpoWidget() {
         {isLoading ? (
           <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="skeleton h-4 w-full rounded" />)}</div>
         ) : items.length === 0 ? (
-          <p className="text-xs text-muted">No upcoming or open IPOs right now.</p>
+          <p className="text-xs text-muted">No IPOs in the pipeline right now.</p>
         ) : (
           <ul className="space-y-2">
             {items.map((ipo) => (

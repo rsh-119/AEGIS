@@ -508,7 +508,7 @@ function AnalysisPanel({ analysis, company, chat, chatLoading, chatInput, setCha
 }
 
 // ─── Upload section (shown when no concall data) ──────────────────────────────
-function UploadSection({ symbol, company: initialCompany }: { symbol?: string; company?: string }) {
+function UploadSection({ company: initialCompany }: { symbol?: string; company?: string }) {
   const [tab, setTab] = useState<"pdf" | "paste">("pdf");
   const [docText, setDocText] = useState("");
   const [company, setCompany] = useState(initialCompany ?? "");

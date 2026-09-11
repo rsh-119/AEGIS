@@ -6,7 +6,8 @@ Architecture:
   L2  In-memory dict        — automatic fallback, zero config required
 
 TTL map (seconds):
-  prices    5 min   live tick + quote data
+  prices    1 h     /stock + /get_stock_data bundle (live tick comes from
+                     price_stream_service.py's SSE stream, not this cache)
   history   30 min  OHLCV candles
   market    10 min  indices, movers, market overview
   sector    30 min  sector aggregates
@@ -51,9 +52,13 @@ TTL: dict[str, int] = {
     #
     # "prices" bumped from 10min to 1h: it caches the /stock + /get_stock_data
     # bundle (get_stock, get_quote_bundle, stock_service.get_quote), but the
-    # stock page's *displayed* live price actually comes from a separate WS/SSE
-    # stream (useRealtimePrice), not this snapshot — so the company profile /
-    # shareholding / peer data bundled in here doesn't need 10-min freshness.
+    # stock page's *displayed* live price actually comes from a separate SSE
+    # stream (price_stream_service.py + useRealtimePrice.ts), not this
+    # snapshot — so the company profile / shareholding / peer data bundled in
+    # here doesn't need 10-min freshness. Note the SSE stream's poll loop
+    # reads this same cache (cheaply, every few seconds) rather than bypassing
+    # it, so upstream IndianAPI load is unaffected by how many clients are
+    # streaming a ticker — see price_stream_service.py's module docstring.
     "prices":    3600,    # 1 h     — /stock + /get_stock_data bundle
     #
     # Everything below except "news" is per-ticker *detail* data on the stock
@@ -62,7 +67,7 @@ TTL: dict[str, int] = {
     # actions, concalls, BSE/NSE filings) — none of it changes meaningfully
     # within a week, so it's bumped to 1 week (604800s) to minimize repeat
     # IndianAPI calls. Only current price is fetched fresh (via the separate
-    # WS/SSE stream, not this cache) — everything else rides along at low
+    # SSE stream, not this cache) — everything else rides along at low
     # priority. "news" is deliberately excluded — a week-stale news feed would
     # visibly break the one thing that feature is for.
     "history":   604800,   # 1 week — OHLCV candles + historical_stats (concall/shareholding)
@@ -86,6 +91,18 @@ TTL: dict[str, int] = {
     "logo":      604800,  # 7 days  — company/fund logos essentially never change
     "portfolio_review": 600,  # 10 min — content-addressed cache for AI portfolio review (see routers/portfolio.py)
 }
+
+# ── Reserved (non-cache) keyspace ─────────────────────────────────────────────
+# token_store.py stores auth state on this same Redis client. These prefixes
+# are security state, not cache entries, and must survive a cache flush.
+RESERVED_PREFIXES: tuple[str, ...] = ("auth:",)
+
+
+def _is_reserved(key: Any) -> bool:
+    if isinstance(key, bytes):
+        key = key.decode("utf-8", "ignore")
+    return isinstance(key, str) and key.startswith(RESERVED_PREFIXES)
+
 
 # ── In-memory fallback ────────────────────────────────────────────────────────
 class _MemStore:
@@ -164,9 +181,18 @@ class Cache:
                 logger.debug("Cache.get Redis error: %s", exc)
         return self._mem.get(key)
 
-    def set(self, key: str, val: Any, category: str = "market") -> None:
-        """Store value with TTL derived from category name."""
-        ttl = TTL.get(category, 600)
+    def set(self, key: str, val: Any, category: str = "market", ttl: int | None = None) -> None:
+        """Store value with TTL derived from category name.
+
+        `ttl` overrides the category lookup for the few call sites that own a
+        specific expiry rather than a shared category (ai_service's document
+        cache). It was already being passed as a keyword before this
+        parameter existed, which raised TypeError into that call site's
+        `except Exception: pass` — silently disabling the document cache
+        entirely, so every repeat analysis re-paid for a full LLM call.
+        """
+        if ttl is None:
+            ttl = TTL.get(category, 600)
         packed = json.dumps(val, default=str)
         if self._redis is not None:
             try:
@@ -185,11 +211,23 @@ class Cache:
         self._mem.delete(key)
 
     def flush(self, prefix: str = "") -> None:
-        """Delete all keys matching prefix (empty = entire cache)."""
+        """Delete all cached keys matching prefix (empty = entire cache).
+
+        Keys under RESERVED_PREFIXES are never deleted by an unprefixed
+        flush. token_store.py shares this Redis client and keyspace, so a
+        plain `KEYS * / DEL *` also wiped the access-token blocklist, the
+        session-revocation flags and the refresh-rotation pointers — meaning
+        an ops cache flush silently un-revoked every logged-out session,
+        every session killed by refresh-token reuse detection, and every
+        session revoked by a password reset. A caller that genuinely wants
+        those gone can still pass the prefix explicitly.
+        """
         if self._redis is not None:
             try:
                 pattern = f"{prefix}*" if prefix else "*"
                 keys = self._redis.keys(pattern)
+                if not prefix:
+                    keys = [k for k in keys if not _is_reserved(k)]
                 if keys:
                     self._redis.delete(*keys)
                 return

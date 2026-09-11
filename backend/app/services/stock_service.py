@@ -340,7 +340,6 @@ async def get_quote(ticker: str) -> dict:
     if (c := cache.get(ck)) is not None:
         return c
 
-    bare = t.replace(".NS", "").replace(".BO", "")
     data = await indianapi_service.get_quote_bundle(t)
     if not data or not data.get("current_price"):
         return {"ticker": t, "error": "No data for this symbol"}

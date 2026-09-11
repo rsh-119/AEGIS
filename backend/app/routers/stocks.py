@@ -1,15 +1,18 @@
 """/api/stocks/* — quotes, history, search, full analysis, forecast, health."""
 
 import asyncio
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_optional_user_id
 from app.core.database import get_db
 from app.core.entitlements import get_pro_user_id, is_pro_user
 from app.services import stock_service, news_service, ai_service, forecast_service, concall_service, peer_service, shareholding_service, financials_service, finance_math
+from app.services.price_stream_service import StreamCapacityExceeded, price_stream_hub
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
 
@@ -60,6 +63,52 @@ async def quote(ticker: str):
     if "error" in data:
         raise HTTPException(status_code=503, detail=data["error"])
     return data
+
+
+@router.get("/{ticker}/stream")
+async def stream_quote(ticker: str, request: Request):
+    """Server-Sent Events tick stream — replaces useRealtimePrice.ts's 30s
+    poll of /quote. Real text/event-stream framing (unlike ai.py's raw-chunk
+    StreamingResponse) since the frontend uses native EventSource, which
+    requires the `data: ...\\n\\n` wire format. See price_stream_service.py
+    for the shared poll-loop/fan-out design."""
+    t = stock_service.normalise_ticker(ticker)
+
+    # Claim the subscription before committing to a StreamingResponse — once
+    # streaming starts the status code can't be changed, so a capacity
+    # rejection has to surface here as a real 503.
+    try:
+        initial_q = await price_stream_hub.subscribe(t)
+    except StreamCapacityExceeded:
+        raise HTTPException(
+            status_code=503,
+            detail="Too many live price streams open right now — please retry shortly.",
+            headers={"Retry-After": "30"},
+        )
+
+    async def event_gen():
+        q = initial_q
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    tick = await asyncio.wait_for(q.get(), timeout=20)
+                    yield f"data: {json.dumps(tick)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"   # comment frame — keeps the proxy from idling out the connection
+        finally:
+            await price_stream_hub.unsubscribe(t, q)
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",   # disable proxy response buffering (nginx-style reverse proxies)
+        },
+    )
 
 
 @router.get("/{ticker}/history")
@@ -193,46 +242,75 @@ async def core_data(ticker: str, period: str = "6mo"):
     }
 
 
+@router.get("/{ticker}/ai-summary")
+async def ai_summary(ticker: str):
+    """AI valuation/risk/outlook summary — split out of the old combined
+    /insights endpoint so it renders the moment it's ready instead of
+    waiting on Company Health too (they used to share one asyncio.gather,
+    so the page showed neither until the slower of the two finished). See
+    /health-diagnosis below, its sibling on the same split."""
+    fetched = await ai_service.fetch_ai_context(ticker)
+    if fetched is None:
+        return {"ai_analysis": {}}
+    quote, hist, signals, sentiment, _articles, peer_avg = fetched
+    result = ai_service.public_result(
+        await ai_service.analyse_stock(quote, signals, hist, sentiment, peer_avg)
+    )
+    return {"ai_analysis": result}
+
+
+@router.get("/{ticker}/health-diagnosis")
+async def health_diagnosis(ticker: str):
+    """Company health diagnosis — split out of /insights; sibling of
+    /ai-summary above, same rationale."""
+    fetched = await ai_service.fetch_ai_context(ticker)
+    if fetched is None:
+        return {"health": {}}
+    quote, hist, signals, sentiment, articles, peer_avg = fetched
+    result = ai_service.public_result(
+        await ai_service.diagnose_health(quote, hist, sentiment, articles, peer_avg)
+    )
+    return {"health": result}
+
+
 @router.get("/{ticker}/insights")
 async def insights(
     ticker: str,
     user_id: int | None = Depends(get_optional_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Deferred endpoint — news, AI analysis, health diagnosis, and all three forecasts.
-    Called in parallel with /core so these load in the background while the page is already visible.
-    Forecast is Pro-only; AI analysis and health checks stay free for everyone in this same
-    response — a non-Pro caller skips running the (CPU-expensive) forecast models entirely rather
-    than just having the result hidden, and gets forecast_locked: true so the frontend has an
-    authoritative signal instead of relying on client-side user.is_pro alone."""
-    is_pro = await is_pro_user(user_id, db)
-    quote, hist = await asyncio.gather(
-        stock_service.get_quote(ticker),
-        stock_service.get_history(ticker, "6mo"),
-    )
-    # If quote is unavailable, return an empty insights shell rather than 503
-    if "error" in quote and "current_price" not in quote:
-        return {"error": quote["error"], "news": [], "ai": {}, "health": {}, "forecasts": {}}
+    """Deferred endpoint — news + all three forecasts. AI analysis and
+    health diagnosis used to live here too, but shared one asyncio.gather
+    with the forecasts, so news/forecast sat waiting on whichever AI call
+    was slower even though neither depends on the other — split out to
+    /ai-summary and /health-diagnosis above, which the frontend now calls
+    independently. Kept here (not removed) since /analysis (the legacy
+    combined endpoint) still calls this function directly — see that
+    route's docstring — and unlike ai_analysis/health, nothing else in the
+    current frontend has its own dedicated endpoint for bundled news +
+    3-model forecast, so splitting those two further is a separate task,
+    not part of this change.
 
-    company  = quote.get("company_name")
-    signals  = stock_service.ratio_signals(quote)
+    Forecast is Pro-only — a non-Pro caller skips running the (CPU-expensive)
+    forecast models entirely rather than just having the result hidden, and
+    gets forecast_locked: true so the frontend has an authoritative signal
+    instead of relying on client-side user.is_pro alone."""
+    is_pro = await is_pro_user(user_id, db)
+    quote = await stock_service.get_quote(ticker)
+    if "error" in quote and "current_price" not in quote:
+        return {"error": quote["error"], "news": [], "forecast": {}, "forecast_locked": not is_pro}
+
+    company = quote.get("company_name")
 
     # Fetch the 2y history ONCE — the 3 forecast models used to each call
     # get_history(ticker, "2y") independently via asyncio.gather, and since
     # none of them had landed in cache yet, all 3 raced and fired 3 separate
     # IndianAPI requests for identical data instead of 1.
-    # News/peer data are independent of each other and of the history fetch,
-    # so they load concurrently — but must land BEFORE the AI calls below,
-    # since analyse_stock/diagnose_health need the real sentiment/articles.
-    hist_2y, peer_data, news_data = await asyncio.gather(
+    hist_2y, news_data = await asyncio.gather(
         stock_service.get_history(ticker, "2y"),
-        peer_service.get_peer_comparison(ticker, quote.get("sector", ""), quote.get("industry")),
         news_service.get_news_and_sentiment(ticker, company),
     )
     candles_2y = hist_2y.get("candles", []) if "error" not in hist_2y else []
-    peer_avg = peer_data.get("sector_avg", {})
-    sentiment = news_data["sentiment"]
-    articles  = news_data["articles"]
 
     async def _run_forecast(model: str) -> dict:
         if not candles_2y:
@@ -240,32 +318,21 @@ async def insights(
         return await _forecast_async(candles_2y, 30, model)
 
     if is_pro:
-        # AI + all 3 forecasts genuinely in parallel — forecasts run on a
-        # thread pool (see _forecast_async) so they don't block each other or
-        # the event loop.
-        ai_analysis, health, fc_holt, fc_xgb, fc_lgbm = await asyncio.gather(
-            ai_service.analyse_stock(quote, signals, hist, sentiment, peer_avg),
-            ai_service.diagnose_health(quote, hist, sentiment, articles, peer_avg),
-            _run_forecast("holt"),
-            _run_forecast("xgboost"),
-            _run_forecast("lgbm"),
+        # All 3 forecasts genuinely in parallel — they run on a thread pool
+        # (see _forecast_async) so they don't block each other or the event loop.
+        fc_holt, fc_xgb, fc_lgbm = await asyncio.gather(
+            _run_forecast("holt"), _run_forecast("xgboost"), _run_forecast("lgbm"),
         )
         forecast = {"holt": fc_holt, "xgboost": fc_xgb, "lgbm": fc_lgbm}
     else:
         # Non-Pro — skip the forecast models entirely rather than computing
         # and discarding them (saves real load on the CPU-bound forecast
         # thread pool for the majority of, free, traffic).
-        ai_analysis, health = await asyncio.gather(
-            ai_service.analyse_stock(quote, signals, hist, sentiment, peer_avg),
-            ai_service.diagnose_health(quote, hist, sentiment, articles, peer_avg),
-        )
         forecast = None
 
     return {
         "news":            news_data["articles"],
         "sentiment":       news_data["sentiment"],
-        "ai_analysis":     ai_analysis,
-        "health":          health,
         "forecast":        forecast,
         "forecast_locked": not is_pro,
     }
@@ -281,14 +348,21 @@ async def full_analysis(
     """Legacy combined endpoint — kept for backwards compatibility. Passes
     the resolved auth dependencies through explicitly since insights() is
     called here as a plain function, not via FastAPI's routing layer, so its
-    own Depends(...) defaults would never be resolved otherwise."""
+    own Depends(...) defaults would never be resolved otherwise.
+
+    ai_analysis/health moved out of insights() and into their own endpoints
+    (see /ai-summary, /health-diagnosis) so the current frontend can render
+    them independently — merged back in here explicitly so this endpoint's
+    own output shape is unchanged for whatever else still calls it."""
     if period not in _PERIODS:
         period = "6mo"
-    core, ins = await asyncio.gather(
+    core, ins, ai, health = await asyncio.gather(
         core_data(ticker, period),
         insights(ticker, user_id, db),
+        ai_summary(ticker),
+        health_diagnosis(ticker),
     )
-    return {**core, **ins}
+    return {**core, **ins, **ai, **health}
 
 
 @router.get("/{ticker}/peers")

@@ -5,11 +5,12 @@ routers (stocks.py, documents.py) — unlike require_admin, which only
 admin.py itself needs. core/auth.py has zero DB/model dependencies today;
 this is kept separate so that stays true.
 
-Backed by the `subscriptions` table (app.models.Subscription), not
-users.is_pro — that column is still present on User but no longer read by
-application code as of this table's introduction. See
-alembic/versions/<hash>_add_subscriptions.py for the backfill that gave
-every pre-existing is_pro=True user a matching active/pro row.
+Backed by the `subscriptions` table (app.models.Subscription). The
+users.is_pro boolean this replaced was carried unread for one release and then
+dropped in migration 8c1d4a7f9e20, so there is now exactly one source of truth
+for Pro status. Migration 32229b3de89f holds the backfill that gave every
+pre-existing is_pro=True user a matching active/pro row before the column went
+away.
 """
 
 from __future__ import annotations

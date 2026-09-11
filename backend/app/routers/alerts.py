@@ -1,6 +1,5 @@
 """/api/alerts/* — price alert CRUD (requires auth)."""
 
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select

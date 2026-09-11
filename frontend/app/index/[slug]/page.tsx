@@ -3,7 +3,7 @@
 import { use, useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
-import { fetcher, inr, pct, signCls, num } from "@/lib/api";
+import { fetcher, pct, signCls } from "@/lib/api";
 import { PriceChart } from "@/components/PriceChart";
 import { ChevronLeft, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
 import clsx from "clsx";

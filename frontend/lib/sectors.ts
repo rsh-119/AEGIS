@@ -1,6 +1,6 @@
 import {
   Cpu, Landmark, Heart, Zap, Factory, Layers,
-  Radio, Sun, Home as HomeIcon, ShoppingCart, ArrowUpRight,
+  Radio, Home as HomeIcon, ShoppingCart, ArrowUpRight,
   type LucideIcon,
 } from "lucide-react";
 

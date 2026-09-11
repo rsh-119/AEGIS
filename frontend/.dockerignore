@@ -1,0 +1,37 @@
+# Build context exclusions — same reasoning as backend/.dockerignore: the build
+# context is not filtered by .gitignore, so without this file a local
+# .env.local (and the entire node_modules tree) is copied into the image.
+#
+# node_modules matters twice over here: `npm ci` reinstalls it inside the
+# builder anyway, so copying the host's copy is pure waste, and a host tree
+# built on a different platform can produce broken native bindings.
+
+# ── Secrets ──────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.local.example
+
+# ── Dependencies and build output (regenerated inside the image) ─────────────
+node_modules/
+.next/
+out/
+
+# ── Test artefacts and tooling ───────────────────────────────────────────────
+tests/
+e2e/
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+playwright.config.ts
+vitest.config.mts
+coverage/
+
+# ── VCS / editor / OS noise ──────────────────────────────────────────────────
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+.DS_Store
+*.log

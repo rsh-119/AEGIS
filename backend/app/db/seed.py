@@ -15,7 +15,7 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date
 
 from faker import Faker
 from sqlalchemy import select, text
@@ -89,17 +89,14 @@ async def _get_or_create_user(session, *, email: str, username: str, is_admin: b
             username=username,
             hashed_password=hash_password(DEV_PASSWORD),
             is_admin=is_admin,
-            # is_pro column is legacy/unread now (see entitlements.py) — kept
-            # in sync here only for anyone eyeballing the users table directly.
-            is_pro=is_pro,
         )
         session.add(user)
         await session.flush()  # get user.id before it's referenced by FK rows below
 
     if is_pro:
-        # Pro gating actually reads from `subscriptions`, not users.is_pro —
-        # seed one so devtest@aegis.local (and any is_pro=True extra user)
-        # actually passes get_pro_user_id/is_pro_user, not just the stale column.
+        # Pro status exists only in `subscriptions` (the users.is_pro column
+        # was dropped in migration 8c1d4a7f9e20) — seed a row so
+        # devtest@aegis.local actually passes get_pro_user_id/is_pro_user.
         sub = (await session.execute(
             select(Subscription).where(Subscription.user_id == user.id)
         )).scalar_one_or_none()

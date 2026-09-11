@@ -2,17 +2,18 @@
 
 import asyncio
 import hashlib
-from datetime import date, datetime
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.core.auth import get_current_user_id
 from app.core.cache import cache
 from app.core.database import get_db
 from app.middleware.rate_limiter import limiter, AI_LIMIT, user_or_ip_key
 from app.models import Holding, PortfolioReview
-from app.schemas import HoldingCreate
+from app.schemas import HoldingCreate, HoldingUpdate
 from app.services import ai_service, news_service, stock_service, indianapi_service, finance_math
 
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
@@ -143,7 +144,11 @@ async def portfolio_analysis(
     ).scalars().all()
     if not rows:
         return {"empty": True, "summary": _empty_summary()}
-    return await _compute_analysis(rows, include_growth=True)
+    analysis = await _compute_analysis(rows, include_growth=True)
+    # Signals derived from the same analysis dict already in hand — no
+    # second _compute_analysis call, unlike calling /insights separately.
+    analysis["signals"] = _compute_signals(analysis)
+    return analysis
 
 
 @router.get("/news")
@@ -196,24 +201,13 @@ async def portfolio_news(
     return {"items": items[:12]}
 
 
-@router.get("/insights")
-async def portfolio_insights(
-    user_id: int = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    """Decision support: deterministic health signals computed from the
-    portfolio — always free, no model tokens spent. The LLM review lives on
-    the separate rate-limited /insights/ai route (see portfolio_insights_ai)
-    so a plain tab visit here is never throttled by the AI quota."""
-    rows = (
-        await db.execute(select(Holding).where(Holding.user_id == user_id))
-    ).scalars().all()
-    if not rows:
-        return {"empty": True, "signals": [], "ai": None}
-    # No growth chart here — this view never reads it, so skip its 5y
-    # per-holding history fetch entirely.
-    analysis = await _compute_analysis(rows, include_growth=False)
-
+def _compute_signals(analysis: dict) -> list[dict]:
+    """Deterministic health signals derived from an already-computed
+    `_compute_analysis` result — no model tokens spent, no extra fetches.
+    Pulled out as a pure function so both /analysis (which already has the
+    growth-inclusive analysis in hand) and /insights (a lean, growth-free
+    caller) can produce the exact same signals from one computation instead
+    of each independently re-running _compute_analysis."""
     summary = analysis["summary"]
     caps = analysis["cap_buckets"]
     sectors = analysis["sector_buckets"]
@@ -332,7 +326,31 @@ async def portfolio_insights(
             ),
         })
 
-    return {"empty": False, "signals": signals[:6], "ai": None}
+    return signals[:6]
+
+
+@router.get("/insights")
+async def portfolio_insights(
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Decision support: deterministic health signals computed from the
+    portfolio — always free, no model tokens spent. The LLM review lives on
+    the separate rate-limited /insights/ai route (see portfolio_insights_ai)
+    so a plain tab visit here is never throttled by the AI quota.
+
+    Standalone route kept alongside /analysis's own `signals` field for any
+    lean caller (a future dashboard widget, mobile client) that wants just
+    the signals without paying for /analysis's growth-chart history fetch."""
+    rows = (
+        await db.execute(select(Holding).where(Holding.user_id == user_id))
+    ).scalars().all()
+    if not rows:
+        return {"empty": True, "signals": [], "ai": None}
+    # No growth chart here — this view never reads it, so skip its 5y
+    # per-holding history fetch entirely.
+    analysis = await _compute_analysis(rows, include_growth=False)
+    return {"empty": False, "signals": _compute_signals(analysis), "ai": None}
 
 
 @router.get("/insights/ai")
@@ -457,7 +475,9 @@ async def portfolio_insights_ai(
 
     ai_review = None
     try:
-        result = await asyncio.wait_for(ai_service.review_portfolio(context), timeout=45)
+        result = ai_service.public_result(
+            await asyncio.wait_for(ai_service.review_portfolio(context), timeout=45)
+        )
         if result.get("observations"):
             ai_review = {
                 "verdict": result.get("verdict"),
@@ -551,7 +571,7 @@ async def ask_portfolio(
         f"Portfolio XIRR: {analysis['xirr_pct']}% | Nifty 50 (same cashflows): {analysis['nifty_xirr_pct']}%\n"
         f"As of: {analysis['as_of']}"
     )
-    result = await ai_service.ask_portfolio(question, context)
+    result = ai_service.public_result(await ai_service.ask_portfolio(question, context))
     if not result.get("answer"):
         return {"answer": "I couldn't work that one out just now — try rephrasing or ask again in a moment.", "followups": []}
     return result
@@ -729,6 +749,46 @@ async def delete_holding(
         raise HTTPException(404, "Holding not found")
     await db.delete(row)
     return {"deleted": holding_id}
+
+
+def _stale_version_error(current_version: int) -> HTTPException:
+    return HTTPException(409, {
+        "error": "stale_version",
+        "message": "This holding was changed elsewhere. Reload and try again.",
+        "current_version": current_version,
+    })
+
+
+@router.patch("/{holding_id}")
+async def update_holding(
+    holding_id: int,
+    body: HoldingUpdate,
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Optimistic-concurrency-controlled edit. `body.version` must match the
+    row's current version — a fast-path check rejects an obviously-stale
+    write before touching anything, and the row's `version_id_col` mapper arg
+    (models.py) catches the narrower race a second writer could still hit
+    between that check and this flush, raising StaleDataError instead of
+    silently applying a lost update."""
+    row = await db.get(Holding, holding_id)
+    if not row or row.user_id != user_id:
+        raise HTTPException(404, "Holding not found")
+    if body.version != row.version:
+        raise _stale_version_error(row.version)
+
+    for field, value in body.model_dump(exclude_unset=True, exclude={"version"}).items():
+        setattr(row, field, value)
+
+    try:
+        await db.flush()
+    except StaleDataError:
+        await db.rollback()
+        fresh = await db.get(Holding, holding_id)
+        raise _stale_version_error(fresh.version if fresh else body.version)
+
+    return row.to_dict()
 
 
 def _empty_summary():

@@ -1,12 +1,12 @@
 """Circuit breaker for Groq streaming calls (/api/ai/ask-stream).
 
 Modeled on app/services/indianapi_service.py's module-level _blocked_until
-pattern rather than the generic CircuitBreaker in circuit_breaker.py,
-because that class trips on CONSECUTIVE failures only — no rolling-time-
-window support — and has zero callers anywhere in the codebase today, so
-there's no compatibility reason to force-fit its shape. This module adds
-the actual rolling-window failure list the "3 failures within 60s" spec
-needs, on top of the same 5-minute OPEN duration IndianAPI's breaker uses.
+pattern. (There used to be a generic CircuitBreaker class in
+app/core/circuit_breaker.py; it tripped on CONSECUTIVE failures only, had no
+rolling-time-window support and — decisively — no callers anywhere, so it was
+deleted rather than force-fitted here.) This module carries the rolling-window
+failure list the "3 failures within 60s" spec needs, on top of the same
+5-minute OPEN duration IndianAPI's breaker uses.
 
 Tracks failures per-Groq-SERVICE, not per-key: _next_groq_client() in
 ai_service.py round-robins GROQ_API_KEY/_2/_3 on every call regardless of
@@ -16,12 +16,13 @@ need call-time key identity threaded through stream_answer(), for no clear
 benefit (a Groq-wide outage and a single bad key both look identical from
 here: streaming calls failing).
 
-Not thread/process-safe across `uvicorn --workers 2` — module-level state
-is per-process. Same limitation as every other in-memory breaker in this
-codebase (circuit_breaker.py, indianapi_service.py); each worker trips and
-recovers independently. Acceptable: worst case is ~2x the intended failure
-budget before both workers are open, and OPEN only skips the 1.5s peek
-optimization in routers/ai.py, never correctness.
+Module-level state, so it is per-process. The Dockerfile now runs a single
+uvicorn worker precisely so that "per-process" and "per-instance" are the same
+thing (see backend/Dockerfile); the same limitation applies to
+indianapi_service.py's breaker and the SSE hub. If the process count is ever
+raised, each worker trips and recovers independently — worst case ~Nx the
+intended failure budget, and OPEN only skips the 1.5s peek optimization in
+routers/ai.py, never correctness.
 """
 
 from __future__ import annotations

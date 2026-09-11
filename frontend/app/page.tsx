@@ -7,7 +7,7 @@ import useSWR from "swr";
 import { motion, useScroll, useTransform } from "framer-motion";
 import { fetcher } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
-import { Reveal, Stagger, MotionNumber } from "@/components/motion";
+import { Reveal, Stagger } from "@/components/motion";
 import { InteractiveHoverButton } from "@/components/ui/interactive-hover-button";
 import { AuroraBackground } from "@/components/ui/aurora-background";
 import { BentoGrid } from "@/components/ui/bento-grid";
@@ -259,7 +259,8 @@ type IpoLite = {
   is_sme: boolean; listing_gains: number | null;
 };
 
-/* Live IPO preview: open issues first, then upcoming, then fresh listings */
+/* Live IPO preview: open issues first, then upcoming, then closed (awaiting
+   listing), then fresh listings */
 function useIpoPreview(count: number) {
   const { data } = useSWR<IpoLite[]>("/api/market/ipo", fetcher, {
     revalidateOnFocus: false,
@@ -268,6 +269,7 @@ function useIpoPreview(count: number) {
   return [
     ...items.filter((i) => i.status === "open"),
     ...items.filter((i) => i.status === "upcoming"),
+    ...items.filter((i) => i.status === "closed"),
     ...items.filter((i) => i.status === "listed"),
   ].slice(0, count);
 }
@@ -275,6 +277,7 @@ function useIpoPreview(count: number) {
 function IpoStatusChip({ ipo }: { ipo: IpoLite }) {
   if (ipo.status === "open") return <span className="text-up">● OPEN</span>;
   if (ipo.status === "upcoming") return <span className="text-saffron">UPCOMING</span>;
+  if (ipo.status === "closed") return <span className="text-violet-500">CLOSED</span>;
   if (ipo.listing_gains != null) {
     return (
       <span className={ipo.listing_gains >= 0 ? "text-up" : "text-down"}>
@@ -680,22 +683,16 @@ export default function Home() {
       {/* ── Stats band ── */}
       <Stagger
         step={120}
-        className="grid gap-10 border-y border-border py-12 sm:grid-cols-3 sm:gap-6 sm:py-14"
+        className="grid gap-10 border-y border-border py-12 sm:grid-cols-2 sm:gap-6 sm:py-14"
         itemClassName="text-center"
       >
         <div>
-          <p className="font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">
-            <MotionNumber value={5000} suffix="+" />
-          </p>
-          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">Every NSE &amp; BSE stock, covered</p>
-        </div>
-        <div>
           <p className="nums font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">₹0</p>
-          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">To start — no card required</p>
+          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">Free from the opening bell, no card</p>
         </div>
         <div>
           <p className="font-display text-4xl font-medium tracking-tight text-fg sm:text-5xl">Live</p>
-          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">Prices straight off the tape</p>
+          <p className="mt-2.5 font-mono text-[10.5px] uppercase tracking-[0.16em] text-muted">Straight off the tape, tick by tick</p>
         </div>
       </Stagger>
 

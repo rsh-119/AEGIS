@@ -71,6 +71,26 @@ export async function patch<T>(url: string, body: unknown): Promise<T> {
   return r.json();
 }
 
+/** Multipart upload — separate from _request() since a file body can't be
+ * JSON.stringify'd and must never get a Content-Type header set by hand
+ * (the browser needs to set its own with the multipart boundary). Same
+ * cookie-refresh-retry shape as _request() otherwise. */
+export async function uploadFile<T>(url: string, field: string, file: File): Promise<T> {
+  const form = new FormData();
+  form.append(field, file);
+  const init: RequestInit = { method: "POST", credentials: "include", body: form };
+  let r = await fetch(url, init);
+  if (r.status === 401) {
+    const ok = await tryRefresh();
+    if (ok) r = await fetch(url, init);
+  }
+  if (!r.ok) {
+    const detail = await r.json().catch(() => ({}));
+    throw new Error(detail.detail || `Upload failed (${r.status})`);
+  }
+  return r.json();
+}
+
 export async function del(url: string) {
   const r = await _request("DELETE", url);
   if (!r.ok) throw new Error(`${r.status}`);

@@ -6,7 +6,16 @@ metadata:
   labels:
     app: aegis-backend
 spec:
-  replicas: 2
+  # 1, deliberately. The SSE price-stream hub, the in-process prompt cache and
+  # both circuit breakers are per-process state (see backend/Dockerfile's CMD
+  # comment for the full reasoning). Every extra replica multiplies IndianAPI
+  # polling against a metered quota, splits the prompt-cache hit rate, and
+  # multiplies the effective failure budget of each breaker. Rate limiting and
+  # session state are already shared via Redis and are not the constraint.
+  #
+  # Raise this only after that state moves to Redis. Until then this app scales
+  # vertically; the HPA in hpa.yaml is disabled for the same reason.
+  replicas: 1
   selector:
     matchLabels:
       app: aegis-backend
@@ -20,11 +29,26 @@ spec:
       labels:
         app: aegis-backend
       annotations:
+        # /metrics is behind X-Admin-Key when APP_ENV=production. This scrape
+        # path is in-cluster and not externally reachable, so set
+        # METRICS_PUBLIC=true in the aegis-config ConfigMap to allow it — see
+        # backend/.env.example. Without that the scrape gets 403, by design.
         prometheus.io/scrape: "true"
         prometheus.io/port:   "8000"
         prometheus.io/path:   "/metrics"
     spec:
       terminationGracePeriodSeconds: 30
+
+      # Pod-level hardening. Verified against the built image: it starts,
+      # migrates and serves /health/live and /health/ready with a read-only
+      # root filesystem, ALL capabilities dropped and no-new-privileges.
+      securityContext:
+        runAsNonRoot:        true
+        runAsUser:           100     # the `aegis` user created in backend/Dockerfile
+        runAsGroup:          101
+        fsGroup:             101
+        seccompProfile:
+          type: RuntimeDefault
 
       containers:
         - name: aegis-backend
@@ -69,6 +93,20 @@ spec:
             periodSeconds:       5
             failureThreshold:    12   # allow 60s for cold start
 
+          # ── Container hardening ──────────────────────────────────────────────
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem:   true
+            capabilities:
+              drop: ["ALL"]
+
+          # /tmp must stay writable: the Python runtime and the ML libraries
+          # (lightgbm/xgboost/numpy) expect a temp directory. Everything else
+          # is read-only. noexec/nosuid so it cannot be used to stage a binary.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
           # ── Resources ────────────────────────────────────────────────────────
           resources:
             requests:
@@ -83,6 +121,12 @@ spec:
             preStop:
               exec:
                 command: ["/bin/sh", "-c", "sleep 5"]
+
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
 
 ---
 apiVersion: apps/v1
@@ -107,16 +151,41 @@ spec:
       labels:
         app: aegis-frontend
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser:    1001     # the `nextjs` user created in frontend/Dockerfile
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: aegis-frontend
           image: your-registry/aegis-frontend:latest
           imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 3000
               name: http
-          env:
-            - name: NEXT_PUBLIC_API_URL
-              value: "https://api.yourdomain.com"
+          # NOTE: the frontend takes NO API-origin env var at runtime.
+          #
+          # The browser must only ever talk to the frontend's own origin: the
+          # backend's session cookies are SameSite=Strict, so a cross-site
+          # fetch drops them and authentication silently fails. All API calls
+          # go to same-origin /api/* and are proxied server-side by the Next.js
+          # rewrite (frontend/next.config.js).
+          #
+          # That rewrite destination is frozen into the build — Next evaluates
+          # rewrites() during `next build` and writes the result into
+          # routes-manifest.json — so it must be supplied as a BUILD ARG when
+          # the image is built, not here:
+          #
+          #   docker build --build-arg API_PROXY_TARGET=http://aegis-backend:8000 ...
+          #
+          # Use the in-cluster Service name; it is never resolved by a browser.
+          # Setting NEXT_PUBLIC_API_URL here would have no effect at all — the
+          # previous value ("https://api.yourdomain.com") was both inert and,
+          # had it worked, would have broken login by making auth cross-site.
           resources:
             requests:
               cpu:    "100m"

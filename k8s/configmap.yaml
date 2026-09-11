@@ -11,3 +11,26 @@ data:
   RATE_LIMIT_ENABLED:   "true"
   AI_TIMEOUT_SECONDS:   "60"
   CORS_ORIGINS:         "https://yourdomain.com"
+
+  # ── Rate-limit client-IP resolution ───────────────────────────────────────
+  # Which socket peers may set X-Forwarded-For. MUST be narrowed to the
+  # ingress's actual pod/service CIDR — the application's default (loopback +
+  # all of RFC1918) covers the whole cluster network, so any workload in the
+  # cluster could otherwise forge a client IP and reset any per-IP rate-limit
+  # bucket. The backend logs a WARNING on every boot until this is set.
+  # Replace with your ingress controller's pod CIDR.
+  TRUSTED_PROXY_IPS:    "10.0.0.0/16"
+  # Number of appending proxies in front of the app (ingress = 1).
+  TRUSTED_PROXY_HOPS:   "1"
+
+  # ── Metrics ───────────────────────────────────────────────────────────────
+  # /metrics is behind X-Admin-Key when APP_ENV=production. The
+  # prometheus.io/scrape annotation in deployment.yaml scrapes it from inside
+  # the cluster, where it is not externally reachable, and Prometheus does not
+  # send that header — so without this the scrape gets 403 and the target sits
+  # permanently down. Set to "false" and use http_headers in your scrape config
+  # if you would rather authenticate the scrape.
+  METRICS_PUBLIC:       "true"
+
+  # Used to build password-reset links.
+  FRONTEND_URL:         "https://yourdomain.com"

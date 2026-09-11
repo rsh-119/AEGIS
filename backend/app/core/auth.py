@@ -102,6 +102,18 @@ def create_refresh_token(user_id: int, session_id: str) -> tuple[str, str]:
     )
 
 
+def create_pre_auth_token(user_id: int) -> str:
+    """Short-lived (5 min), self-expiring token returned instead of session
+    cookies when /login (or the Google callback) finds is_2fa_enabled=True.
+    No session_id — it isn't a login session, just a claim of "this user
+    already proved their password" pending a second factor. No Redis
+    tracking either: unlike refresh tokens it's single-purpose and expires
+    fast enough that a replay window doesn't matter, so long as
+    /2fa/verify-login still requires a correct code — see routers/auth.py."""
+    token, _ = _create_token(str(user_id), "pre_auth", timedelta(minutes=5))
+    return token
+
+
 @dataclass
 class DecodedToken:
     user_id: int

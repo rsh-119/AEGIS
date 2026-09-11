@@ -170,7 +170,7 @@ def _fetch_indices_from_nse_sync() -> list[dict]:
 
 # ── NSE gainers / losers (primary — no yfinance, no API key needed) ──────────
 
-def _nse_stock(sym: str, ltp, prev_price, per_change, volume=None) -> dict:
+def _nse_stock(sym: str, ltp, per_change, volume=None) -> dict:
     ticker = f"{sym}.NS"
     price  = float(ltp or 0) or None
     pct    = float(per_change or 0)
@@ -216,7 +216,6 @@ def _fetch_nse_gainers_losers_sync() -> dict[str, list[dict]]:
                 s = _nse_stock(
                     row.get("symbol", ""),
                     row.get("ltp"),
-                    row.get("prev_price"),
                     row.get("perChange"),
                     row.get("trade_quantity"),
                 )
@@ -243,7 +242,7 @@ def _fetch_nse_gainers_losers_sync() -> dict[str, list[dict]]:
             for item in r2.json().get("data") or []:
                 m = item.get("metadata") or {}
                 sym = m.get("symbol", "").strip()
-                s = _nse_stock(sym, m.get("lastPrice"), m.get("previousClose"), m.get("pChange"))
+                s = _nse_stock(sym, m.get("lastPrice"), m.get("pChange"))
                 if s and s["ticker"] not in {x["ticker"] for x in fo_stocks}:
                     fo_stocks.append(s)
             if len([s for s in fo_stocks if s["change_pct"] < 0]) >= 30:
@@ -284,7 +283,7 @@ async def _fetch_movers_from_indianapi() -> dict[str, list[dict]]:
 
     stocks: list[dict] = []
     for sym, row in prices.items():
-        s = _nse_stock(sym, row.get("ltp"), None, row.get("day_change_percent"), row.get("volume"))
+        s = _nse_stock(sym, row.get("ltp"), row.get("day_change_percent"), row.get("volume"))
         if s:
             stocks.append(s)
 
@@ -808,7 +807,6 @@ async def _fetch_and_cache_overview() -> dict:
     gainers     = nse_movers.get("gainers", [])
     losers      = nse_movers.get("losers",  [])
     high_volume: list[dict] = []
-    stocks: list[dict]      = []  # full bucket list — not fetched anymore
     source = "nse"
 
     # Fallback when NSE direct is blocked (403 from cloud IPs, e.g. Render) —
@@ -862,14 +860,15 @@ async def get_cap_stocks(size: str) -> dict:
 # ── IndianAPI-backed market data endpoints ────────────────────────────────────
 
 async def get_ipo() -> list[dict]:
-    """Upcoming and recent IPOs via IndianAPI. Cached 1h."""
+    """Upcoming and recent IPOs via IndianAPI. Cached 30min."""
     ck = "market:ipo"
     if (hit := cache.get(ck)) is not None:
         return hit
     from app.services.indianapi_service import get_ipo as _ipo
     data = await _ipo()
     if data:
-        cache.set(ck, data, "nifty50")   # 1h TTL
+        cache.set(ck, data, "market")   # 30min TTL — was mislabeled "nifty50" (6h),
+        # too stale for bidding-window/listing transitions that matter within a day
     return data or []
 
 

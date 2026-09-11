@@ -43,3 +43,9 @@ PROJECT_KNOWLEDGE.md
 DESIGN.md
 fey-reference.zip
 CLAUDE.md
+
+# Frontend test artifacts (Playwright / Vitest)
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/.playwright/

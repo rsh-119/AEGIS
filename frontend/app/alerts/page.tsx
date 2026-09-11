@@ -4,7 +4,7 @@ import { useState } from "react";
 // useSWRConfig().mutate, not the bare `mutate` export — the app runs on a
 // custom SWR cache provider, and the global mutate doesn't reach it.
 import useSWR, { useSWRConfig } from "swr";
-import { fetcher, inr, pct, deleteTolerant404, post, patch } from "@/lib/api";
+import { fetcher, inr, deleteTolerant404, post, patch } from "@/lib/api";
 import { SearchBox } from "@/components/SearchBox";
 import { Bell, BellOff, Pencil, Trash2, Plus, CheckCircle2 } from "lucide-react";
 import clsx from "clsx";
@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 
@@ -266,6 +265,9 @@ function AlertTable({
         <Label className={clsx("text-xs font-semibold uppercase tracking-widest", titleColor)}>{title}</Label>
         <Badge className="bg-raised text-muted text-[10px]">{alerts.length}</Badge>
       </div>
+      {/* Edit mode (input + Save/Cancel) and the action-button cluster push
+          this past a phone's width — scroll horizontally rather than clip. */}
+      <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="border-b border-border text-muted">
           <tr className="[&>th]:px-5 [&>th]:py-2.5 [&>th]:text-left [&>th]:text-micro-cap [&>th]:font-normal [&>th]:uppercase [&>th]:tracking-[0.1px]">
@@ -352,6 +354,7 @@ function AlertTable({
           ))}
         </tbody>
       </table>
+      </div>
     </Card>
   );
 }

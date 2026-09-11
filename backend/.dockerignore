@@ -1,0 +1,57 @@
+# Build context exclusions.
+#
+# WITHOUT THIS FILE THE IMAGE SHIPPED EVERY LIVE CREDENTIAL. `COPY . .` copies
+# the build context, and the build context is NOT filtered by .gitignore — so
+# backend/.env, which is correctly gitignored and has never been committed, was
+# nonetheless baked into every image at /app/.env: GROQ_API_KEY, GEMINI_API_KEY,
+# NVIDIA_API_KEY, OPENROUTER_API_KEY, INDIANAPI_KEY, ADMIN_API_KEY, the
+# DATABASE_URL with its password, and — worst of the set — JWT_SECRET_KEY
+# (forge any user's session) and TOTP_ENCRYPTION_KEY (decrypt every user's 2FA
+# secret at rest). Anyone who could pull, export or exec the image had all of
+# them, and `docker history` would keep them even after a later delete.
+#
+# It also copied the local venv/ — 1.3 GB of Python 3.10 packages into a
+# Python 3.12 image, which is both a 4.19 GB -> ~700 MB size difference and a
+# second, mismatched interpreter's dependency tree sitting next to the real one.
+#
+# Runtime configuration comes from the environment (Render/k8s/compose all
+# inject it), never from a file in the image.
+
+# ── Secrets: nothing resembling real configuration enters the image ──────────
+.env
+.env.*
+!.env.example
+
+# ── Local virtualenvs ────────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ── Python build artefacts ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# ── Test and tooling artefacts (not needed at runtime) ───────────────────────
+tests/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+pytest.ini
+
+# ── VCS / editor / OS noise ──────────────────────────────────────────────────
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# ── Local logs and scratch ───────────────────────────────────────────────────
+*.log

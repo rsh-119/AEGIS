@@ -78,6 +78,7 @@ type Analysis = {
   outperformance_pct: number | null;
   cap_buckets: Bucket[];
   sector_buckets: Bucket[];
+  signals: Signal[];
   as_of: string;
 };
 
@@ -344,7 +345,7 @@ export function AnalysisPanel() {
       {data.growth && data.growth.length > 2 && <GrowthChart points={data.growth} />}
 
       {/* Aegis Intelligence — decision support */}
-      <InsightsCard />
+      <InsightsCard signals={data.signals} />
 
       {/* Allocations — rows expand to show the holdings inside each bucket */}
       <div className="grid gap-4 lg:grid-cols-2">
@@ -377,10 +378,7 @@ const AI_STYLE: Record<AiObservation["severity"], { icon: React.ElementType; cls
   neutral:     { icon: Info,          cls: "text-saffron bg-saffron/10 ring-saffron/20", label: "Note" },
 };
 
-function InsightsCard() {
-  const { data, isLoading } = useSWR<{ empty: boolean; signals: Signal[]; ai: AiReview | null }>(
-    "/api/portfolio/insights", fetcher, { revalidateOnFocus: false },
-  );
+function InsightsCard({ signals }: { signals: Signal[] }) {
   const { data: latestData } = useSWR<{ ai: AiReview | null }>(
     "/api/portfolio/insights/ai/latest", fetcher, { revalidateOnFocus: false },
   );
@@ -421,8 +419,7 @@ function InsightsCard() {
     }
   }
 
-  if (isLoading) return <div className="skeleton h-48 rounded-2xl" />;
-  if (!data || data.empty || data.signals.length === 0) return null;
+  if (signals.length === 0) return null;
 
   return (
     <Card className="p-6">
@@ -434,7 +431,7 @@ function InsightsCard() {
           </h3>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {(["warning", "positive", "info"] as const).map((kind) => {
-              const n = data.signals.filter((sg) => sg.kind === kind).length;
+              const n = signals.filter((sg) => sg.kind === kind).length;
               if (!n) return null;
               const S = SIGNAL_STYLE[kind];
               return (
@@ -457,7 +454,7 @@ function InsightsCard() {
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
-        {data.signals.map((sig, i) => {
+        {signals.map((sig, i) => {
           const S = SIGNAL_STYLE[sig.kind];
           return (
             <div

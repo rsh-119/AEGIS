@@ -2,9 +2,20 @@
 #
 #   docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up -d
 #
+# Credentials: Grafana reads GRAFANA_ADMIN_USER / GRAFANA_ADMIN_PASSWORD from
+# the environment (or a .env file beside this one). Both are REQUIRED — the
+# hardcoded admin/admin default was removed, and `${VAR:?message}` makes
+# `docker compose up` refuse to start with a clear message rather than quietly
+# bringing up an instance anyone can log into. For local use:
+#
+#   echo "GRAFANA_ADMIN_USER=admin"                     >> .env
+#   echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 16)" >> .env
+#
+# .env is gitignored. Nothing here echoes the value.
+#
 # Includes:
 #   • Prometheus   — metrics scraper     http://localhost:9090
-#   • Grafana      — dashboards          http://localhost:3002  (admin/admin)
+#   • Grafana      — dashboards          http://localhost:3002
 #   • Alertmanager — alert routing       http://localhost:9093
 services:
 
@@ -32,7 +43,10 @@ services:
   grafana:
     image: grafana/grafana:11.1.0
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      # No default on purpose: a default password IS the vulnerability. Compose
+      # aborts with this message if either is unset.
+      GF_SECURITY_ADMIN_USER:     ${GRAFANA_ADMIN_USER:?set GRAFANA_ADMIN_USER in .env (see header)}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env (see header)}
       GF_USERS_ALLOW_SIGN_UP:     "false"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/aegis.json
     volumes:

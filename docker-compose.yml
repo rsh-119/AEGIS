@@ -14,7 +14,11 @@ services:
       # machine (not this container) — remapped to 5434 to avoid the clash.
       # Internal container-to-container traffic (backend's `db:5432`) is
       # unaffected either way.
-      - "5434:5432"
+      #
+      # Bound to 127.0.0.1, not 0.0.0.0: a bare "5434:5432" publishes Postgres
+      # on every interface, so the database is reachable from the local network
+      # with the credentials that are sitting in this file.
+      - "127.0.0.1:5434:5432"
     volumes:
       - aegis_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -30,8 +34,10 @@ services:
     command: redis-server --save 60 1 --loglevel warning
     ports:
       # Host 6379 is already held by a native Redis install on this
-      # machine — remapped to 6380 to avoid the clash.
-      - "6380:6379"
+      # machine — remapped to 6380 to avoid the clash. Loopback-bound for the
+      # same reason as the database: Redis here holds session revocation state
+      # and has no password.
+      - "127.0.0.1:6380:6379"
     volumes:
       - aegis_redis:/data
     healthcheck:
@@ -51,13 +57,27 @@ services:
       DATABASE_URL: postgresql+asyncpg://aegis:aegis@db:5432/aegis
       REDIS_URL:    redis://redis:6379
       APP_ENV:      production
-    ports:
-      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+    ports:
+      # Loopback-bound deliberately. Published on all interfaces, this backend
+      # is reachable with NO reverse proxy in front of it — and because Docker
+      # NATs the source address into the bridge subnet (172.x, inside the
+      # default TRUSTED_PROXY_IPS), the app then accepts the caller's own
+      # X-Forwarded-For and every per-IP rate limit becomes resettable by
+      # sending a different header value. Verified against this image.
+      #
+      # The browser never needs this port: the frontend container proxies
+      # /api/* to `backend:8000` over the internal network. It is published at
+      # all only so a developer can curl the API from the host.
+      #
+      # If you must expose the backend on a public interface, put a proxy in
+      # front that OVERWRITES X-Forwarded-For, and set TRUSTED_PROXY_IPS to
+      # that proxy's address only — not the default RFC1918 range.
+      - "127.0.0.1:8000:8000"
     healthcheck:
       test:     ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
       interval: 10s
@@ -70,8 +90,20 @@ services:
     build:
       context:    ./frontend
       dockerfile: Dockerfile
-    environment:
-      NEXT_PUBLIC_API_URL: http://backend:8000
+      args:
+        # SERVER-SIDE proxy target, consumed only by the Next.js /api/* rewrite
+        # inside the frontend container. The browser never sees this value and
+        # must not: the backend's session cookies are SameSite=Strict, so a
+        # cross-site fetch straight to the backend drops them and login fails.
+        # Everything goes to same-origin /api/* instead.
+        #
+        # It is a BUILD ARG, not a runtime `environment:` entry, because Next
+        # evaluates rewrites() during `next build` and freezes the destination
+        # into .next/routes-manifest.json — a runtime value would be ignored.
+        # This was previously set as `environment: NEXT_PUBLIC_API_URL`, which
+        # did nothing at all and read as if the browser were meant to resolve
+        # the container hostname (it cannot).
+        API_PROXY_TARGET: http://backend:8000
     ports:
       - "3000:3000"
     depends_on:

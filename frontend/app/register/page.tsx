@@ -9,10 +9,12 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import { setPendingPreAuthToken } from "@/lib/twoFactor";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { register } = useAuth();
+  const { register, loginWithGoogle } = useAuth();
 
   const [email, setEmail]       = useState("");
   const [username, setUsername] = useState("");
@@ -39,6 +41,28 @@ export default function RegisterPage() {
     }
   }
 
+  async function submitGoogle(credential: string) {
+    // find-or-create: this can also log in an *existing* Google-linked
+    // account (e.g. someone re-clicking "create account" on a device
+    // they've signed in on before) — so the 2FA branch is possible here
+    // too, same handling as the login page.
+    setError("");
+    setBusy(true);
+    try {
+      const result = await loginWithGoogle(credential);
+      if (result.requiresTwoFactor) {
+        setPendingPreAuthToken(result.preAuthToken);
+        router.push("/verify-2fa");
+        return;
+      }
+      router.replace("/");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="flex min-h-[70vh] items-center justify-center">
       <div className="w-full max-w-sm animate-scale-in">
@@ -54,6 +78,8 @@ export default function RegisterPage() {
                 {error}
               </div>
             )}
+
+            <GoogleSignInButton onCredential={submitGoogle} />
 
             <div className="space-y-1">
               <Label className="text-xs">Email</Label>

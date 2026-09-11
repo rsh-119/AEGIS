@@ -196,9 +196,14 @@ export function Footer() {
 
           {/* Bottom bar */}
           <div className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-border/60 pt-5 sm:flex-row">
-            <p className="text-xs text-muted/50">
-              &copy; {new Date().getFullYear()} AEGIS. All rights reserved.
-            </p>
+            <div className="flex items-center gap-4">
+              <p className="text-xs text-muted/50">
+                &copy; {new Date().getFullYear()} AEGIS. All rights reserved.
+              </p>
+              <Link href="/privacy" className="text-xs text-muted/50 underline-offset-2 hover:text-saffron hover:underline">
+                Privacy &amp; cookies
+              </Link>
+            </div>
             <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted/50">
               For information only, not investment advice
             </p>

@@ -1,5 +1,25 @@
-# Horizontal Pod Autoscaler
-# Scales aegis-backend between 2 and 8 replicas based on CPU and memory.
+# Horizontal Pod Autoscaler — PINNED TO 1 REPLICA, DO NOT RAISE YET.
+#
+# An HPA overrides its target Deployment's `replicas`, so this file — not
+# deployment.yaml — is what actually decides the backend's process count. It
+# previously scaled 2..8, which silently contradicted (and would have
+# overridden) the single-replica decision recorded in deployment.yaml.
+#
+# aegis-backend cannot be scaled horizontally today. Three things are
+# per-process state, not shared (full reasoning in backend/Dockerfile's CMD
+# comment):
+#   • the SSE price-stream hub      -> N× IndianAPI polling on a metered quota
+#   • the in-process prompt cache   -> N-way split hit rate, re-billed LLM calls
+#   • both circuit breakers         -> N× the intended failure budget
+#
+# Nothing here is a throughput limit — it is a correctness limit. Raising min/
+# max before that state moves to Redis buys capacity by multiplying upstream
+# cost and weakening every breaker.
+#
+# TO ENABLE LATER: move the SSE hub and prompt cache to Redis, make the
+# breakers shared, load-test, then restore minReplicas: 2 / maxReplicas: 8.
+# The scaling behaviour below is already tuned and left intact for that day.
+#
 # Requires metrics-server installed in the cluster.
 
 apiVersion: autoscaling/v2
@@ -12,8 +32,8 @@ spec:
     apiVersion: apps/v1
     kind:       Deployment
     name:       aegis-backend
-  minReplicas: 2
-  maxReplicas: 8
+  minReplicas: 1
+  maxReplicas: 1   # see header — raise only after per-process state is shared
   metrics:
     - type: Resource
       resource:

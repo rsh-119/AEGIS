@@ -23,9 +23,44 @@ from app import models  # noqa: E402,F401  — registers all tables on Base.meta
 config = context.config
 
 # Interpret the config file for Python logging.
-# This line sets up loggers basically.
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+#
+# disable_existing_loggers=False is REQUIRED here and is not a style choice.
+# fileConfig() defaults to True, which sets .disabled = True on every logger
+# that already exists at the moment it runs. This module is not only loaded by
+# the `alembic` CLI — app/core/database.py::init_db() calls
+# `command.upgrade(cfg, "head")` on every application startup, by which point
+# all 26 `app.*` loggers have been created at import time.
+#
+# With the default, that call silently disabled the entire application's
+# logging for the life of the process: no warnings, no errors, no structured
+# JSON output, nothing. Measured after init_db() — 26/26 app loggers disabled,
+# and app.main could no longer emit at ERROR.
+#
+# Several other controls quietly depended on that logging working, so the
+# damage was wider than "logs are missing":
+#   • /health/ready deliberately returns a GENERIC error and sends the real
+#     driver exception to the logs — which went nowhere;
+#   • the READONLY_MODE block warning, circuit-breaker trips, IndianAPI 429
+#     backoff and AI provider failures were all invisible;
+#   • Sentry's logging integration captures breadcrumbs from log records, so it
+#     received none.
+#
+# It also made the test suite's log-hygiene assertions vacuous — caplog.records
+# was always empty, so "assert password not in logs" compared against an empty
+# string. See tests/test_log_capture.py.
+#
+# The `configure_logger` attribute lets the CALLER opt out entirely. That is
+# what app/core/database.py::init_db() does, and it matters for a second reason
+# beyond disabling loggers: fileConfig() also REPLACES the root handler with
+# alembic.ini's, which silently swapped production's structured JSON formatter
+# for the human-readable dev one for the rest of the process's life. Verified in
+# the built container — the two log lines emitted before init_db() were JSON,
+# and everything after it was not, so log ingestion would have received two
+# parseable lines and then nothing but prose.
+#
+# The `alembic` CLI passes no attributes, so it keeps its own logging config.
+if config.attributes.get("configure_logger", True) and config.config_file_name is not None:
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Single source of truth for both the DB URL and the schema: the same
 # Settings/Base the app itself uses (app/core/config.py, app/core/database.py)

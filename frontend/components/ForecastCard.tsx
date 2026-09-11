@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { inr, signCls } from "@/lib/api";
+import { inr } from "@/lib/api";
 import { TrendingUp, TrendingDown, Minus, Activity, Cpu, Zap, BarChart2 } from "lucide-react";
 import clsx from "clsx";
 import { Card } from "@/components/ui/card";
@@ -102,8 +102,8 @@ function MiniChart({ points, lastPrice, days, up }: {
 }
 
 /* ─── Single-algo view ───────────────────────────── */
-function AlgoView({ fc, algoKey, horizon, setHorizon }: {
-  fc: SingleFc; algoKey: AlgoKey;
+function AlgoView({ fc, horizon, setHorizon }: {
+  fc: SingleFc;
   horizon: string; setHorizon: (h: string) => void;
 }) {
 
@@ -115,7 +115,6 @@ function AlgoView({ fc, algoKey, horizon, setHorizon }: {
     );
   }
 
-  const algo  = ALGOS.find((a) => a.key === algoKey)!;
   const pts   = fc.points || [];
   const ms    = fc.milestones || {};
   const sel   = ms[horizon];
@@ -279,7 +278,7 @@ export function ForecastCard({ forecast: fc }: { forecast: ForecastProp | undefi
 
       {/* Per-algo view */}
       {activeFc ? (
-        <AlgoView fc={activeFc} algoKey={algo} horizon={horizon} setHorizon={setHorizon} />
+        <AlgoView fc={activeFc} horizon={horizon} setHorizon={setHorizon} />
       ) : (
         <div className="px-5 py-8 text-center">
           <p className="text-sm text-muted">Loading {activeAlgo.label} forecast…</p>

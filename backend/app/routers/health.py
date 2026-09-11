@@ -16,7 +16,6 @@ from sqlalchemy import text
 
 from app.core import groq_circuit_breaker
 from app.core.cache import cache
-from app.core.circuit_breaker import all_statuses as cb_statuses
 from app.core.config import get_settings
 from app.core.database import engine
 from app.core.metrics import registry
@@ -28,14 +27,17 @@ _START  = time.time()
 
 
 def _all_circuit_statuses() -> list[dict]:
-    """The generic circuit_breaker registry (app/core/circuit_breaker.py) has
-    no callers anywhere in this codebase — IndianAPI's real 429 backoff lives
-    in its own module-level `_blocked_until` instead. Fold that real state in
-    here so readiness/status actually reflect it, under the "indianapi" name
-    both endpoints already expect."""
-    statuses = cb_statuses()
+    """Every circuit breaker this codebase actually operates, in the shape
+    /health/ready and /health/status both expect.
+
+    There is no generic breaker registry to consult: app/core/circuit_breaker.py
+    was a registry with no callers (nothing ever called get_breaker), so it
+    always returned an empty list and was removed. The two breakers that are
+    real are open-coded in their own modules — IndianAPI's 429 backoff in
+    indianapi_service._blocked_until, and the Groq streaming breaker in
+    app.core.groq_circuit_breaker — and are folded in here."""
+    statuses: list[dict] = []
     if indianapi_blocked():
-        statuses = [s for s in statuses if s["name"] != "indianapi"]
         statuses.append({
             "name": "indianapi", "state": "open", "failures": 0,
             "total_trips": 0, "seconds_until_retry": indianapi_backoff_remaining(),
@@ -85,7 +87,13 @@ async def readiness():
             "latency_ms": round((time.perf_counter() - t0) * 1000),
         }
     except Exception as exc:
-        checks["database"] = {"status": "error", "error": str(exc)[:200]}
+        # Deliberately generic: this endpoint is unauthenticated, and real
+        # asyncpg failures carry infrastructure detail — the database
+        # username ('password authentication failed for user "aegis"') or the
+        # host and port ("Connect call failed ('10.0.0.5', 5432)"). The full
+        # exception goes to the logs, where ops can actually see it, rather
+        # than to anyone who curls the probe during an outage.
+        checks["database"] = {"status": "error", "error": "database unreachable"}
         overall_ok = False
         logger.error("Readiness: DB check failed: %s", exc)
 
@@ -99,8 +107,9 @@ async def readiness():
                 "latency_ms": round((time.perf_counter() - t0) * 1000),
             }
         except Exception as exc:
-            # Redis degraded but app can fall back to memory — not fatal
-            checks["redis"] = {"status": "degraded", "error": str(exc)[:200]}
+            # Redis degraded but app can fall back to memory — not fatal.
+            # Reason kept generic for the same reason as the database branch.
+            checks["redis"] = {"status": "degraded", "error": "redis unreachable"}
             logger.warning("Readiness: Redis degraded: %s", exc)
     else:
         checks["redis"] = {"status": "memory_fallback", "note": "Redis not configured"}
@@ -163,11 +172,32 @@ async def full_status(request: Request):
 # ── Prometheus metrics scrape endpoint ────────────────────────────────────────
 
 @router.get("/metrics", include_in_schema=False)
-async def prometheus_metrics():
+async def prometheus_metrics(request: Request):
     """
     Prometheus text exposition format (v0.0.4).
     Add this URL to your prometheus.yml scrape_configs.
+
+    Protected in production by the same X-Admin-Key as /health/status. The
+    payload holds no secrets (asserted in tests/test_ops.py) but it does
+    publish the full route inventory, request volumes and latency
+    distributions — free reconnaissance, and a free read on how much traffic
+    the service actually takes.
+
+    Two ways to scrape it in production:
+      • send `X-Admin-Key: $ADMIN_API_KEY` (Prometheus `http_headers:`), or
+      • set METRICS_PUBLIC=true when the endpoint is genuinely unreachable
+        from outside the cluster — which is what k8s/deployment.yaml's
+        prometheus.io/scrape annotation describes.
+
+    Fails closed: with APP_ENV=production, METRICS_PUBLIC unset and
+    ADMIN_API_KEY unset, this 403s rather than serving to anyone.
     """
+    from fastapi import HTTPException
+    settings = get_settings()
+    if settings.app_env == "production" and not settings.metrics_public:
+        key = request.headers.get("x-admin-key", "")
+        if not settings.admin_api_key or key != settings.admin_api_key:
+            raise HTTPException(status_code=403, detail="Forbidden")
     return PlainTextResponse(
         registry.expose_all(),
         media_type="text/plain; version=0.0.4; charset=utf-8",

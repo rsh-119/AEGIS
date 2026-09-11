@@ -17,8 +17,6 @@ from __future__ import annotations
 import csv
 import io
 import logging
-import re
-from datetime import date, timedelta
 
 import httpx
 

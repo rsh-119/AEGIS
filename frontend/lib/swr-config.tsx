@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { SWRConfig, type State } from "swr";
-import { idbGet, idbSet, idbDelete, idbGetAll } from "./idb";
+import { idbSet, idbDelete, idbGetAll } from "./idb";
 
 // ── TTL / deduping maps (ms) by request URL prefix ────────────────────────────
 // IDB persistence TTL — how long stale data is served from browser store
@@ -62,10 +62,10 @@ function makeIDBProvider() {
   // In-memory map is the source of truth; IDB is the persistence layer.
   const map = new Map<string, Entry>();
 
-  // Hydrate in-memory map from IDB synchronously before SWR makes first requests.
-  // This runs immediately when the provider is created (inside useEffect below).
-  let hydrated = false;
-  const hydration = (async () => {
+  // Hydrate in-memory map from IDB in the background, best-effort — reads
+  // just miss (return undefined) until this fills in, then behave like a
+  // warm cache. Runs once, immediately, when the provider singleton is created.
+  (async () => {
     try {
       const all = await idbGetAll() as Record<string, Entry>;
       const now = Date.now();
@@ -79,7 +79,6 @@ function makeIDBProvider() {
         }
       }
     } catch {}
-    hydrated = true;
   })();
 
   return {

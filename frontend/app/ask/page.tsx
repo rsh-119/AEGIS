@@ -5,7 +5,7 @@ import Link from "next/link";
 import clsx from "clsx";
 import {
   Send, Bot, User, Sparkles, TrendingUp, BarChart3,
-  IndianRupee, RefreshCw, Copy, Check, TrendingDown,
+  IndianRupee, RefreshCw, Copy, Check, TrendingDown, Loader2, AlertCircle,
 } from "lucide-react";
 
 /* ─── Types ──────────────────────────────────────── */
@@ -23,6 +23,7 @@ type Message = {
   role: Role;
   content: string;
   loading?: boolean;
+  isError?: boolean;
   suggestions?: string[];
   stocks?: StockSnippet[];
   answeredFromFacts?: boolean;
@@ -149,48 +150,75 @@ function StockCard({ s }: { s: StockSnippet }) {
   );
 }
 
-/* ─── MessageBubble ──────────────────────────────── */
+/* ─── MessageBubble ──────────────────────────────────────────────────────
+   Structured the way shadcn's Message/Bubble docs frame a chat row — avatar
+   anchored to the bubble's bottom, a Bubble surface whose look varies by
+   state (variant: default/muted/destructive below), and footer metadata
+   (copy button, data-source note) living *outside* the bubble surface
+   rather than crammed into its padding. Reimplemented natively against
+   Aegis's own saffron/raised/border tokens rather than the shadcn package
+   itself — this app's Tailwind config doesn't define shadcn's semantic
+   tokens (primary-foreground, muted-foreground, etc.) those generated
+   components assume, so installing them as-is would render unstyled. */
 function MessageBubble({ msg, onSuggest }: { msg: Message; onSuggest: (q: string) => void }) {
-  const isUser = msg.role === "user";
-  const hasStocks      = !isUser && (msg.stocks?.length ?? 0) > 0;
-  const hasSuggestions = !isUser && (msg.suggestions?.length ?? 0) > 0;
+  const align: "start" | "end" = msg.role === "user" ? "end" : "start";
+  const hasStocks      = align === "start" && (msg.stocks?.length ?? 0) > 0;
+  const hasSuggestions = align === "start" && (msg.suggestions?.length ?? 0) > 0;
+  const hasFooter       = align === "start" && !msg.loading && !msg.isError;
 
   return (
-    <div className={clsx("flex gap-3", isUser && "flex-row-reverse")}>
-      {/* Avatar */}
+    <div className={clsx("flex items-end gap-3", align === "end" && "flex-row-reverse")}>
+      {/* MessageAvatar — anchored to the bottom of the row (items-end above),
+          so it lines up with a multi-line bubble's last line, not its first. */}
       <div className={clsx(
         "flex h-8 w-8 shrink-0 items-center justify-center rounded-full ring-1",
-        isUser ? "bg-saffron text-white ring-saffron/30" : "bg-raised text-saffron ring-border"
+        align === "end" ? "bg-saffron text-white ring-saffron/30" : "bg-raised text-saffron ring-border"
       )}>
-        {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+        {align === "end" ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
       </div>
 
-      <div className={clsx("flex flex-col gap-2", isUser ? "items-end max-w-[82%]" : "items-start max-w-[86%]")}>
-        {/* Bubble */}
-        <div className={clsx(
-          "rounded-2xl px-4 py-3 w-full",
-          isUser ? "rounded-tr-sm bg-saffron text-white" : "rounded-tl-sm bg-raised ring-1 ring-border"
-        )}>
-          {msg.loading ? (
-            <div className="flex items-center gap-1.5 py-1">
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-saffron [animation-delay:0ms]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-saffron [animation-delay:150ms]" />
-              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-saffron [animation-delay:300ms]" />
-            </div>
-          ) : isUser ? (
-            <p className="text-sm leading-relaxed">{msg.content}</p>
-          ) : (
-            <div>
+      {/* MessageContent */}
+      <div className={clsx("flex flex-col gap-1.5", align === "end" ? "items-end max-w-[82%]" : "items-start max-w-[86%]")}>
+        {msg.loading ? (
+          /* Marker — a transient status row, deliberately NOT a filled
+             bubble: "thinking" is a state, not a message the model sent. */
+          <div className="flex items-center gap-2 py-1 text-muted">
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-saffron" />
+            <span className="text-xs">Thinking…</span>
+          </div>
+        ) : (
+          /* Bubble — variant switches on message state: solid saffron for
+             the user, tinted red for a genuine error, neutral raised for a
+             normal assistant reply. */
+          <div className={clsx(
+            "w-full rounded-2xl px-4 py-3",
+            align === "end"
+              ? "rounded-tr-sm bg-saffron text-white"
+              : msg.isError
+                ? "rounded-tl-sm bg-down/10 ring-1 ring-down/20"
+                : "rounded-tl-sm bg-raised ring-1 ring-border"
+          )}>
+            {align === "end" ? (
+              <p className="text-sm leading-relaxed">{msg.content}</p>
+            ) : msg.isError ? (
+              <p className="flex items-start gap-2 text-sm leading-relaxed text-down">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {msg.content}
+              </p>
+            ) : (
               <Markdown text={msg.content} />
-              <div className="mt-2 flex items-center justify-between">
-                {msg.answeredFromFacts === false ? (
-                  <p className="text-[10px] text-muted">Includes general knowledge, not live data</p>
-                ) : <span />}
-                <CopyButton text={msg.content} />
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
+
+        {/* MessageFooter — status/actions below the bubble, not inside it. */}
+        {hasFooter && (
+          <div className="flex w-full items-center justify-between px-1">
+            {msg.answeredFromFacts === false ? (
+              <p className="text-[10px] text-muted">Includes general knowledge, not live data</p>
+            ) : <span />}
+            <CopyButton text={msg.content} />
+          </div>
+        )}
 
         {/* Stock cards */}
         {hasStocks && (
@@ -322,7 +350,7 @@ export default function AskPage() {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === loadMsg.id
-            ? { ...m, content: "Network error. Please check your connection and try again.", loading: false }
+            ? { ...m, content: "Network error. Please check your connection and try again.", loading: false, isError: true }
             : m
         )
       );

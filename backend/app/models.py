@@ -16,31 +16,64 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     username: Mapped[str] = mapped_column(String(60), unique=True, index=True)
-    hashed_password: Mapped[str] = mapped_column(String(200))
+    # Nullable as of Google Sign-In: an OAuth-only account has no password to
+    # hash. auth_provider distinguishes "local, password required" from
+    # "google, hashed_password is None" — see core/oauth.py.
+    hashed_password: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    auth_provider: Mapped[str] = mapped_column(String(20), default="local", server_default="local")
+    google_id: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
-    is_pro: Mapped[bool] = mapped_column(Boolean, default=False)
+    # NOTE: there is deliberately no `is_pro` column. Entitlements live in
+    # `subscriptions` (see core/entitlements.py); the old boolean was dropped
+    # in migration 8c1d4a7f9e20 once nothing read it, so it can no longer
+    # drift out of sync with the row that actually grants access.
+
+    # Profile photo — a `data:image/webp;base64,...` URL, not a storage-bucket
+    # reference: this codebase has no S3/Cloudinary/Supabase-Storage
+    # integration, and core/avatar.py always resizes to a fixed 320x320
+    # WEBP thumbnail before this is ever written, so the stored string stays
+    # small (a few tens of KB) — a plain TEXT column is the simplest correct
+    # choice here, same reasoning as PortfolioReview's JSON blobs.
+    avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # ── 2FA (core/totp.py) ───────────────────────────────────────────────────
+    is_2fa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    totp_secret: Mapped[str | None] = mapped_column(String(200), nullable=True)  # Fernet-encrypted, never plaintext
+    backup_codes: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")  # bcrypt hashes, single-use
+
+    # ── Password reset (routers/auth.py's forgot-password/reset-password) ───
+    reset_token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)  # sha256 hex
+    reset_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # audit only, not read by any auth check
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     def to_dict(self) -> dict:
+        """Note: no "is_pro" key. Pro status is not a property of this row —
+        it is derived from `subscriptions` and is overlaid by the callers that
+        need it (routers/auth.py::_serialize_user, routers/admin.py), so that
+        there is exactly one source of truth. See core/entitlements.py."""
         return {
             "id": self.id,
             "email": self.email,
             "username": self.username,
             "is_active": self.is_active,
             "is_admin": self.is_admin,
-            "is_pro": self.is_pro,
+            "auth_provider": self.auth_provider,
+            "has_password": self.hashed_password is not None,
+            "is_2fa_enabled": self.is_2fa_enabled,
+            "avatar_url": self.avatar_url,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
 class Subscription(Base):
-    """Replaces the bare users.is_pro boolean with plan/status/expiry and
-    room for a billing-provider link, without touching the User table —
-    zero rows here = free tier, by construction. is_pro is kept on User for
-    now (unread by app code as of this table's introduction — see
-    entitlements.py) rather than dropped immediately; a later migration can
-    remove it once nothing references it. No relationship() to User, same
+    """Replaced the bare users.is_pro boolean with plan/status/expiry and
+    room for a billing-provider link. Zero rows here = free tier, by
+    construction. The users.is_pro column it replaced was carried unread for
+    one release and has since been dropped (migration 8c1d4a7f9e20), so this
+    table is now the only place Pro status exists. No relationship() to User, same
     plain-FK-column convention every other user-owned table here uses
     (Holding, WatchItem, PriceAlert, PortfolioReview)."""
 
@@ -57,6 +90,10 @@ class Subscription(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     def to_dict(self) -> dict:
+        """Note: no "is_pro" key. Pro status is not a property of this row —
+        it is derived from `subscriptions` and is overlaid by the callers that
+        need it (routers/auth.py::_serialize_user, routers/admin.py), so that
+        there is exactly one source of truth. See core/entitlements.py."""
         return {
             "plan": self.plan,
             "status": self.status,
@@ -77,8 +114,21 @@ class Holding(Base):
     sector: Mapped[str | None] = mapped_column(String(60), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+
+    # Must come after `version` is defined — SQLAlchemy's declarative
+    # processing needs the actual mapped_column object here, not a string
+    # name. This is what makes the unit-of-work include `version` in every
+    # UPDATE's WHERE clause and auto-increment it — a lost-update race (two
+    # writers reading the same version, both trying to write) raises
+    # StaleDataError instead of silently applying a lost update.
+    __mapper_args__ = {"version_id_col": version}
 
     def to_dict(self) -> dict:
+        """Note: no "is_pro" key. Pro status is not a property of this row —
+        it is derived from `subscriptions` and is overlaid by the callers that
+        need it (routers/auth.py::_serialize_user, routers/admin.py), so that
+        there is exactly one source of truth. See core/entitlements.py."""
         return {
             "id": self.id,
             "ticker": self.ticker,
@@ -88,6 +138,7 @@ class Holding(Base):
             "buy_date": self.buy_date.isoformat(),
             "sector": self.sector,
             "notes": self.notes,
+            "version": self.version,
         }
 
 
@@ -103,6 +154,10 @@ class WatchItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     def to_dict(self) -> dict:
+        """Note: no "is_pro" key. Pro status is not a property of this row —
+        it is derived from `subscriptions` and is overlaid by the callers that
+        need it (routers/auth.py::_serialize_user, routers/admin.py), so that
+        there is exactly one source of truth. See core/entitlements.py."""
         return {
             "id": self.id,
             "ticker": self.ticker,
@@ -128,6 +183,10 @@ class PriceAlert(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     def to_dict(self) -> dict:
+        """Note: no "is_pro" key. Pro status is not a property of this row —
+        it is derived from `subscriptions` and is overlaid by the callers that
+        need it (routers/auth.py::_serialize_user, routers/admin.py), so that
+        there is exactly one source of truth. See core/entitlements.py."""
         return {
             "id": self.id,
             "user_id": self.user_id,
@@ -160,6 +219,10 @@ class PortfolioReview(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     def to_dict(self) -> dict:
+        """Note: no "is_pro" key. Pro status is not a property of this row —
+        it is derived from `subscriptions` and is overlaid by the callers that
+        need it (routers/auth.py::_serialize_user, routers/admin.py), so that
+        there is exactly one source of truth. See core/entitlements.py."""
         return {
             "verdict": self.verdict,
             "observations": self.observations,

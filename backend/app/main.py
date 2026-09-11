@@ -6,7 +6,7 @@ Run:  uvicorn app.main:app --reload --port 8000
 Middleware stack (outermost → innermost):
   1. ReadOnlyMiddleware   — Firegun: blocks writes when READONLY_MODE=true
   2. RequestIDMiddleware  — attaches X-Request-ID, times requests, records metrics
-  3. SlowAPIMiddleware    — per-IP rate limiting (120 req/min default)
+  3. ResilientSlowAPIMiddleware — per-client rate limiting (120 req/min default)
   4. CORSMiddleware       — cross-origin headers
 """
 
@@ -14,11 +14,9 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
 
 from app.core.config import get_settings
 from app.core.database import init_db
@@ -26,7 +24,7 @@ from app.core.cache import cache
 from app.core.logging_config import configure_logging
 from app.middleware.request_id import RequestIDMiddleware
 from app.middleware.readonly import ReadOnlyMiddleware
-from app.middleware.rate_limiter import limiter, rate_limit_exceeded_handler
+from app.middleware.rate_limiter import ResilientSlowAPIMiddleware, limiter, rate_limit_exceeded_handler
 from app.middleware.http_cache import HttpCacheMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.routers import stocks, ai, portfolio, watchlist, market, chat, documents, mf
@@ -85,7 +83,55 @@ async def _prewarm():
         logger.warning("Cache: pre-warm failed: %s", exc)
 
 
-DEFAULT_JWT_SECRET = "change-me-in-production-use-openssl-rand-hex-32"  # matches config.py's default
+def warn_if_proxy_trust_is_not_narrowed(settings) -> str | None:
+    """Log a startup warning when TRUSTED_PROXY_IPS has not been narrowed.
+
+    TRUSTED_PROXY_IPS is a deployment-topology parameter with no safe universal
+    default, so leaving it unset must be VISIBLE rather than silent. The shipped
+    default trusts loopback + RFC1918, which is where a reverse proxy, k8s
+    ingress or platform edge genuinely connects from — and is also where a NAT
+    gateway sits. Docker's `-p 8000:8000` rewrites every caller's source address
+    into the bridge subnet, so with the default in place a directly-published
+    backend accepts the caller's own X-Forwarded-For and per-IP rate limits
+    become resettable at will (confirmed against the built image).
+
+    An IP check cannot tell those two cases apart, so the fix is operational:
+    narrow this to the proxy's actual address. Warning at startup is what turns
+    "nobody knew" into "it was in the logs on every boot".
+
+    Returns the warning category ("default" | "wildcard" | None) so this is
+    testable without booting a second application.
+    """
+    if settings.app_env != "production":
+        return None
+
+    from app.core.config import Settings as _Settings
+    default = _Settings.model_fields["trusted_proxy_ips"].default
+
+    if settings.trusted_proxy_ips == default:
+        logger.warning(
+            "TRUSTED_PROXY_IPS is at its default (loopback + RFC1918). Per-IP "
+            "rate limiting is only sound if every caller reaches this app "
+            "through a proxy on one of those addresses. If this backend is "
+            "published directly (e.g. docker run -p), a NAT gateway peer is "
+            "trusted and X-Forwarded-For can be forged to reset any bucket. "
+            "Set TRUSTED_PROXY_IPS to your ingress/proxy CIDR."
+        )
+        return "default"
+
+    if settings.trusted_proxy_ips.strip() == "*":
+        logger.warning(
+            "TRUSTED_PROXY_IPS='*' — X-Forwarded-For is accepted from ANY peer. "
+            "Correct only if this app is unreachable except through a trusted "
+            "proxy; otherwise every per-IP rate limit is bypassable."
+        )
+        return "wildcard"
+
+    logger.info(
+        "TRUSTED_PROXY_IPS is explicitly configured (%d network(s)).",
+        len(settings.trusted_proxy_networks),
+    )
+    return None
 
 
 @asynccontextmanager
@@ -93,14 +139,21 @@ async def lifespan(app: FastAPI):
     logger.info("Aegis API starting — env=%s", settings.app_env)
 
     # Fail fast — before touching Redis/DB — if a production deploy is about
-    # to sign every user's session with a public, guessable secret.
-    if settings.app_env == "production" and settings.jwt_secret_key == DEFAULT_JWT_SECRET:
-        raise RuntimeError(
-            "FATAL: JWT_SECRET_KEY is still the default placeholder while APP_ENV=production. "
-            "Set a real secret (e.g. `openssl rand -hex 32`) before starting."
-        )
-    if settings.jwt_secret_key == DEFAULT_JWT_SECRET:
-        logger.warning("JWT_SECRET_KEY is the default placeholder — fine for local dev, must not ship to prod.")
+    # to sign every user's session with no real secret at all.
+    if not settings.jwt_secret_key:
+        if settings.app_env == "production":
+            raise RuntimeError(
+                "FATAL: JWT_SECRET_KEY is not set while APP_ENV=production. "
+                "Set a real secret (e.g. `openssl rand -hex 32`) before starting."
+            )
+        # Dev/local convenience: generate an ephemeral secret so the app still
+        # boots with zero config, rather than shipping a shared hardcoded
+        # placeholder every dev machine (and, historically, prod) could sign
+        # tokens with. Ephemeral means restarts invalidate existing sessions —
+        # fine for local dev, which is exactly the case this branch is for.
+        import secrets
+        settings.jwt_secret_key = secrets.token_hex(32)
+        logger.warning("JWT_SECRET_KEY is unset — generated an ephemeral dev secret (won't survive a restart).")
     elif len(settings.jwt_secret_key) < 32:
         logger.warning("JWT_SECRET_KEY is set but shorter than 32 chars — consider `openssl rand -hex 32`.")
 
@@ -110,17 +163,25 @@ async def lifespan(app: FastAPI):
         logger.warning("No AI keys configured — AI features will be disabled.")
     if settings.readonly_mode:
         logger.warning("READONLY MODE is active — write operations are blocked.")
+
+    warn_if_proxy_trust_is_not_narrowed(settings)
+
     asyncio.create_task(_prewarm())
     from app.services.home_refresh_service import home_refresh
+    from app.services.prewarm_service import ai_prewarm_task
 
     async def _start_background():
         await asyncio.sleep(90)
         # HomeRefreshTask starts after the first prewarm so cache is already warm
         home_refresh.start()
+        ai_prewarm_task.start()
 
     asyncio.create_task(_start_background())
     yield
     home_refresh.stop()
+    ai_prewarm_task.stop()
+    from app.services.price_stream_service import price_stream_hub
+    price_stream_hub.shutdown()
     logger.info("Aegis API shutting down")
 
 
@@ -151,7 +212,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 if settings.rate_limit_enabled:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
-    app.add_middleware(SlowAPIMiddleware)
+    app.add_middleware(ResilientSlowAPIMiddleware)
 
 app.add_middleware(HttpCacheMiddleware)
 app.add_middleware(RequestIDMiddleware)
@@ -195,13 +256,18 @@ async def cache_stats():
 
 
 @app.delete("/api/cache", include_in_schema=False)
-async def cache_flush(prefix: str = "", x_admin_key: str | None = None):
+async def cache_flush(request: Request, prefix: str = ""):
     from fastapi import HTTPException
     # Require an admin key in production to prevent cache-flooding DoS.
+    # Read from the X-Admin-Key header (matches /health/status), not a query
+    # param — a query param rides along in proxy/CDN access logs and shell
+    # history, turning any log leak into a cache-flush-DoS vector for free.
     # Deliberately NOT settings.jwt_secret_key — that secret signs every
     # user's session token, so reusing it here would mean a leak of this
     # header is a full auth bypass, not just a cache-flush leak.
-    if _is_prod and (not settings.admin_api_key or x_admin_key != settings.admin_api_key):
-        raise HTTPException(status_code=403, detail="Forbidden")
+    if _is_prod:
+        key = request.headers.get("x-admin-key", "")
+        if not settings.admin_api_key or key != settings.admin_api_key:
+            raise HTTPException(status_code=403, detail="Forbidden")
     cache.flush(prefix)
     return {"flushed": True, "prefix": prefix or "*"}

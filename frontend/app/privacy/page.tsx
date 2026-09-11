@@ -1,0 +1,102 @@
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Privacy & Cookies — AEGIS",
+  description: "What data Aegis collects, what cookies it sets, and how to control them.",
+};
+
+function Section({ id, title, children }: { id?: string; title: string; children: React.ReactNode }) {
+  return (
+    <section id={id} className="scroll-mt-24 space-y-3">
+      <h2 className="font-display text-xl font-semibold text-fg">{title}</h2>
+      <div className="space-y-3 text-[15px] leading-relaxed text-muted">{children}</div>
+    </section>
+  );
+}
+
+const COOKIES: { name: string; purpose: string; kind: "Necessary" | "Analytics"; expiry: string }[] = [
+  { name: "aegis_access",  purpose: "Signs API requests as you while you're logged in.",              kind: "Necessary", expiry: "15 min (auto-refreshed)" },
+  { name: "aegis_refresh", purpose: "Silently renews aegis_access without asking you to log in again.", kind: "Necessary", expiry: "30 days, rotated on use" },
+  { name: "aegis-theme",   purpose: "Remembers light/dark mode. Stored in localStorage, not a cookie — listed here because it's the same idea.", kind: "Necessary", expiry: "Until cleared" },
+  { name: "_vercel_...",   purpose: "Vercel Web Analytics — anonymous page-view counts, no cross-site tracking.", kind: "Analytics", expiry: "Session" },
+];
+
+export default function PrivacyPage() {
+  return (
+    <div className="mx-auto max-w-2xl space-y-10 py-10">
+      <div className="space-y-2">
+        <p className="font-mono text-[10.5px] uppercase tracking-[0.18em] text-saffron">Legal</p>
+        <h1 className="font-display text-3xl font-medium tracking-tight text-fg">Privacy &amp; cookies</h1>
+        <p className="text-sm text-muted">
+          Aegis is a market-data and analysis tool, not an ad business — this page covers the small
+          amount of data that keeps it working.
+        </p>
+      </div>
+
+      <Section title="What Aegis collects">
+        <p>
+          If you use Aegis without an account, nothing about you is stored on our servers — your
+          watchlist and portfolio live only in your browser&apos;s local storage. Creating an
+          account adds your email, username, and whatever holdings/watchlist you save, used solely
+          to run the product for you.
+        </p>
+      </Section>
+
+      <Section id="cookies" title="Cookies we set">
+        <p>The table below is the complete list — nothing runs that isn&apos;t named here.</p>
+        <div className="overflow-x-auto rounded-card border border-border">
+          <table className="w-full text-left text-[13px]">
+            <thead>
+              <tr className="border-b border-border bg-raised/40 font-mono text-[10px] uppercase tracking-[0.12em] text-muted">
+                <th className="px-3.5 py-2.5 font-semibold">Name</th>
+                <th className="px-3.5 py-2.5 font-semibold">Purpose</th>
+                <th className="px-3.5 py-2.5 font-semibold">Type</th>
+                <th className="px-3.5 py-2.5 font-semibold">Expiry</th>
+              </tr>
+            </thead>
+            <tbody>
+              {COOKIES.map((c) => (
+                <tr key={c.name} className="border-b border-border/60 last:border-0">
+                  <td className="px-3.5 py-2.5 font-mono text-fg">{c.name}</td>
+                  <td className="px-3.5 py-2.5 text-muted">{c.purpose}</td>
+                  <td className="px-3.5 py-2.5">
+                    <span className={
+                      c.kind === "Necessary"
+                        ? "rounded-full bg-up/10 px-2 py-0.5 text-[10px] font-semibold text-up"
+                        : "rounded-full bg-saffron/10 px-2 py-0.5 text-[10px] font-semibold text-saffron"
+                    }>
+                      {c.kind}
+                    </span>
+                  </td>
+                  <td className="px-3.5 py-2.5 text-muted">{c.expiry}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Necessary cookies can&apos;t be switched off — they&apos;re what keeps you logged in — but
+          they also never leave Aegis&apos;s own domain. Analytics only loads if you accept it in
+          the cookie banner; declining stops it from loading at all, not just from being read.
+        </p>
+      </Section>
+
+      <Section title="Your choice">
+        <p>
+          Change your mind any time: clear <code className="rounded bg-raised px-1.5 py-0.5 font-mono text-[12.5px]">aegis-cookie-consent</code> from
+          your browser&apos;s site data to see the banner again, or use your browser&apos;s cookie
+          settings to block Aegis outright — the site still works without analytics; it just stops
+          working without the two auth cookies once you&apos;re logged in.
+        </p>
+      </Section>
+
+      <Section title="Third parties">
+        <p>
+          Market data comes from NSE, BSE, and IndianAPI; AI analysis is generated by Groq, NVIDIA
+          NIM, or OpenRouter depending on availability. None of them receive your account details —
+          only the stock symbols and prompts needed to answer your request.
+        </p>
+      </Section>
+    </div>
+  );
+}

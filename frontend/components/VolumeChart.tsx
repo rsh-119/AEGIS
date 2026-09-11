@@ -163,17 +163,17 @@ export function VolumeChart({ candles }: { candles: Candle[] }) {
         </button>
       )}
       <div ref={ref} className="h-72 w-full" />
-      <div className="mt-2 flex gap-4 text-xs text-muted">
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted">
         <span className="flex items-center gap-1.5">
-          <i className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-500/80" />
+          <i className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm bg-amber-500/80" />
           Volume
         </span>
         <span className="flex items-center gap-1.5">
-          <i className="inline-block h-0.5 w-4" style={{ background: "repeating-linear-gradient(to right, #9CA8B8 0, #9CA8B8 3px, transparent 3px, transparent 6px)" }} />
+          <i className="inline-block h-0.5 w-4 shrink-0" style={{ background: "repeating-linear-gradient(to right, #9CA8B8 0, #9CA8B8 3px, transparent 3px, transparent 6px)" }} />
           20-day avg
         </span>
         <span className="flex items-center gap-1.5">
-          <i className="inline-block h-2.5 w-2.5 rounded-sm bg-down" />
+          <i className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm bg-down" />
           Spike (2× avg)
         </span>
         <span className="ml-auto text-[10px] text-muted/60">Scroll to zoom · Drag to pan</span>

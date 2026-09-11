@@ -36,11 +36,14 @@ still the right call. Previously-listed "Groq specdec / llama-4-scout" and
 errors (decommissioned / 404 / EOL) from their providers, not real fallback
 capacity.
 
-NOTE: analyze_document()'s "deepseek"/"minimax" tiers below still hardcode
-qwen/qwen3-32b and llama-3.1-8b-instant respectively — the same live-catalog
-check found qwen/qwen3-32b is ALSO not in Groq's current model list. Left
-unfixed here deliberately (out of scope for the Ask AI work this waterfall
-update was part of) — flagging so it isn't mistaken for already-verified.
+analyze_document()'s named quality tiers ("deepseek" = Deep Reasoning,
+"minimax" = Standard — legacy frontend ids, not vendor names) used to hardcode
+qwen/qwen3-32b and llama-3.1-8b-instant. The same live-catalog check found both
+absent from Groq's list, so those two tiers 404'd on every call and fell
+through to this waterfall unnoticed. They are now configuration —
+DOC_MODEL_DETAILED / DOC_MODEL_STANDARD in core/config.py — defaulting to the
+two models verified live above, so the next decommissioning is an env change
+rather than a code change.
 
 Four capabilities:
   • analyse_stock()    — valuation, risks, outlook (structured, data-cited)
@@ -58,6 +61,7 @@ import json
 import logging
 import re
 import time
+from collections import OrderedDict
 from collections.abc import AsyncGenerator
 
 import httpx
@@ -67,6 +71,7 @@ from openai import RateLimitError as NvidiaRateLimitError, APIStatusError as Nvi
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import get_settings
+from app.services import stock_service, news_service, peer_service
 from app.services.prompts import analysis as _p_analysis
 from app.services.prompts import health as _p_health
 from app.services.prompts import ask as _p_ask
@@ -106,6 +111,32 @@ def _record_call(provider: str, latency_s: float) -> None:
 
 def _record_repair(schema_name: str) -> None:
     _repair_counts[schema_name] = _repair_counts.get(schema_name, 0) + 1
+
+
+def public_result(result: dict) -> dict:
+    """Strip internal, non-contract fields before an AI result crosses the HTTP
+    boundary.
+
+    Every waterfall return path tags the payload with `_provider` (e.g.
+    "groq/openai/gpt-oss-120b") so latency can be attributed per provider/model
+    in _record_call and get_provider_stats. That is operational telemetry, not
+    part of any API contract — no frontend code reads it — and shipping it to
+    clients publishes which vendor and which exact model serve each feature.
+    That is free reconnaissance for anyone looking to target the provider
+    directly (or to fingerprint when a fallback tier is being used, i.e. when
+    the service is degraded).
+
+    Convention: any key starting with "_" is internal. Filtering on the prefix
+    rather than a hardcoded name means a field added later is private by
+    default — the same fail-closed choice middleware/http_cache.py makes for
+    Cache-Control. The provider is still recorded in metrics, in logs and via
+    /api/ai/providers (admin-gated), so nothing is lost operationally.
+
+    Non-dict values pass through untouched (streaming chunks, error strings).
+    """
+    if not isinstance(result, dict):
+        return result
+    return {k: v for k, v in result.items() if not k.startswith("_")}
 
 
 def get_provider_stats() -> dict:
@@ -167,10 +198,23 @@ def _doc_semaphore() -> asyncio.Semaphore:
 # never re-hits any provider within the same day.
 _PROMPT_CACHE_TTL = 20 * 3600  # 20 hours
 
+_PROMPT_CACHE_MAX_ENTRIES = 500   # see _PromptCache.set
+
 class _PromptCache:
-    def __init__(self, ttl: int):
+    """Bounded LRU-ish TTL cache.
+
+    The size cap matters because unauthenticated routes (/api/ai/ask,
+    /api/chat, /api/documents/ask) reach this cache with caller-controlled
+    text. Entries were previously only ever removed when that exact key was
+    looked up again after expiry, so N distinct prompts pinned N entries for
+    the full 20-hour TTL — a caller could grow the worker's heap without
+    bound just by never repeating a question.
+    """
+
+    def __init__(self, ttl: int, max_entries: int = _PROMPT_CACHE_MAX_ENTRIES):
         self._ttl   = ttl
-        self._store: dict[str, tuple[dict, float]] = {}
+        self._max   = max_entries
+        self._store: OrderedDict[str, tuple[dict, float]] = OrderedDict()
 
     def _key(self, system: str, user: str) -> str:
         return hashlib.sha256((system + user).encode()).hexdigest()[:24]
@@ -179,19 +223,36 @@ class _PromptCache:
         k = self._key(system, user)
         entry = self._store.get(k)
         if entry and time.monotonic() - entry[1] < self._ttl:
+            self._store.move_to_end(k)   # mark as recently used
             return entry[0]
         if entry:
             del self._store[k]
         return None
 
     def set(self, system: str, user: str, value: dict) -> None:
-        self._store[self._key(system, user)] = (value, time.monotonic())
+        now = time.monotonic()
+        self._store[self._key(system, user)] = (value, now)
+        self._store.move_to_end(self._key(system, user))
+
+        # Drop anything already expired before evicting anything still live.
+        for k in [k for k, (_, ts) in self._store.items() if now - ts >= self._ttl]:
+            del self._store[k]
+        while len(self._store) > self._max:
+            self._store.popitem(last=False)   # evict least-recently-used
 
 _prompt_cache = _PromptCache(ttl=_PROMPT_CACHE_TTL)
 _OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 _NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
 # Groq fallback models — each has a separate daily quota
+# Short leash for every Groq attempt except the last: a slow-but-not-erroring
+# Groq response otherwise sits inside asyncio.wait_for for the full
+# ai_timeout_seconds (60s) before the waterfall can even try the next model
+# or OpenRouter — burning most of a minute on an attempt that still has a
+# fallback waiting behind it. The final Groq model gets the full budget,
+# since nothing inside this provider is left to catch a failure after that.
+GROQ_FAST_TIMEOUT = 18  # seconds
+
 _GROQ_EXTRA_MODELS = [
     "openai/gpt-oss-20b",
     # "llama-3.3-70b-specdec", "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -279,7 +340,10 @@ async def _call_nvidia(system: str, user: str, max_tokens: int, model: str | Non
 
 # ── Groq call ─────────────────────────────────────────────────────────────────
 
-async def _call_groq(system: str, user: str, max_tokens: int, model: str | None = None, temperature: float | None = None) -> dict:
+async def _call_groq(
+    system: str, user: str, max_tokens: int, model: str | None = None,
+    temperature: float | None = None, timeout: float | None = None,
+) -> dict:
     # Use round-robin pool if multiple keys are configured, else fall back to single client
     client = _next_groq_client() or _get_groq()
     if client is None:
@@ -295,7 +359,10 @@ async def _call_groq(system: str, user: str, max_tokens: int, model: str | None 
             max_tokens=max_tokens,
             response_format={"type": "json_object"},
         ),
-        timeout=settings.ai_timeout_seconds,
+        # Caller-supplied timeout (see the Groq loop in _chat_json) falls
+        # back to the full ai_timeout_seconds when not given, so any other
+        # call site keeps the old behavior unchanged.
+        timeout=timeout if timeout is not None else settings.ai_timeout_seconds,
     )
     return _parse_json(resp.choices[0].message.content)
 
@@ -530,9 +597,15 @@ async def _chat_json(
         groq_models = [settings.groq_model] + _GROQ_EXTRA_MODELS
         if preferred_groq_model:
             groq_models = [preferred_groq_model] + [m for m in groq_models if m != preferred_groq_model]
-        for gmodel in groq_models:
+        for i, gmodel in enumerate(groq_models):
+            # Every attempt but the last gets GROQ_FAST_TIMEOUT, not the full
+            # ai_timeout_seconds — see that constant's docstring. The last
+            # model in the chain gets the full budget since OpenRouter/NVIDIA
+            # are the only things left to catch a failure after it.
+            is_last = i == len(groq_models) - 1
+            groq_timeout = settings.ai_timeout_seconds if is_last else min(settings.ai_timeout_seconds, GROQ_FAST_TIMEOUT)
             try:
-                call_fn = functools.partial(_call_groq, model=gmodel)
+                call_fn = functools.partial(_call_groq, model=gmodel, timeout=groq_timeout)
                 result = await _call_validated(call_fn, system, user, max_tokens, schema, temperature)
                 result.setdefault("_provider", f"groq/{gmodel}")
                 if gmodel != settings.groq_model:
@@ -759,6 +832,31 @@ def _build_context(quote: dict, hist: dict, sentiment: dict, signals: list[str],
     return _fill_na(ctx)
 
 
+# ── Shared grounding fetch for analyse_stock/diagnose_health ─────────────────
+
+async def fetch_ai_context(ticker: str):
+    """Quote + 6mo history + news + peer-average fetch shared by
+    analyse_stock/diagnose_health's callers — both routers/stocks.py's
+    /ai-summary and /health-diagnosis endpoints and the background
+    pre-warm task (services/prewarm_service.py) need the exact same inputs,
+    just to feed a different single ai_service call each, so this lives
+    once here rather than being duplicated across each caller. Returns
+    None if the quote itself is unavailable."""
+    quote, hist = await asyncio.gather(
+        stock_service.get_quote(ticker),
+        stock_service.get_history(ticker, "6mo"),
+    )
+    if "error" in quote and "current_price" not in quote:
+        return None
+    signals = stock_service.ratio_signals(quote)
+    peer_data, news_data = await asyncio.gather(
+        peer_service.get_peer_comparison(ticker, quote.get("sector", ""), quote.get("industry")),
+        news_service.get_news_and_sentiment(ticker, quote.get("company_name")),
+    )
+    peer_avg = peer_data.get("sector_avg", {})
+    return quote, hist, signals, news_data["sentiment"], news_data["articles"], peer_avg
+
+
 # ── 1. Stock analysis ─────────────────────────────────────────────────────────
 
 _AI_CACHE_TTL_HOURS = 20  # regenerate analysis once per day
@@ -776,7 +874,13 @@ async def analyse_stock(quote: dict, signals: list[str], hist: dict, sentiment: 
 
     user = json.dumps(ctx, default=str)
     from app.schemas import AnalysisResponse
-    result = await _chat_json(_p_analysis.SYSTEM, user, max_tokens=2800, schema=AnalysisResponse)
+    # 3200, not 2800: measured real completions across several tickers
+    # (2026-08-27) ranged 2012-2800+, with RELIANCE.NS actually hitting the
+    # old 2800 ceiling and truncating (finish_reason="length") — a truncated
+    # response can't parse as JSON, so that's a wasted full generation
+    # before the waterfall even gets to try the next provider. Raised, not
+    # lowered, specifically to stop that failure mode for verbose tickers.
+    result = await _chat_json(_p_analysis.SYSTEM, user, max_tokens=3200, schema=AnalysisResponse)
     if "error" not in result:
         await cache_service.set(cache_key, result, model=settings.groq_model)
     return result
@@ -796,7 +900,10 @@ async def diagnose_health(quote: dict, hist: dict, sentiment: dict, articles: li
     ctx["recent_headlines"] = [a["title"] for a in articles[:10]]
     user = json.dumps(ctx, default=str)
     from app.schemas import HealthResponse
-    result = await _chat_json(_p_health.SYSTEM, user, max_tokens=1800, schema=HealthResponse)
+    # 1500, not 1800: measured real completions across several tickers
+    # (2026-08-27) ranged 935-1228 with zero truncations — comfortable
+    # margin to trim from, unlike analyse_stock's ceiling above.
+    result = await _chat_json(_p_health.SYSTEM, user, max_tokens=1500, schema=HealthResponse)
     if "error" not in result:
         await cache_service.set(cache_key, result, model=settings.groq_model)
     return result
@@ -1046,8 +1153,11 @@ async def analyze_document(text: str, company: str | None = None, model: str = "
         if hit:
             logger.debug("Doc cache hit: %s", cache_key)
             return hit
-    except Exception:
-        pass
+    except Exception as exc:
+        # Soft failure by design (a cache miss is always survivable), but
+        # logged rather than swallowed silently — see _save() below for what
+        # a silent swallow here cost us.
+        logger.warning("Doc cache read failed for %s: %s", cache_key, exc)
 
     # ── Semaphore — queue excess concurrent requests, never let them all pile ─
     async with _doc_semaphore():
@@ -1068,39 +1178,44 @@ async def analyze_document(text: str, company: str | None = None, model: str = "
             try:
                 from app.core.cache import cache as _rc
                 _rc.set(cache_key, result, ttl=_DOC_CACHE_TTL)
-            except Exception:
-                pass
+            except Exception as exc:
+                # A failed cache write must never fail the analysis the user
+                # already paid for — but it must be visible. This swallow
+                # previously hid a hard TypeError (Cache.set had no `ttl`
+                # parameter), which meant this cache never worked at all and
+                # every repeat document analysis silently re-billed a full
+                # LLM call.
+                logger.warning("Doc cache write failed for %s: %s", cache_key, exc)
             return result
 
-        # ── Detailed: Qwen3-32B — reasoning model, best quality ─────────────
-        if model == "deepseek":
+        # ── Named quality tiers ──────────────────────────────────────────────
+        # "deepseek"/"minimax" are the frontend's legacy tier ids for "Deep
+        # Reasoning" and "Standard Analysis"; neither ever called DeepSeek or
+        # MiniMax. The model each maps to is configuration now
+        # (DOC_MODEL_DETAILED / DOC_MODEL_STANDARD) rather than a literal,
+        # because the previous literals (qwen/qwen3-32b, llama-3.1-8b-instant)
+        # were both silently dropped by Groq and 404'd on every call.
+        #
+        # An unset model, or any failure, falls through to the full waterfall
+        # below — so a tier going stale degrades quality, never availability.
+        tier_model, tier_tokens = {
+            "deepseek": (settings.doc_model_detailed, 3500),
+            "minimax":  (settings.doc_model_standard, 3000),
+        }.get(model, (None, 0))
+
+        if tier_model:
             try:
-                logger.info("analyze_document: Qwen3-32B (reasoning)")
-                call_fn = functools.partial(_call_groq, model="qwen/qwen3-32b")
-                result = await _call_validated(call_fn, system, user, 3500, DocumentAnalysisResponse, _TEMP_STRUCTURED)
-                result.setdefault("_provider", "groq/qwen/qwen3-32b")
+                logger.info("analyze_document: %s tier via Groq %s", model, tier_model)
+                call_fn = functools.partial(_call_groq, model=tier_model)
+                result = await _call_validated(call_fn, system, user, tier_tokens, DocumentAnalysisResponse, _TEMP_STRUCTURED)
+                result.setdefault("_provider", f"groq/{tier_model}")
                 _record_call(result["_provider"], time.monotonic() - t0)
                 return _save(result)
             except Exception as e:
-                logger.warning("analyze_document: Qwen3-32B failed (%s) — falling back", e)
+                logger.warning("analyze_document: %s (%s) failed — falling back to the waterfall: %s",
+                               model, tier_model, e)
 
-        # ── Standard: Llama-3.1-8B — fast, low-latency ───────────────────────
-        # "minimax" is a legacy tier id (frontend still sends it) — it never
-        # actually called NVIDIA MiniMax. It previously called Groq's
-        # llama-4-scout, which Groq has since dropped (404 on every call);
-        # swapped for a model confirmed live 2026-08-01.
-        elif model == "minimax":
-            try:
-                logger.info("analyze_document: Llama-3.1-8B (standard)")
-                call_fn = functools.partial(_call_groq, model="llama-3.1-8b-instant")
-                result = await _call_validated(call_fn, system, user, 3000, DocumentAnalysisResponse, _TEMP_STRUCTURED)
-                result.setdefault("_provider", "groq/llama-3.1-8b-instant")
-                _record_call(result["_provider"], time.monotonic() - t0)
-                return _save(result)
-            except Exception as e:
-                logger.warning("analyze_document: Llama-3.1-8B failed (%s) — falling back", e)
-
-        # ── Quick / fallback: llama-3.3-70b (full waterfall) ─────────────────
+        # ── Quick read / fallback: the full provider waterfall ────────────────
         result = await _chat_json(system, user, max_tokens=3000, schema=DocumentAnalysisResponse)
         if "error" not in result:
             _save(result)

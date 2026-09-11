@@ -9,10 +9,12 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import { setPendingPreAuthToken } from "@/lib/twoFactor";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
 
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
@@ -25,7 +27,30 @@ export default function LoginPage() {
     setError("");
     setBusy(true);
     try {
-      await login(email, password);
+      const result = await login(email, password);
+      if (result.requiresTwoFactor) {
+        setPendingPreAuthToken(result.preAuthToken);
+        router.push("/verify-2fa");
+        return;
+      }
+      router.replace("/");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitGoogle(credential: string) {
+    setError("");
+    setBusy(true);
+    try {
+      const result = await loginWithGoogle(credential);
+      if (result.requiresTwoFactor) {
+        setPendingPreAuthToken(result.preAuthToken);
+        router.push("/verify-2fa");
+        return;
+      }
       router.replace("/");
     } catch (err) {
       setError((err as Error).message);
@@ -50,6 +75,8 @@ export default function LoginPage() {
               </div>
             )}
 
+            <GoogleSignInButton onCredential={submitGoogle} />
+
             <div className="space-y-1">
               <Label className="text-xs">Email</Label>
               <Input
@@ -64,7 +91,12 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-1">
-              <Label className="text-xs">Password</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Password</Label>
+                <Link href="/forgot-password" className="text-micro text-muted hover:text-saffron hover:underline">
+                  Forgot password?
+                </Link>
+              </div>
               <div className="relative">
                 <Input
                   type={showPw ? "text" : "password"}

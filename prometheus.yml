@@ -24,6 +24,18 @@ scrape_configs:
       - targets: ["backend:8000", "host.docker.internal:8000"]
     metrics_path: /metrics
     scrape_interval: 10s
+    # /metrics is open when APP_ENV != production, which is the normal local
+    # case, so this works with no extra setup. docker-compose.yml sets
+    # APP_ENV=production for the backend container — against THAT target the
+    # scrape needs the admin key, so uncomment this and export ADMIN_API_KEY
+    # (Prometheus expands ${VAR} only when started with --enable-feature=
+    # expand-external-labels; otherwise paste the value here and keep this file
+    # out of version control). The alternative is METRICS_PUBLIC=true, which is
+    # only appropriate where the endpoint is not externally reachable.
+    #
+    # http_headers:
+    #   X-Admin-Key:
+    #     values: ["<ADMIN_API_KEY>"]
 
   # ── Prometheus self-monitoring ───────────────────────────────────────────────
   - job_name: prometheus

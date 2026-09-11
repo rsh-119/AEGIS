@@ -5,15 +5,14 @@ import useSWR from "swr";
 import Link from "next/link";
 import { fetcher, inr, pct, signCls } from "@/lib/api";
 import {
-  Rocket, ExternalLink, Search, TrendingUp, CalendarDays, Layers,
+  Rocket, ExternalLink, Search, TrendingUp, CalendarDays, Layers, Hourglass,
   ChevronRight, ChevronDown, CheckCircle2, Circle, X, MousePointerClick,
 } from "lucide-react";
 import clsx from "clsx";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Reveal } from "@/components/motion";
 
-type IpoStatus = "upcoming" | "open" | "listed";
+type IpoStatus = "upcoming" | "open" | "closed" | "listed";
 
 type Ipo = {
   symbol: string;
@@ -36,6 +35,7 @@ type Ipo = {
 const TABS: { value: IpoStatus; label: string }[] = [
   { value: "open", label: "Open" },
   { value: "upcoming", label: "Upcoming" },
+  { value: "closed", label: "Closed" },
   { value: "listed", label: "Listed" },
 ];
 
@@ -75,6 +75,7 @@ function StatusBadge({ status }: { status: IpoStatus }) {
       </Badge>
     );
   if (status === "upcoming") return <Badge className="bg-saffron/10 text-saffron text-[10px]">Upcoming</Badge>;
+  if (status === "closed") return <Badge className="bg-violet-500/10 text-violet-500 text-[10px]">Closed</Badge>;
   return <Badge className="bg-raised text-muted text-[10px]">Listed</Badge>;
 }
 
@@ -315,9 +316,10 @@ export default function IpoPage() {
 
   const ipos = data ?? [];
   const grouped = useMemo(() => {
-    const g: Record<IpoStatus, Ipo[]> = { upcoming: [], open: [], listed: [] };
+    const g: Record<IpoStatus, Ipo[]> = { upcoming: [], open: [], closed: [], listed: [] };
     for (const ipo of ipos) if (ipo.status in g) g[ipo.status].push(ipo);
     g.upcoming.sort((a, b) => ((a.bidding_start_date ?? "9999") < (b.bidding_start_date ?? "9999") ? -1 : 1));
+    g.closed.sort((a, b) => ((a.listing_date ?? "9999") < (b.listing_date ?? "9999") ? -1 : 1));
     g.listed.sort((a, b) => ((b.listing_date ?? "") < (a.listing_date ?? "") ? -1 : 1));
     return g;
   }, [ipos]);
@@ -364,10 +366,11 @@ export default function IpoPage() {
       </div>
 
       {/* Stats strip */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {[
           { icon: <TrendingUp className="h-4 w-4" />, label: "Open for bidding", value: String(grouped.open.length) },
           { icon: <CalendarDays className="h-4 w-4" />, label: "Upcoming issues", value: String(grouped.upcoming.length) },
+          { icon: <Hourglass className="h-4 w-4" />, label: "Awaiting listing", value: String(grouped.closed.length) },
           { icon: <Layers className="h-4 w-4" />, label: "Recently listed", value: String(grouped.listed.length) },
           {
             icon: <Rocket className="h-4 w-4" />, label: "Avg listing pop",
@@ -429,7 +432,7 @@ export default function IpoPage() {
         <Card className="overflow-hidden">
           <div className="hidden grid-cols-[1fr_auto_auto] gap-4 border-b border-border bg-raised/40 px-5 py-2.5 font-mono text-[9.5px] uppercase tracking-[0.1em] text-muted sm:grid">
             <span>Company</span>
-            <span className="w-20 text-right">{activeTab === "listed" ? "Listed" : "Closes"}</span>
+            <span className="w-20 text-right">{activeTab === "listed" ? "Listed" : activeTab === "closed" ? "Lists" : "Closes"}</span>
             <span className="w-24 text-right">{activeTab === "listed" ? "Returns" : "Price band"}</span>
           </div>
           {isLoading ? (
@@ -475,7 +478,7 @@ export default function IpoPage() {
                       </div>
                     </div>
                     <span className="nums hidden w-20 text-right text-xs text-muted sm:block">
-                      {fmtDate(activeTab === "listed" ? ipo.listing_date : ipo.bidding_end_date) ?? "TBA"}
+                      {fmtDate(activeTab === "closed" || activeTab === "listed" ? ipo.listing_date : ipo.bidding_end_date) ?? "TBA"}
                     </span>
                     <span className="flex w-auto items-center justify-end gap-1.5 sm:w-24">
                       {activeTab === "listed" && ipo.listing_gains != null ? (

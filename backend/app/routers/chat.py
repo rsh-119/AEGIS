@@ -1,14 +1,14 @@
 """/api/chat — free-form Indian stock market chat (ChatGPT-style, no ticker required)."""
 
-from __future__ import annotations
 
 import asyncio
 import logging
 import re
 
-from fastapi import APIRouter
-from pydantic import BaseModel
+from fastapi import APIRouter, Request, Response
+from pydantic import BaseModel, Field
 
+from app.middleware.rate_limiter import AI_LIMIT, limiter, user_or_ip_key
 from app.services import ai_service, stock_service
 
 logger = logging.getLogger(__name__)
@@ -123,21 +123,26 @@ def _stock_card(ticker: str, quote: dict | None) -> dict:
 
 
 class ChatMessage(BaseModel):
-    role: str  # "user" | "assistant"
-    content: str
+    role: str = Field(max_length=20)  # "user" | "assistant"
+    content: str = Field(max_length=8000)
 
 
 class ChatRequest(BaseModel):
-    message: str
-    history: list[ChatMessage] = []
+    """Bounded because this route is unauthenticated and every field below is
+    concatenated into the provider prompt. Only the last 12 history entries
+    are used (see chat() below), so the cap costs nothing a real client
+    notices while stopping one request from carrying an arbitrary payload."""
+    message: str = Field(min_length=1, max_length=4000)
+    history: list[ChatMessage] = Field(default_factory=list, max_length=50)
 
 
 class StocksRequest(BaseModel):
-    tickers: list[str]
+    tickers: list[str] = Field(default_factory=list, max_length=20)
 
 
 @router.post("")
-async def chat(req: ChatRequest):
+@limiter.limit(AI_LIMIT, key_func=user_or_ip_key)
+async def chat(request: Request, response: Response, req: ChatRequest):
     tickers = _extract_tickers(req.message)
     grounding = await _fetch_grounding(tickers)
 
@@ -145,7 +150,9 @@ async def chat(req: ChatRequest):
         f"{'User' if msg.role == 'user' else 'Assistant'}: {msg.content}"
         for msg in req.history[-12:]
     ]
-    result = await ai_service.chat(req.message, "\n".join(history_lines), grounding)
+    result = ai_service.public_result(
+        await ai_service.chat(req.message, "\n".join(history_lines), grounding)
+    )
 
     if "error" in result:
         return {"reply": "Sorry, I encountered an error. Please try again shortly.", "error": True}

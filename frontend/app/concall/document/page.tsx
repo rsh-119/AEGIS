@@ -472,7 +472,6 @@ export default function DocumentPage() {
   const [company, setCompany] = useState("");
   const [filename, setFilename] = useState("");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
-  const [loadingMsg, setLoadingMsg] = useState("");
   const [error, setError] = useState("");
   const [chat, setChat] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState("");
@@ -480,7 +479,6 @@ export default function DocumentPage() {
 
   const handleFile = useCallback(async (file: File) => {
     setMode("loading-pdf");
-    setLoadingMsg("Extracting text from PDF…");
     setError("");
     try {
       const form = new FormData();
@@ -502,7 +500,6 @@ export default function DocumentPage() {
 
   const runAnalysis = useCallback(async (text: string, co?: string) => {
     setMode("loading-analysis");
-    setLoadingMsg("Analyzing document with AI…");
     setError("");
     try {
       const res = await fetch("/api/documents/analyze", {

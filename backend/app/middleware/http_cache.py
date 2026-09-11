@@ -13,7 +13,13 @@ Rules (matched longest-prefix first):
   /api/peers/…       → max-age=900,swr=900
   /api/portfolio/…   → no-store          (user-specific; never cache on proxy)
   /api/watchlist/…   → no-store
+  /api/alerts/…      → no-store          (user-specific)
+  /api/auth/…        → no-store          (user-specific; includes /me)
+  /api/admin/…       → no-store          (admin-only data)
   /api/ai/…          → no-store          (session-tied LLM responses)
+  /api/chat…         → no-store
+  /api/documents/…   → no-store          (uploaded document content)
+  anything else      → no-store          (fail closed; see _DEFAULT below)
 """
 
 from __future__ import annotations
@@ -25,10 +31,17 @@ from starlette.responses import Response
 # (path_prefix, max_age_seconds, stale_while_revalidate_seconds)
 # None swr = no stale-while-revalidate
 _RULES: list[tuple[str, int, int | None]] = [
+    # ── Per-user / privileged: never storable by a shared cache ──────────────
     ("/api/stream",          0,    None),   # no-store
     ("/api/portfolio",       0,    None),   # no-store
     ("/api/watchlist",       0,    None),   # no-store
+    ("/api/alerts",          0,    None),   # no-store
+    ("/api/auth",            0,    None),   # no-store — /me carries email, avatar
+    ("/api/admin",           0,    None),   # no-store — full user listing
     ("/api/ai",              0,    None),   # no-store
+    ("/api/chat",            0,    None),   # no-store
+    ("/api/documents",       0,    None),   # no-store — uploaded document text
+    # ── Public market data: safe to cache in shared caches ───────────────────
     ("/api/stocks/search",   300,  300),
     ("/api/stocks/batch",    60,   60),
     ("/api/stocks/",         300,  300),
@@ -38,12 +51,21 @@ _RULES: list[tuple[str, int, int | None]] = [
     ("/api/peers",           900,  900),
 ]
 
+# Unmatched paths get no-store rather than a public max-age. The previous
+# default (public, max-age=60) applied to every route with no rule above —
+# which included /api/auth/me, /api/alerts and /api/admin/*, authorising any
+# shared cache between the user and the app to store one user's profile,
+# alerts or the full admin user listing and replay it to the next requester.
+# A new private route must not become publicly cacheable just by existing, so
+# the default fails closed and public caching is opt-in via _RULES.
+_DEFAULT: tuple[int, int | None] = (0, None)
+
 
 def _get_rule(path: str) -> tuple[int, int | None]:
     for prefix, max_age, swr in _RULES:
         if path.startswith(prefix):
             return max_age, swr
-    return 60, 60  # safe default
+    return _DEFAULT
 
 
 class HttpCacheMiddleware(BaseHTTPMiddleware):

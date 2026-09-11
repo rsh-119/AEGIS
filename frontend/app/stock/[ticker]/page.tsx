@@ -78,9 +78,23 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
     { revalidateOnFocus: false }
   );
 
-  // ── DEFERRED: news + AI + health + forecasts — fills in while page is visible ──
+  // ── DEFERRED: news + forecasts — fills in while page is visible ──────────
   const { data: ins, isLoading: insLoading } = useSWR(
     core ? `/api/stocks/${symbol}/insights` : null,  // start only after core is ready
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+
+  // ── DEFERRED: AI summary + health — split into their own requests so each
+  // card renders the moment IT'S ready, instead of both (and the /insights
+  // call above) waiting on whichever of the two hits a slow AI provider. ──
+  const { data: aiData, isLoading: aiLoading } = useSWR(
+    core ? `/api/stocks/${symbol}/ai-summary` : null,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+  const { data: healthData, isLoading: healthLoading } = useSWR(
+    core ? `/api/stocks/${symbol}/health-diagnosis` : null,
     fetcher,
     { revalidateOnFocus: false }
   );
@@ -144,7 +158,7 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
 
   const q    = core.quote;
   const hist = histData ?? core.history;
-  const ai   = ins?.ai_analysis ?? {};
+  const ai   = aiData?.ai_analysis ?? {};
 
   // Prefer live price from stream; fall back to static quote
   const displayPrice = liveTick?.price ?? q.current_price;
@@ -516,8 +530,8 @@ export default function StockPage({ params }: { params: Promise<{ ticker: string
       {/* ── AI analysis + sidebar ── */}
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
-          {insLoading ? <div className="skeleton h-72 rounded-2xl" /> : <AIAnalysisCard ai={ai} />}
-          {insLoading ? <div className="skeleton h-52 rounded-2xl" /> : <HealthCard health={ins?.health} />}
+          {aiLoading ? <div className="skeleton h-72 rounded-2xl" /> : <AIAnalysisCard ai={ai} />}
+          {healthLoading ? <div className="skeleton h-52 rounded-2xl" /> : <HealthCard health={healthData?.health} />}
         </div>
         <div className="space-y-6">
           {insLoading ? <div className="skeleton h-48 rounded-2xl" />
@@ -673,15 +687,6 @@ function SignalCard({ signal }: { signal: RatioSignal }) {
   );
 }
 
-function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <Card className="p-4 cursor-default select-none transition-all duration-200 hover:-translate-y-0.5 hover:border-[rgb(var(--color-saffron)/0.22)] hover:shadow-[var(--shadow-md),var(--shadow-glow)]">
-      <Label className="block">{label}</Label>
-      <p className="nums mt-1.5 text-lg font-bold">{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-muted">{sub}</p>}
-    </Card>
-  );
-}
 
 function Section({ label, text }: { label: string; text?: string }) {
   if (!text) return null;

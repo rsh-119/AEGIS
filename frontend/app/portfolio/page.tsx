@@ -245,6 +245,10 @@ export default function PortfolioPage() {
         </Card>
       ) : (
       <Card className="overflow-hidden">
+        {/* Portfolio table runs 7 columns wide — never fits a phone screen,
+            so it scrolls horizontally inside the card rather than clipping
+            (previously: Card's own overflow-hidden cut off P&L + delete). */}
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b border-border text-muted">
             <tr className="[&>th]:px-5 [&>th]:py-3 [&>th]:text-left [&>th]:text-micro-cap [&>th]:font-normal [&>th]:uppercase [&>th]:tracking-[0.1px]">
@@ -302,6 +306,7 @@ export default function PortfolioPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </Card>
       )}
       </>

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Rubik, IBM_Plex_Mono } from "next/font/google";
-import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { Nav } from "@/components/Nav";
 import { MarketBar } from "@/components/MarketBar";
@@ -11,6 +10,8 @@ import { SWRCacheProvider } from "@/lib/swr-config";
 import { AuthProvider } from "@/lib/auth";
 import { ToastProvider } from "@/components/ui/toast";
 import { ConfirmProvider } from "@/components/ui/confirm-dialog";
+import { CookieConsent } from "@/components/CookieConsent";
+import { ConsentedAnalytics } from "@/components/ConsentedAnalytics";
 
 // Rubik everywhere — single family for both body copy and headlines
 // (--font-display aliases --font-sans in globals.css, see below).
@@ -57,15 +58,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <MarketBar />
                 <main className="px-4 py-5 sm:px-6 md:px-10 lg:px-14" style={{ overflowAnchor: "none" }}>{children}</main>
                 <Footer />
+                <CookieConsent />
               </ConfirmProvider>
             </ToastProvider>
           </SWRCacheProvider>
         </AuthProvider>
-        {/* Vercel Web Analytics — visitor/page-view tracking. No-ops locally
-            and on non-Vercel hosts; collects automatically once deployed to
-            Vercel (also toggle "Web Analytics" on in the Vercel project
-            dashboard if it isn't already). */}
-        <Analytics />
+        {/* Vercel Web Analytics — visitor/page-view tracking, gated behind
+            the cookie banner's choice (see ConsentedAnalytics). No-ops
+            locally and on non-Vercel hosts either way. */}
+        <ConsentedAnalytics />
       </body>
     </html>
   );

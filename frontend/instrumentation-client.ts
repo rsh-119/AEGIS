@@ -14,3 +14,8 @@ if (dsn) {
     replaysOnErrorSampleRate: 0,
   });
 }
+// Required by @sentry/nextjs to instrument client-side App Router navigations
+// — without this export the build prints an "ACTION REQUIRED" warning and
+// navigation spans are never recorded. Safe to export unconditionally: it
+// no-ops when Sentry.init was never called above (no DSN configured).
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

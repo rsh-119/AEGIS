@@ -4,10 +4,11 @@ import asyncio
 import logging
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.core import groq_circuit_breaker
+from app.middleware.rate_limiter import AI_LIMIT, limiter, user_or_ip_key
 from app.schemas import AskRequest
 from app.services import ai_service, bulk_deals_service, news_service, stock_service
 
@@ -44,7 +45,8 @@ async def _gather_ask_context(
 
 
 @router.post("/ask")
-async def ask(body: AskRequest):
+@limiter.limit(AI_LIMIT, key_func=user_or_ip_key)
+async def ask(request: Request, response: Response, body: AskRequest):
     quote = hist = bulk_deals = None
     articles: list[dict] = []
     if body.ticker:
@@ -54,12 +56,15 @@ async def ask(body: AskRequest):
             "ask pre_fetch_ms=%.0f ticker=%s", (time.monotonic() - t0) * 1000, body.ticker
         )
 
-    result = await ai_service.answer(body.question, quote, hist, articles, bulk_deals)
+    result = ai_service.public_result(
+        await ai_service.answer(body.question, quote, hist, articles, bulk_deals)
+    )
     return {"question": body.question, **result}
 
 
 @router.post("/ask-stream")
-async def ask_stream(body: AskRequest):
+@limiter.limit(AI_LIMIT, key_func=user_or_ip_key)
+async def ask_stream(request: Request, response: Response, body: AskRequest):
     """Streaming counterpart to /ask. Single-provider (Groq) — see
     ai_service.stream_answer() for why this deliberately forgoes the
     validate+repair+multi-provider waterfall that /ask uses.
@@ -97,7 +102,9 @@ async def ask_stream(body: AskRequest):
 
     if groq_circuit_breaker.is_open():
         logger.info("ask-stream: circuit open, skipping peek (ticker=%s)", body.ticker)
-        result = await ai_service.answer(body.question, quote, hist, articles, bulk_deals)
+        result = ai_service.public_result(
+            await ai_service.answer(body.question, quote, hist, articles, bulk_deals)
+        )
         return JSONResponse({"question": body.question, **result})
 
     gen = ai_service.stream_answer(body.question, quote, hist, articles, bulk_deals)
@@ -110,7 +117,9 @@ async def ask_stream(body: AskRequest):
             "ask-stream: falling back to non-streaming waterfall (ticker=%s): %s",
             body.ticker, e,
         )
-        result = await ai_service.answer(body.question, quote, hist, articles, bulk_deals)
+        result = ai_service.public_result(
+            await ai_service.answer(body.question, quote, hist, articles, bulk_deals)
+        )
         return JSONResponse({"question": body.question, **result})
 
     groq_circuit_breaker.record_success()

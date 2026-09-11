@@ -8,8 +8,18 @@ RUN npm ci
 
 COPY . .
 
-ARG NEXT_PUBLIC_API_URL=http://backend:8000
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+# Where the Next.js /api/* rewrite proxies to, server-side. Build-time on
+# purpose: Next evaluates rewrites() during `next build` and freezes the
+# destination into .next/routes-manifest.json, so passing this at container
+# runtime has no effect whatsoever.
+#
+# This is NOT a browser-visible value, which is why it is no longer called
+# NEXT_PUBLIC_*. The browser only ever talks to this container's own origin —
+# the backend's session cookies are SameSite=Strict and would be dropped on a
+# cross-site request. NEXT_PUBLIC_API_URL is still honoured as a fallback (see
+# next.config.js) so existing Vercel/Render builds keep working unchanged.
+ARG API_PROXY_TARGET=http://backend:8000
+ENV API_PROXY_TARGET=$API_PROXY_TARGET
 
 RUN npm run build
 
